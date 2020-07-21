@@ -57,6 +57,7 @@ SF_U8 const sfTransactionResult(access, STI_UINT8, 3, "TransactionResult");
 // 8-bit integers (uncommon)
 SF_U8 const sfTickSize(access, STI_UINT8, 16, "TickSize");
 SF_U8 const sfUNLModifyDisabling(access, STI_UINT8, 17, "UNLModifyDisabling");
+SF_U8 const sfHookResult(access, STI_UINT8, 18, "HookResult");
 
 // 16-bit integers
 SF_U16 const sfLedgerEntryType(
@@ -70,6 +71,11 @@ SF_U16 const sfSignerWeight(access, STI_UINT16, 3, "SignerWeight");
 
 // 16-bit integers (uncommon)
 SF_U16 const sfVersion(access, STI_UINT16, 16, "Version");
+SF_U16 const sfHookStateChangeCount(access, STI_UINT16, 17, "HookStateChangeCount");
+SF_U16 const sfHookEmitCount(access, STI_UINT16, 18, "HookEmitCount");
+SF_U16 const sfHookExecutionIndex(access, STI_UINT16, 19, "HookExecutionIndex");
+SF_U16 const sfHookApiVersion(access, STI_UINT16, 20, "HookApiVersion");
+
 
 // 32-bit integers (common)
 SF_U32 const sfFlags(access, STI_UINT32, 2, "Flags");
@@ -117,8 +123,11 @@ SF_U32 const sfCancelAfter(access, STI_UINT32, 36, "CancelAfter");
 SF_U32 const sfFinishAfter(access, STI_UINT32, 37, "FinishAfter");
 SF_U32 const sfSignerListID(access, STI_UINT32, 38, "SignerListID");
 SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
+SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
+// 42, 41 were used in early hooks
+SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "EmitGeneration");
 
-// 64-bit integers
+// 64-bit integers (common)
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
 SF_U64 const sfIndexPrevious(access, STI_UINT64, 2, "IndexPrevious");
 SF_U64 const sfBookNode(access, STI_UINT64, 3, "BookNode");
@@ -130,6 +139,17 @@ SF_U64 const sfHighNode(access, STI_UINT64, 8, "HighNode");
 SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
+
+SF_U64 const sfEmitBurden(access, STI_UINT64, 12, "EmitBurden");
+
+// 14, 15 reserved
+
+// 64-bit integers (uncommon)
+SF_U64 const sfHookOn(access, STI_UINT64, 16, "HookOn");
+SF_U64 const sfHookInstructionCount(access, STI_UINT64, 17, "HookInstructionCount");
+SF_U64 const sfHookReturnCode(access, STI_UINT64, 18, "HookReturnCode");
+SF_U64 const sfReferenceCount(access, STI_UINT64, 19, "ReferenceCount");
+
 
 // 128-bit
 SF_U128 const sfEmailHash(access, STI_HASH128, 1, "EmailHash");
@@ -157,6 +177,10 @@ SF_U256 const
     sfRootIndex(access, STI_HASH256, 8, "RootIndex", SField::sMD_Always);
 SF_U256 const sfAccountTxnID(access, STI_HASH256, 9, "AccountTxnID");
 
+SF_U256 const sfEmitParentTxnID(access, STI_HASH256, 10, "EmitParentTxnID");
+SF_U256 const sfEmitNonce(access, STI_HASH256, 11, "EmitNonce");
+SF_U256 const sfEmitHookHash(access, STI_HASH256, 12, "EmitHookHash");
+
 // 256-bit (uncommon)
 SF_U256 const sfBookDirectory(access, STI_HASH256, 16, "BookDirectory");
 SF_U256 const sfInvoiceID(access, STI_HASH256, 17, "InvoiceID");
@@ -168,6 +192,10 @@ SF_U256 const sfPayChannel(access, STI_HASH256, 22, "Channel");
 SF_U256 const sfConsensusHash(access, STI_HASH256, 23, "ConsensusHash");
 SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
+SF_U256 const sfHookStateKey(access, STI_HASH256, 26, "HookStateKey");
+SF_U256 const sfHookHash(access, STI_HASH256, 27, "HookHash");
+SF_U256 const sfHookNamespace(access, STI_HASH256, 28, "HookNamespace");
+SF_U256 const sfHookSetTxnID(access, STI_HASH256, 29, "HookSetTxnID");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");
@@ -227,6 +255,10 @@ SF_Blob const sfUNLModifyValidator(access, STI_VL, 19, "UNLModifyValidator");
 SF_Blob const sfNegativeUNLToDisable(access, STI_VL, 20, "ValidatorToDisable");
 SF_Blob const
     sfNegativeUNLToReEnable(access, STI_VL, 21, "ValidatorToReEnable");
+SF_Blob const sfHookStateData(access, STI_VL, 22, "HookStateData");
+SF_Blob const sfHookReturnString(access, STI_VL, 23, "HookReturnString");
+SF_Blob const sfHookParameterName(access, STI_VL, 24, "HookParameterName");
+SF_Blob const sfHookParameterValue(access, STI_VL, 25, "HookParameterValue");
 
 // account
 SF_Account const sfAccount(access, STI_ACCOUNT, 1, "Account");
@@ -237,6 +269,10 @@ SF_Account const sfAuthorize(access, STI_ACCOUNT, 5, "Authorize");
 SF_Account const sfUnauthorize(access, STI_ACCOUNT, 6, "Unauthorize");
 SF_Account const sfTarget(access, STI_ACCOUNT, 7, "Target");
 SF_Account const sfRegularKey(access, STI_ACCOUNT, 8, "RegularKey");
+
+SF_Account const sfEmitCallback(access, STI_ACCOUNT, 9, "EmitCallback"); //hook to callback when pseudo is included in a ledger 
+// account (uncommon)
+SF_Account const sfHookAccount(access, STI_ACCOUNT, 16, "HookAccount"); // used in metadata
 
 // path set
 SField const sfPaths(access, STI_PATHSET, 1, "Paths");
@@ -260,12 +296,20 @@ SField const sfNewFields(access, STI_OBJECT, 8, "NewFields");
 SField const sfTemplateEntry(access, STI_OBJECT, 9, "TemplateEntry");
 SField const sfMemo(access, STI_OBJECT, 10, "Memo");
 SField const sfSignerEntry(access, STI_OBJECT, 11, "SignerEntry");
+// if this is present on a transaction then the transaction was produced by a hook
+SField const sfEmitDetails(access, STI_OBJECT, 12, "EmitDetails");   
+SField const sfHook(access, STI_OBJECT, 13, "Hook");   
 
 // inner object (uncommon)
 SField const sfSigner(access, STI_OBJECT, 16, "Signer");
 //                                                                                 17 has not been used yet...
 SField const sfMajority(access, STI_OBJECT, 18, "Majority");
 SField const sfNegativeUNLEntry(access, STI_OBJECT, 19, "DisabledValidator");
+SField const sfEmittedTxn(access, STI_OBJECT, 20, "EmittedTxn");    // wrapper for an emitted tx
+SField const sfHookExecution(access, STI_OBJECT, 21, "HookExecution");
+SField const sfHookDefinition(access, STI_OBJECT, 22, "HookDefinition");   
+SField const sfHookParameter(access, STI_OBJECT, 23, "HookParameter");
+SField const sfHookGrant(access, STI_OBJECT, 24, "HookGrant");
 
 // array of objects
 // ARRAY/1 is reserved for end of array
@@ -284,10 +328,16 @@ SField const sfNecessary(access, STI_ARRAY, 6, "Necessary");
 SField const sfSufficient(access, STI_ARRAY, 7, "Sufficient");
 SField const sfAffectedNodes(access, STI_ARRAY, 8, "AffectedNodes");
 SField const sfMemos(access, STI_ARRAY, 9, "Memos");
+SField const sfHooks(access, STI_ARRAY, 10, "Hooks");
+
+
 
 // array of objects (uncommon)
 SField const sfMajorities(access, STI_ARRAY, 16, "Majorities");
 SField const sfNegativeUNL(access, STI_ARRAY, 17, "NegativeUNL");
+SField const sfHookExecutions(access, STI_ARRAY, 18, "HookExecutions");
+SField const sfHookParameters(access, STI_ARRAY, 19, "HookParameters");
+SField const sfHookGrants(access, STI_ARRAY, 20, "HookGrants");
 
 SField::SField(
     private_access_tag_t,

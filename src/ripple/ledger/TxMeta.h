@@ -108,6 +108,24 @@ public:
         mDelivered.reset(delivered);
     }
 
+    STArray const&
+    getHookExecutions() const
+    {
+        return *mHookExecutions;
+    }
+
+    void
+    setHookExecutions(const STArray& hookExecutions)
+    {
+        mHookExecutions = hookExecutions;
+    }
+
+    bool
+    hasHookExecutions() const
+    {
+        return static_cast<bool>(mHookExecutions);
+    }
+
     STAmount
     getDeliveredAmount() const
     {
@@ -128,6 +146,7 @@ private:
     int mResult;
 
     boost::optional<STAmount> mDelivered;
+    boost::optional<STArray> mHookExecutions;
 
     STArray mNodes;
 };

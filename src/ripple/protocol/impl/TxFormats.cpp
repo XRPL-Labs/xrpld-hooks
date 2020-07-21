@@ -40,6 +40,8 @@ TxFormats::TxFormats()
         {sfSigningPubKey, soeREQUIRED},
         {sfTxnSignature, soeOPTIONAL},
         {sfSigners, soeOPTIONAL},  // submit_multisigned
+        {sfEmitDetails, soeOPTIONAL},
+        {sfFirstLedgerSequence, soeOPTIONAL},
     };
 
     add(jss::AccountSet,
@@ -138,6 +140,14 @@ TxFormats::TxFormats()
         {
             {sfLedgerSequence, soeREQUIRED},
             {sfAmendment, soeREQUIRED},
+        },
+        commonFields);
+
+    add(jss::EmitFailure,
+        ttEMIT_FAILURE,
+        {
+            {sfLedgerSequence, soeREQUIRED},
+            {sfTransactionHash, soeREQUIRED},
         },
         commonFields);
 
@@ -258,6 +268,13 @@ TxFormats::TxFormats()
         {
             {sfAuthorize, soeOPTIONAL},
             {sfUnauthorize, soeOPTIONAL},
+        },
+        commonFields);
+    
+    add(jss::SetHook,
+        ttHOOK_SET,
+        {
+            {sfHooks, soeREQUIRED},
         },
         commonFields);
 }

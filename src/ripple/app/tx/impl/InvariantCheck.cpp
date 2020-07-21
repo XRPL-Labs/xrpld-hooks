@@ -366,6 +366,10 @@ LedgerEntryTypesMatch::visitEntry(
             case ltCHECK:
             case ltDEPOSIT_PREAUTH:
             case ltNEGATIVE_UNL:
+            case ltHOOK:
+            case ltHOOK_DEFINITION:
+            case ltHOOK_STATE:
+            case ltEMITTED:
                 break;
             default:
                 invalidTypeAdded_ = true;

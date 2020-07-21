@@ -40,7 +40,7 @@ STLedgerEntry::STLedgerEntry(Keylet const& k)
     auto const format = LedgerFormats::getInstance().findByType(type_);
 
     if (format == nullptr)
-        Throw<std::runtime_error>("invalid ledger entry type");
+        Throw<std::runtime_error>("invalid ledger entry type: ");
 
     set(format->getSOTemplate());
 

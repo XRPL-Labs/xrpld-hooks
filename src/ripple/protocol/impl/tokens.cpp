@@ -202,6 +202,7 @@ template <class InverseArray>
 static std::string
 decodeBase58(std::string const& s, InverseArray const& inv)
 {
+
     auto psz = s.c_str();
     auto remain = s.size();
     // Skip and count leading zeroes
@@ -214,7 +215,9 @@ decodeBase58(std::string const& s, InverseArray const& inv)
     }
 
     if (remain > 64)
+    {
         return {};
+    }
 
     // Allocate enough space in big-endian base256 representation.
     // log(58) / log(256), rounded up.
@@ -223,7 +226,9 @@ decodeBase58(std::string const& s, InverseArray const& inv)
     {
         auto carry = inv[*psz];
         if (carry == -1)
+        {
             return {};
+        }
         // Apply "b256 = b256 * 58 + carry".
         for (auto iter = b256.rbegin(); iter != b256.rend(); ++iter)
         {
@@ -243,6 +248,7 @@ decodeBase58(std::string const& s, InverseArray const& inv)
     result.assign(zeroes, 0x00);
     while (iter != b256.end())
         result.push_back(*(iter++));
+    
     return result;
 }
 

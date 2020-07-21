@@ -17,6 +17,7 @@
 */
 //==============================================================================
 
+#include <ripple/app/tx/applyHook.h>
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/tx/apply.h>
@@ -32,6 +33,19 @@
 #include <ripple/protocol/Protocol.h>
 #include <ripple/protocol/STAccount.h>
 #include <ripple/protocol/UintTypes.h>
+#include <limits>
+
+
+//RH TODO: remove after debugging
+#include <sys/types.h>
+#include <unistd.h>
+#include <sys/syscall.h>
+//--------
+
+#define PRINTFTHREAD(x)\
+{\
+    printf("%s - %d\n", x, syscall(__NR_gettid));\
+}
 
 namespace ripple {
 
@@ -73,6 +87,13 @@ preflight1(PreflightContext const& ctx)
         JLOG(ctx.j.debug()) << "preflight1: invalid fee";
         return temBAD_FEE;
     }
+
+    // if a hook emitted this transaction we bypass signature checks
+    // there is a bar to circularing emitted transactions on the network
+    // in their prevalidated form so this is safe
+    if (ctx.rules.enabled(featureHooks) &&
+        hook::isEmittedTxn(ctx.tx))
+        return tesSUCCESS;
 
     auto const spk = ctx.tx.getSigningPubKey();
 
@@ -117,6 +138,64 @@ Transactor::Transactor(ApplyContext& ctx) : ctx_(ctx), j_(ctx.journal)
 {
 }
 
+inline
+std::optional<AccountID>
+getDestinationAccount(STTx const& tx)
+{
+    if (tx.isFieldPresent(sfOwner))
+        return tx.getAccountID(sfOwner);
+    
+    if (tx.isFieldPresent(sfDestination))
+        return tx.getAccountID(sfDestination);
+
+    return std::nullopt;
+}
+
+FeeUnit64
+Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet)
+{
+
+    PRINTFTHREAD("PATH X1");
+    std::shared_ptr<SLE const> hookSLE = view.read(hookKeylet);
+    PRINTFTHREAD("PATH X2");
+    if (!hookSLE)
+        return FeeUnit64{0};
+
+    PRINTFTHREAD("PATH X3");
+    FeeUnit64 fee{0};
+    PRINTFTHREAD("PATH X4");
+
+    auto const& hooks = hookSLE->getFieldArray(sfHooks);
+    PRINTFTHREAD("PATH X5");
+    for (auto const& hook : hooks)
+    {
+        PRINTFTHREAD("PATH X6");
+        ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
+        
+        PRINTFTHREAD("PATH X7");
+
+        if (hookObj->getCount() == 0) // skip blanks
+            continue;
+        
+        PRINTFTHREAD("PATH X8");
+
+        uint256 const& hash = hookObj->getFieldH256(sfHookHash);
+            
+        PRINTFTHREAD("PATH X9");
+
+        std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(hash));
+            
+        fee += FeeUnit64{
+            (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
+        };
+        PRINTFTHREAD("PATH X10");
+    }
+
+    PRINTFTHREAD("PATH X11");
+    return fee;
+    
+}
+
 FeeUnit64
 Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
 {
@@ -132,7 +211,61 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
     std::size_t const signerCount =
         tx.isFieldPresent(sfSigners) ? tx.getFieldArray(sfSigners).size() : 0;
 
-    return baseFee + (signerCount * baseFee);
+    FeeUnit64 hookExecutionFee{0};
+    if (view.rules().enabled(featureHooks))
+    {
+        PRINTFTHREAD("PATH Z1");
+        // RH UPTO: reserve callback fee on emit, and unreserve and burn on callback
+        // if this is a "cleanup" txn we regard it as already paid up
+        if (tx.getFieldU16(sfTransactionType) == ttEMIT_FAILURE)
+            return FeeUnit64{0};    
+
+        PRINTFTHREAD("PATH Z2");
+        // if the txn is an emitted txn then we add the callback fee
+        // if the txn is NOT an emitted txn then we process the sending account's hook chain 
+        if (tx.isFieldPresent(sfEmitDetails))
+        {
+        
+            PRINTFTHREAD("PATH Z3");
+            STObject const& emitDetails = 
+                const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
+            
+            PRINTFTHREAD("PATH Z4");
+
+            uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
+            
+            PRINTFTHREAD("PATH Z5");
+
+            std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(callbackHookHash));
+            
+            PRINTFTHREAD("PATH Z6");
+            
+            if (hookDef)
+                hookExecutionFee += FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())};
+
+            PRINTFTHREAD("PATH Z7");
+        }
+        else
+            hookExecutionFee +=
+                calculateHookChainFee(view, tx, keylet::hook(tx.getAccountID(sfAccount)));
+    
+        PRINTFTHREAD("PATH Z8");
+
+        std::optional<AccountID>
+            destAccountID = getDestinationAccount(tx);
+        
+        PRINTFTHREAD("PATH Z9");
+
+        // if there is a receiving account then we also compute the fee for its hook chain
+        if (destAccountID)
+            hookExecutionFee +=
+                calculateHookChainFee(view, tx, keylet::hook(*destAccountID));
+        
+        PRINTFTHREAD("PATH Z10");
+    }
+
+    return baseFee + (signerCount * baseFee) + hookExecutionFee; // RH NOTE: hookExecutionFee = 0 
+                                                                 //          unless featureHooks enabled
 }
 
 XRPAmount
@@ -241,6 +374,22 @@ Transactor::checkSeq(PreclaimContext const& ctx)
     std::uint32_t const t_seq = ctx.tx.getSequence();
     std::uint32_t const a_seq = sle->getFieldU32(sfSequence);
 
+
+    // pass all emitted tx provided their seq is 0
+    if (ctx.view.rules().enabled(featureHooks) &&
+        hook::isEmittedTxn(ctx.tx))
+    {
+        // this is more strictly enforced in the emit() hook api
+        // here this is only acting as a sanity check in case of bugs
+        if (!ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+            return tefINTERNAL;
+        return tesSUCCESS;
+    }
+
+    // reserved for emitted tx only at this time
+    if (ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+        return tefINTERNAL;
+
     if (t_seq != a_seq)
     {
         if (a_seq < t_seq)
@@ -268,6 +417,7 @@ Transactor::checkSeq(PreclaimContext const& ctx)
         (ctx.view.seq() > ctx.tx.getFieldU32(sfLastLedgerSequence)))
         return tefMAX_LEDGER;
 
+
     return tesSUCCESS;
 }
 
@@ -276,6 +426,10 @@ Transactor::setSeq()
 {
     auto const sle = view().peek(keylet::account(account_));
     if (!sle)
+        return;
+
+    // do not update sequence of sfAccountTxnID for emitted tx
+    if (ctx_.emitted())
         return;
 
     std::uint32_t const t_seq = ctx_.tx.getSequence();
@@ -328,6 +482,11 @@ Transactor::apply()
 NotTEC
 Transactor::checkSign(PreclaimContext const& ctx)
 {
+    // hook emitted transactions do not have signatures
+    if (ctx.view.rules().enabled(featureHooks) &&
+        hook::isEmittedTxn(ctx.tx))
+        return tesSUCCESS;
+
     // If the pk is empty, then we must be multi-signing.
     if (ctx.tx.getSigningPubKey().empty())
         return checkMultiSign(ctx);
@@ -593,7 +752,12 @@ removeUnfundedOffers(
 XRPAmount
 Transactor::reset(XRPAmount fee)
 {
+    ApplyViewImpl& avi = dynamic_cast<ApplyViewImpl&>(ctx_.view());
+    std::vector<STObject> hookMeta;
+    avi.copyHookMetaData(hookMeta);
     ctx_.discard();
+    ApplyViewImpl& avi2 = dynamic_cast<ApplyViewImpl&>(ctx_.view());
+    avi2.setHookMetaData(std::move(hookMeta));
 
     auto const txnAcct =
         view().peek(keylet::account(ctx_.tx.getAccountID(sfAccount)));
@@ -622,6 +786,163 @@ Transactor::reset(XRPAmount fee)
     return fee;
 }
 
+static __inline__ unsigned long long rdtsc(void)
+{
+    unsigned hi, lo;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
+}
+
+bool /* error = true */
+gatherHookParameters(
+        std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
+        ripple::STObject const* hookObj,
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>>& parameters,
+        beast::Journal const& j_)
+{
+    if (!hookDef->isFieldPresent(sfHookParameters))
+    {
+        JLOG(j_.fatal())
+            << "HookError[]: Failure: hook def missing parameters (send)";
+        return true;
+    }
+
+    // first defaults
+    auto const& defaultParameters = hookDef->getFieldArray(sfHookParameters);
+    for (auto const& hookParameter : defaultParameters)
+    {
+        auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+        parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+            hookParameterObj->getFieldVL(sfHookParameterValue);
+    } 
+
+    // and then custom
+    if (hookObj->isFieldPresent(sfHookParameters))
+    {
+        auto const& hookParameters = hookObj->getFieldArray(sfHookParameters);
+        for (auto const& hookParameter : hookParameters)
+        {
+            auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+            parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+                hookParameterObj->getFieldVL(sfHookParameterValue);
+        } 
+    }
+    return false;
+}
+
+bool /* error = true */
+executeHookChain(
+        std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
+        std::vector<hook::HookResult>& results,
+        int& executedHookCount,
+        ripple::AccountID const& account,
+        ripple::ApplyContext& ctx,
+        beast::Journal const& j_,
+        TER& result)
+{
+    std::set<uint256> hookSkips;
+    std::map<
+        uint256,
+        std::map<
+            std::vector<uint8_t>,
+            std::vector<uint8_t>
+        >> hookParamOverrides {};
+
+    auto const& hooks = hookSLE->getFieldArray(sfHooks);
+    int hook_no = 0;
+    for (auto const& hook : hooks)
+    {
+        ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
+
+        if (hookObj->getCount() == 0) // skip blanks
+            continue;
+
+        // lookup hook definition
+        uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
+
+        if (hookSkips.find(hookHash) != hookSkips.end())
+        {
+            JLOG(j_.trace())
+                << "HookInfo: Skipping " << hookHash;
+            continue;
+        }
+
+        auto const& hookDef = ctx.view().peek(keylet::hookDefinition(hookHash));
+        if (!hookDef)
+        {
+            JLOG(j_.fatal())
+                << "HookError[]: Failure: hook def missing (send)";
+            return true;
+        }
+
+        // check if the hook can fire
+        uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
+                ? hookObj->getFieldU64(sfHookOn)
+                : hookDef->getFieldU64(sfHookOn));
+
+        if (!hook::canHook(ctx.tx.getTxnType(), hookOn))
+            continue;    // skip if it can't
+
+        // fetch the namespace either from the hook object of, if absent, the hook def
+        uint256 const& ns = 
+            (hookObj->isFieldPresent(sfHookNamespace)
+                 ?  hookObj->getFieldH256(sfHookNamespace)
+                 :  hookDef->getFieldH256(sfHookNamespace));
+
+        // gather parameters
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
+        if (gatherHookParameters(hookDef, hookObj, parameters, j_))
+            return true;
+
+        results.push_back(
+            hook::apply(
+                hookDef->getFieldH256(sfHookSetTxnID),
+                hookHash,
+                ns,
+                hookDef->getFieldVL(sfCreateCode),
+                parameters,
+                hookParamOverrides,
+                ctx,
+                account,
+                false,
+                0,
+                hook_no));
+
+        executedHookCount++;
+
+        hook::HookResult& hookResult = results.back();
+
+        if (hookResult.exitType != hook_api::ExitType::ACCEPT)
+        {
+            if (results.back().exitType == hook_api::ExitType::WASM_ERROR)
+                result = temMALFORMED;
+            return true;
+        }
+
+        // gather skips
+        for (uint256 const& hash : hookResult.hookSkips)
+            if (hookSkips.find(hash) == hookSkips.end())
+                hookSkips.emplace(hash);
+
+        // gather overrides
+        auto const& resultOverrides = hookResult.hookParamOverrides;
+        for (auto const& [hash, params] : resultOverrides)
+        {
+            if (hookParamOverrides.find(hash) == hookParamOverrides.end())
+                hookParamOverrides[hash] = {};
+
+            auto& overrides = hookParamOverrides[hash];
+            for (auto const& [k, v] : params)
+                overrides[k] = v;
+        }
+
+        hook_no++;
+    }
+    return false;
+}
+
+
+
 //------------------------------------------------------------------------------
 std::pair<TER, bool>
 Transactor::operator()()
@@ -645,7 +966,154 @@ Transactor::operator()()
     }
 #endif
 
+
     auto result = ctx_.preclaimResult;
+
+    int executedHookCount = 0;
+    bool rollback = false;
+    uint64_t prehook_cycles = rdtsc();
+
+
+    if (ctx_.view().rules().enabled(featureHooks) &&
+        (result == tesSUCCESS || result == tecHOOK_REJECTED))
+    {
+
+        auto const& ledger = ctx_.view();
+        auto const& accountID = ctx_.tx.getAccountID(sfAccount);
+        std::vector<hook::HookResult> sendResults;
+        std::vector<hook::HookResult> recvResults;
+
+        auto const& hooksSending = ledger.read(keylet::hook(accountID));
+
+        // First check if the Sending account has any hooks that can be fired
+        if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
+            rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_, result);
+
+        // Next check if the Receiving account has as a hook that can be fired...
+        std::optional<AccountID>
+            destAccountID = getDestinationAccount(ctx_.tx);
+
+        if (!rollback && destAccountID)
+        {
+            auto const& hooksReceiving = ledger.read(keylet::hook(*destAccountID));
+            if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
+                rollback =
+                    executeHookChain(hooksReceiving, recvResults, executedHookCount, *destAccountID, ctx_, j_, result);
+        }
+
+        if (rollback && result != temMALFORMED)
+            result = tecHOOK_REJECTED;
+
+        // Finally check if there is a callback
+        do
+        {
+            if (ctx_.tx.isFieldPresent(sfEmitDetails) && result == tesSUCCESS)
+            {
+                auto const& emitDetails =
+                    const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
+
+                if (!emitDetails.isFieldPresent(sfEmitCallback))
+                {
+                    JLOG(j_.fatal())
+                        << "HookError[]: Callback Processing: Failure: sfEmitCallback missing";
+                    break;
+                }
+
+                AccountID const& callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+                uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
+
+                
+                auto const& hooksCallback = ledger.read(keylet::hook(callbackAccountID));
+                auto const& hookDef = view().peek(keylet::hookDefinition(callbackHookHash));
+                if (!hookDef)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[]: Hook def missing on callback";
+                    rollback = true;
+                    break;
+                }
+
+                bool found = false;
+                auto const& hooks = hooksCallback->getFieldArray(sfHooks);
+                int hook_no = 0;
+                for (auto const& hook : hooks)
+                {
+                    hook_no++;
+
+                    STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
+
+                    if (hookObj->getCount() == 0) // skip blanks
+                        continue;
+
+                    if (hookObj->getFieldH256(sfHookHash) != callbackHookHash)
+                        continue;
+                
+                    // fetch the namespace either from the hook object of, if absent, the hook def
+                    uint256 const& ns = 
+                        (hookObj->isFieldPresent(sfHookNamespace)
+                             ?  hookObj->getFieldH256(sfHookNamespace)
+                             :  hookDef->getFieldH256(sfHookNamespace));
+
+                    executedHookCount++;
+        
+                    std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
+                    if (gatherHookParameters(hookDef, hookObj, parameters, j_))
+                    {
+                        rollback = true;
+                        break;
+                    }
+
+                    found = true;
+
+                    // this call will clean up ltEMITTED_NODE as well
+                    try {
+                    hook::apply(
+                        hookDef->getFieldH256(sfHookSetTxnID),
+                        callbackHookHash,
+                        ns,
+                        hookDef->getFieldVL(sfCreateCode),
+                        // params
+                        parameters,
+                        {},
+                        ctx_,
+                        callbackAccountID,
+                        true,
+                        safe_cast<TxType>(
+                            ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL, hook_no - 1);
+                    }
+                    catch (std::exception& e)
+                    {
+                        JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
+                    }
+
+                    break;
+                }
+
+                if (!found)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[]: Hookhash not found on callback account";
+                }
+
+                if (rollback)
+                    break;
+            }
+        }
+        while(0);
+
+        for (auto& sendResult: sendResults)
+            hook::commitChangesToLedger(sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE);
+
+        for (auto& recvResult: recvResults)
+            hook::commitChangesToLedger(recvResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
+    }
+
+    uint64_t posthook_cycles = rdtsc();
+    JLOG(j_.trace())
+        << "HookStats[]: " << executedHookCount << " hooks executed. Execution took "
+        << (posthook_cycles - prehook_cycles) << " cycles.";
+
+    // fall through allows normal apply
     if (result == tesSUCCESS)
         result = apply();
 
@@ -662,11 +1130,10 @@ Transactor::operator()()
     if (ctx_.size() > oversizeMetaDataCap)
         result = tecOVERSIZE;
 
-    if (isTecClaim(result) && (view().flags() & tapFAIL_HARD))
+    if ((isTecClaim(result) && (view().flags() & tapFAIL_HARD)))
     {
         // If the tapFAIL_HARD flag is set, a tec result
         // must not do anything
-
         ctx_.discard();
         applied = false;
     }

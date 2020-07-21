@@ -25,7 +25,10 @@
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TER.h>
 #include <boost/optional.hpp>
-
+#include <algorithm>
+#include <vector>
+#include <iterator>
+ 
 namespace ripple {
 
 /** Editable, discardable view that can build metadata for one tx.
@@ -69,6 +72,34 @@ public:
         deliver_ = amount;
     }
 
+   
+    /* Set hook metadata for a hook execution
+     * Takes ownership / use std::move
+     */
+    void
+    addHookMetaData(STObject&& hookExecution)
+    {
+        hookExecution_.push_back(std::move(hookExecution));
+    }
+
+    void
+    setHookMetaData(std::vector<STObject>&& vec)
+    {
+        hookExecution_ = std::move(vec);
+    }
+
+    void
+    copyHookMetaData(std::vector<STObject>& into)
+    {
+        std::copy(hookExecution_.begin(), hookExecution_.end(), std::back_inserter(into));
+    }
+
+    uint16_t
+    nextHookExecutionIndex()
+    {
+        return hookExecution_.size();
+    }
+
     /** Get the number of modified entries
      */
     std::size_t
@@ -87,6 +118,7 @@ public:
 
 private:
     boost::optional<STAmount> deliver_;
+    std::vector<STObject> hookExecution_;
 };
 
 }  // namespace ripple

@@ -53,6 +53,7 @@ LedgerFormats::LedgerFormats()
             {sfTransferRate, soeOPTIONAL},
             {sfDomain, soeOPTIONAL},
             {sfTickSize, soeOPTIONAL},
+            {sfHookStateCount, soeOPTIONAL}
         },
         commonFields);
 
@@ -65,6 +66,9 @@ LedgerFormats::LedgerFormats()
             {sfTakerGetsCurrency, soeOPTIONAL},  // for order book directories
             {sfTakerGetsIssuer, soeOPTIONAL},    // for order book directories
             {sfExchangeRate, soeOPTIONAL},       // for order book directories
+            {sfHookNamespace, soeOPTIONAL},      // for hook state directories
+            {sfOwnerNode, soeOPTIONAL},          // for hook state directories
+            {sfReferenceCount, soeOPTIONAL},     // for hook state directories
             {sfIndexes, soeREQUIRED},
             {sfRootIndex, soeREQUIRED},
             {sfIndexNext, soeOPTIONAL},
@@ -176,6 +180,43 @@ LedgerFormats::LedgerFormats()
         },
         commonFields);
 
+    add(jss::Hook,
+        ltHOOK,
+        {
+            {sfAccount, soeOPTIONAL},
+            {sfOwnerNode, soeREQUIRED},
+            {sfPreviousTxnID, soeREQUIRED},
+            {sfPreviousTxnLgrSeq, soeREQUIRED},
+            {sfHooks, soeREQUIRED} 
+        },
+        commonFields);
+
+    add(jss::HookDefinition,
+        ltHOOK_DEFINITION,
+        {
+            {sfHookHash, soeREQUIRED},
+            {sfHookOn, soeREQUIRED},  
+            {sfHookNamespace, soeREQUIRED},
+            {sfHookParameters, soeREQUIRED},
+            {sfHookApiVersion, soeREQUIRED},  
+            {sfCreateCode, soeREQUIRED},
+            {sfHookSetTxnID, soeREQUIRED},
+            {sfReferenceCount, soeREQUIRED},
+            {sfFee, soeREQUIRED}
+        },
+        commonFields);
+
+    add(jss::HookState,
+        ltHOOK_STATE,
+        {
+            {sfAccount, soeOPTIONAL},   //RH TODO: this can be removed for production
+            {sfOwnerNode, soeREQUIRED},   
+            {sfHookStateKey, soeREQUIRED},
+            {sfHookStateData, soeREQUIRED},
+            {sfHookNamespace, soeOPTIONAL}  // as can this
+        },
+        commonFields);
+
     add(jss::PayChannel,
         ltPAYCHAN,
         {
@@ -233,6 +274,15 @@ LedgerFormats::LedgerFormats()
             {sfNegativeUNLToReEnable, soeOPTIONAL},
         },
         commonFields);
+
+    add(jss::Emitted,
+        ltEMITTED,
+        {
+            {sfEmittedTxn, soeOPTIONAL},
+            {sfOwnerNode, soeREQUIRED},
+        },
+        commonFields);
+    
 }
 
 LedgerFormats const&

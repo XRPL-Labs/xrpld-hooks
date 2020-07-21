@@ -133,6 +133,7 @@ detail::supportedAmendments()
         "HardenedValidations",
         "fixAmendmentMajorityCalc",
         //"NegativeUNL"      // Commented out to prevent automatic enablement
+        "Hooks"
     };
     return supported;
 }
@@ -185,7 +186,8 @@ uint256 const
     fix1781                         = *getRegisteredFeature("fix1781"),
     featureHardenedValidations      = *getRegisteredFeature("HardenedValidations"),
     fixAmendmentMajorityCalc        = *getRegisteredFeature("fixAmendmentMajorityCalc"),
-    featureNegativeUNL              = *getRegisteredFeature("NegativeUNL");
+    featureNegativeUNL              = *getRegisteredFeature("NegativeUNL"),
+    featureHooks                    = *getRegisteredFeature("Hooks");
 
 // The following amendments have been active for at least two years. Their
 // pre-amendment code has been removed and the identifiers are deprecated.

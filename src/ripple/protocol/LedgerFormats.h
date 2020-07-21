@@ -88,6 +88,12 @@ enum LedgerEntryType {
 
     ltNEGATIVE_UNL = 'N',
 
+    ltHOOK ='H',
+    ltHOOK_STATE ='v',
+    ltHOOK_DEFINITION = 'D',
+
+    ltEMITTED = 'E',
+
     // No longer used or supported. Left here to prevent accidental
     // reassignment of the ledger type.
     ltNICKNAME [[deprecated]] = 'n',
@@ -112,6 +118,8 @@ enum LedgerSpecificFlags {
     lsfDefaultRipple =
         0x00800000,               // True, trust lines allow rippling by default
     lsfDepositAuth = 0x01000000,  // True, all deposits require authorization
+
+    lsfHookEnabled = 0x02000000, // True, all in and out tx will fire hook code
 
     // ltOFFER
     lsfPassive = 0x00010000,

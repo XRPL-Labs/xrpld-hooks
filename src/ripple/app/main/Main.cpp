@@ -15,8 +15,7 @@
     ACTION  OF  CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
-//==============================================================================
-
+    //==============================================================================
 #include <ripple/app/main/Application.h>
 #include <ripple/app/main/DBInit.h>
 #include <ripple/basics/Log.h>
@@ -34,8 +33,8 @@
 #include <ripple/resource/Fees.h>
 #include <ripple/rpc/RPCHandler.h>
 
-#include <beast/unit_test/match.hpp>
-#include <test/unit_test/multi_runner.h>
+//#include <beast/unit_test/match.hpp>
+//#include <test/unit_test/multi_runner.h>
 
 #include <google/protobuf/stubs/common.h>
 
@@ -185,7 +184,6 @@ printHelp(const po::options_description& desc)
 
 /* simple unit test selector that allows a comma separated list
  * of selectors
- */
 class multi_selector
 {
 private:
@@ -299,6 +297,7 @@ runUnitTests(
     }
 }
 
+ */
 //------------------------------------------------------------------------------
 
 int
@@ -306,6 +305,7 @@ run(int argc, char** argv)
 {
     using namespace std;
 
+    
     beast::setCurrentThreadName(
         "rippled: main " + BuildInfo::getVersionString());
 
@@ -459,7 +459,7 @@ run(int argc, char** argv)
     // Run the unit tests if requested.
     // The unit tests will exit the application with an appropriate return code.
     //
-    if (vm.count("unittest"))
+/*    if (vm.count("unittest"))
     {
         std::string argument;
 
@@ -495,7 +495,7 @@ run(int argc, char** argv)
             return 1;
         }
     }
-
+*/
     auto config = std::make_unique<Config>();
 
     auto configFile =
@@ -742,9 +742,11 @@ run(int argc, char** argv)
 
 // Must be outside the namespace for obvious reasons
 //
+
 int
 main(int argc, char** argv)
 {
+
 #if BOOST_OS_WINDOWS
     {
         // Work around for https://svn.boost.org/trac/boost/ticket/10657

@@ -56,9 +56,14 @@ enum TxType {
     ttTRUST_SET = 20,
     ttACCOUNT_DELETE = 21,
 
+    ttHOOK_SET = 22,
+    ttLOT       [[maybe_unused]] = 23,
+    ttBATCH     [[maybe_unused]] = 24,
+
     ttAMENDMENT = 100,
     ttFEE = 101,
     ttUNL_MODIFY = 102,
+    ttEMIT_FAILURE = 103,
 };
 
 /** Manages the list of known transaction formats.

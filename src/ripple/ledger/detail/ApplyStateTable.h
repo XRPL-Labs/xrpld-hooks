@@ -70,6 +70,7 @@ public:
         STTx const& tx,
         TER ter,
         boost::optional<STAmount> const& deliver,
+        std::vector<STObject> const& hookExecution,
         beast::Journal j);
 
     bool

@@ -241,6 +241,7 @@ OpenView::rawTxInsert(
     std::shared_ptr<Serializer const> const& metaData)
 {
     auto const result = txs_.emplace(key, std::make_pair(txn, metaData));
+//    std::cout << "rawTxInsert: duplicate TX id" << to_string(key) << " (would be fatal)\n";
     if (!result.second)
         LogicError("rawTxInsert: duplicate TX id" + to_string(key));
 }

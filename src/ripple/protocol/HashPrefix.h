@@ -84,6 +84,12 @@ enum class HashPrefix : std::uint32_t {
 
     /** Payment Channel Claim */
     paymentChannelClaim = detail::make_hash_prefix('C', 'L', 'M'),
+
+    /** Emit Transaction Nonce */
+    emitTxnNonce = detail::make_hash_prefix('E', 'T', 'X'),
+
+    /* Hash of a Hook's actual code */
+    hookDefinition = detail::make_hash_prefix('W', 'S', 'M')
 };
 
 template <class Hasher>

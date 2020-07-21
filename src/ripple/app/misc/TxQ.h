@@ -215,6 +215,8 @@ public:
         FeeLevel64 feeLevel;
         /// LastValidLedger field of the queued transaction, if any
         boost::optional<LedgerIndex const> lastValid;
+        /// FirstValidLedger field of the queued transaction, if any
+        boost::optional<LedgerIndex const> firstValid;
         /** Potential @ref TxConsequences of applying the queued transaction
             to the open ledger, if known.
 
@@ -534,6 +536,8 @@ private:
         /// Expiration ledger for the transaction
         /// (`sfLastLedgerSequence` field).
         boost::optional<LedgerIndex> lastValid;
+
+        boost::optional<LedgerIndex> firstValid;
         /// Transaction sequence number (`sfSequence` field).
         TxSeq const sequence;
         /**
