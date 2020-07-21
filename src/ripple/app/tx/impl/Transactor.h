@@ -25,6 +25,13 @@
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/beast/utility/Journal.h>
 
+namespace hook {
+    // RH TODO: fix applyHook.h so this prototype isn't needed
+    struct HookContext;
+    struct HookResult;
+    bool isEmittedTxn(ripple::STTx const& tx);
+}
+
 namespace ripple {
 
 /** State information when preflighting a tx. */
@@ -47,6 +54,7 @@ public:
     PreflightContext&
     operator=(PreflightContext const&) = delete;
 };
+
 
 /** State information when determining if a tx is likely to claim a fee. */
 struct PreclaimContext
@@ -99,6 +107,7 @@ protected:
 
 public:
     enum ConsequencesFactoryType { Normal, Blocker, Custom };
+    
     /** Process the transaction. */
     std::pair<TER, bool>
     operator()();
@@ -137,9 +146,13 @@ public:
     static NotTEC
     checkSign(PreclaimContext const& ctx);
 
+
     // Returns the fee in fee units, not scaled for load.
     static FeeUnit64
     calculateBaseFee(ReadView const& view, STTx const& tx);
+    
+    static FeeUnit64
+    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
 
     static TER
     preclaim(PreclaimContext const& ctx)

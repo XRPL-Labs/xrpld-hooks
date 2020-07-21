@@ -58,6 +58,7 @@ JSS(DepositPreauth);         // transaction and ledger type.
 JSS(Destination);            // in: TransactionSign; field.
 JSS(DirectoryNode);          // ledger type.
 JSS(EnableAmendment);        // transaction type.
+JSS(EmitFailure);            // transaction type. (cleanup emit)
 JSS(Escrow);                 // ledger type.
 JSS(EscrowCancel);           // transaction type.
 JSS(EscrowCreate);           // transaction type.
@@ -89,6 +90,11 @@ JSS(SendMax);                // in: TransactionSign
 JSS(Sequence);               // in/out: TransactionSign; field.
 JSS(SetFlag);                // field.
 JSS(SetRegularKey);          // transaction type.
+JSS(SetHook);                // transaction type.
+JSS(Hook);                   // ledger type.
+JSS(HookState);              // ledger type.
+JSS(HookDefinition);
+JSS(Emitted);                // ledger type.
 JSS(SignerList);             // ledger type.
 JSS(SignerListSet);          // transaction type.
 JSS(SigningPubKey);          // field.

@@ -429,12 +429,14 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/Payment.cpp
   src/ripple/app/tx/impl/SetAccount.cpp
   src/ripple/app/tx/impl/SetRegularKey.cpp
+  src/ripple/app/tx/impl/SetHook.cpp
   src/ripple/app/tx/impl/SetSignerList.cpp
   src/ripple/app/tx/impl/SetTrust.cpp
   src/ripple/app/tx/impl/SignerEntries.cpp
   src/ripple/app/tx/impl/Taker.cpp
   src/ripple/app/tx/impl/Transactor.cpp
   src/ripple/app/tx/impl/apply.cpp
+  src/ripple/app/tx/impl/applyHook.cpp
   src/ripple/app/tx/impl/applySteps.cpp
   #[===============================[
      main sources:
@@ -981,6 +983,8 @@ target_link_libraries (rippled
   Ripple::opts
   Ripple::libs
   Ripple::xrpl_core
+  libssvm
+  #  /usr/lib/libwasmer.a
   )
 exclude_if_included (rippled)
 # define a macro for tests that might need to

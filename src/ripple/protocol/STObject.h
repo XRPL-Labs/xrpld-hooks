@@ -619,7 +619,7 @@ public:
         if (auto cf = dynamic_cast<Bits*>(rf))
             cf->setValue(v);
         else
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
     }
 
     STObject&
@@ -691,7 +691,7 @@ private:
         const T* cf = dynamic_cast<const T*>(rf);
 
         if (!cf)
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
 
         return cf->value();
     }
@@ -718,7 +718,7 @@ private:
         const T* cf = dynamic_cast<const T*>(rf);
 
         if (!cf)
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
 
         return *cf;
     }
@@ -741,7 +741,7 @@ private:
         T* cf = dynamic_cast<T*>(rf);
 
         if (!cf)
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
 
         cf->setValue(std::move(value));
     }
@@ -762,7 +762,7 @@ private:
         T* cf = dynamic_cast<T*>(rf);
 
         if (!cf)
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
 
         (*cf) = value;
     }
@@ -783,7 +783,7 @@ private:
         T* cf = dynamic_cast<T*>(rf);
 
         if (!cf)
-            Throw<std::runtime_error>("Wrong field type");
+            Throw<std::runtime_error>("Wrong field type " + field.fieldName);
 
         return *cf;
     }

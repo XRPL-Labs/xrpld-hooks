@@ -114,6 +114,8 @@ enum TEMcodes : TERUnderlyingType {
     temINVALID_ACCOUNT_ID,
     temCANNOT_PREAUTH_SELF,
     temINVALID_COUNT,
+    temHOOK_DATA_TOO_LARGE,
+    temHOOK_REJECTED,
 
     temUNCERTAIN,  // An internal intermediate result; should never be returned.
     temUNKNOWN,    // An internal intermediate result; should never be returned.
@@ -200,6 +202,7 @@ enum TERcodes : TERUnderlyingType {
     terNO_RIPPLE,    // Rippling not allowed
     terQUEUED,       // Transaction is being held in TxQ until fee drops
     terPRE_TICKET,   // Ticket is not yet in ledger but might be on its way
+    terNO_HOOK       // Transaction requires a non-existent hook definition (referenced by sfHookHash)
 };
 
 //------------------------------------------------------------------------------
@@ -278,7 +281,8 @@ enum TECcodes : TERUnderlyingType {
     tecKILLED = 150,
     tecHAS_OBLIGATIONS = 151,
     tecTOO_SOON = 152,
-    tecHOOK_ERROR [[maybe_unused]] = 153
+    tecHOOK_REJECTED = 153,
+    tecREQUIRES_FLAG = 154,
 };
 
 //------------------------------------------------------------------------------

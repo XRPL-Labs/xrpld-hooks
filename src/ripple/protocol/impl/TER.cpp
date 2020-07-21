@@ -80,6 +80,7 @@ transResults()
         MAKE_ERROR(tecKILLED,                 "FillOrKill offer killed."),
         MAKE_ERROR(tecHAS_OBLIGATIONS,        "The account cannot be deleted since it has obligations."),
         MAKE_ERROR(tecTOO_SOON,               "It is too early to attempt the requested operation. Please wait."),
+        MAKE_ERROR(tecHOOK_REJECTED,          "Rejected by hook on sending or receiving account."),
 
         MAKE_ERROR(tefALREADY,                "The exact transaction was already in this ledger."),
         MAKE_ERROR(tefBAD_ADD_AUTH,           "Not authorized to add account."),

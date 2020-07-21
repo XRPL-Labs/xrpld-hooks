@@ -42,6 +42,11 @@ STArray::STArray(int n)
     v_.reserve(n);
 }
 
+STArray::STArray(std::vector<STObject> const& v, SField const& f) : STBase(f)
+{
+    v_ = v;
+}
+
 STArray::STArray(SField const& f) : STBase(f)
 {
 }
@@ -74,7 +79,7 @@ STArray::STArray(SerialIter& sit, SField const& f, int depth) : STBase(f)
         {
             JLOG(debugLog().error())
                 << "Unknown field: " << type << "/" << field;
-            Throw<std::runtime_error>("Unknown field");
+            Throw<std::runtime_error>("Unknown field - In Array");
         }
 
         if (fn.fieldType != STI_OBJECT)

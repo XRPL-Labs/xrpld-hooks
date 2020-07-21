@@ -35,6 +35,7 @@
 #include <ripple/app/tx/impl/SetRegularKey.h>
 #include <ripple/app/tx/impl/SetSignerList.h>
 #include <ripple/app/tx/impl/SetTrust.h>
+#include <ripple/app/tx/impl/SetHook.h>
 
 namespace ripple {
 
@@ -131,7 +132,10 @@ invoke_preflight(PreflightContext const& ctx)
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return invoke_preflight_helper<Change>(ctx);
+        case ttHOOK_SET:
+            return invoke_preflight_helper<SetHook>(ctx);
         default:
             assert(false);
             return {temUNKNOWN, TxConsequences{temUNKNOWN}};
@@ -146,6 +150,7 @@ template <class T>
 static TER
 invoke_preclaim(PreclaimContext const& ctx)
 {
+
     // If the transactor requires a valid account and the transaction doesn't
     // list one, preflight will have already a flagged a failure.
     auto const id = ctx.tx.getAccountID(sfAccount);
@@ -219,9 +224,12 @@ invoke_preclaim(PreclaimContext const& ctx)
             return invoke_preclaim<CreateTicket>(ctx);
         case ttTRUST_SET:
             return invoke_preclaim<SetTrust>(ctx);
+        case ttHOOK_SET:
+            return invoke_preclaim<SetHook>(ctx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return invoke_preclaim<Change>(ctx);
         default:
             assert(false);
@@ -272,9 +280,12 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
             return CreateTicket::calculateBaseFee(view, tx);
         case ttTRUST_SET:
             return SetTrust::calculateBaseFee(view, tx);
+        case ttHOOK_SET:
+            return SetHook::calculateBaseFee(view, tx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return Change::calculateBaseFee(view, tx);
         default:
             assert(false);
@@ -324,6 +335,7 @@ TxConsequences::TxConsequences(STTx const& tx, std::uint32_t sequencesConsumed)
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)
 {
+
     switch (ctx.tx.getTxnType())
     {
         case ttACCOUNT_DELETE: {
@@ -402,9 +414,14 @@ invoke_apply(ApplyContext& ctx)
             SetTrust p(ctx);
             return p();
         }
+        case ttHOOK_SET: {
+            SetHook p(ctx);
+            return p();
+        }
         case ttAMENDMENT:
         case ttFEE:
-        case ttUNL_MODIFY: {
+        case ttUNL_MODIFY: 
+        case ttEMIT_FAILURE: {
             Change p(ctx);
             return p();
         }
@@ -505,6 +522,7 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
     {
         if (!preclaimResult.likelyToClaimFee)
             return {preclaimResult.ter, false};
+
         ApplyContext ctx(
             app,
             view,

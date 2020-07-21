@@ -60,6 +60,12 @@ enum class LedgerNameSpace : std::uint16_t {
     CHECK = 'C',
     DEPOSIT_PREAUTH = 'p',
     NEGATIVE_UNL = 'N',
+    HOOK = 'H',
+    HOOK_STATE_DIR = 'J',
+    HOOK_STATE = 'v',
+    HOOK_DEFINITION = 'D',
+    EMITTED = 'E',
+    EMITTED_DIR = 'F',
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.
@@ -125,6 +131,44 @@ getTicketIndex(AccountID const& account, SeqProxy ticketSeq)
 //------------------------------------------------------------------------------
 
 namespace keylet {
+
+Keylet const&
+emittedDir() noexcept
+{
+    static Keylet const ret{
+        ltDIR_NODE, indexHash(LedgerNameSpace::EMITTED_DIR)};
+    return ret;
+}
+
+Keylet 
+hookStateDir(AccountID const& id, uint256 const& ns) noexcept
+{
+    return {ltDIR_NODE, indexHash(LedgerNameSpace::HOOK_STATE_DIR, id, ns)};
+}
+
+Keylet
+emitted(uint256 const& id) noexcept
+{
+    return {ltEMITTED, indexHash(LedgerNameSpace::EMITTED, id)};
+}
+
+Keylet
+hook(AccountID const& id) noexcept
+{
+    return {ltHOOK, indexHash(LedgerNameSpace::HOOK, id)};
+}
+
+Keylet
+hookDefinition(uint256 const& hash) noexcept
+{
+    return {ltHOOK_DEFINITION, indexHash(LedgerNameSpace::HOOK_DEFINITION, hash)};
+}
+
+Keylet
+hookState(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept
+{
+    return {ltHOOK_STATE, indexHash(LedgerNameSpace::HOOK_STATE, id, key, ns)};
+}
 
 Keylet
 account(AccountID const& id) noexcept

@@ -19,6 +19,8 @@ bin/project-cache.jam
 # Ignore backup/temps
 *~
 
+build/docker
+
 # Ignore object files.
 *.o
 build

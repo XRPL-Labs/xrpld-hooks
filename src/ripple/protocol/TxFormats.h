@@ -122,7 +122,7 @@ enum TxType : std::uint16_t
     ttACCOUNT_DELETE = 21,
 
     /** This transaction type installs a hook. */
-    ttHOOK_SET [[maybe_unused]] = 22,
+    ttHOOK_SET = 22,
 
     /** This system-generated transaction type is used to update the status of the various amendments.
 
@@ -141,6 +141,7 @@ enum TxType : std::uint16_t
         For details, see: https://xrpl.org/negative-unl.html
      */
     ttUNL_MODIFY = 102,
+    ttEMIT_FAILURE = 103,
 };
 // clang-format on
 

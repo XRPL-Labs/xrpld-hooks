@@ -53,6 +53,12 @@ OpenLedger::current() const
     return current_;
 }
 
+std::shared_ptr<OpenView const>
+OpenLedger::current_unsafe() const
+{
+    return current_;
+}
+
 bool
 OpenLedger::modify(modify_type const& f)
 {

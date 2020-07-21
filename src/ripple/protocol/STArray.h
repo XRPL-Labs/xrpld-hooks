@@ -41,6 +41,7 @@ public:
     STArray(STArray&&);
     STArray(STArray const&) = default;
     STArray(SField const& f, int n);
+    STArray(std::vector<STObject> const& v, SField const& f); // copy assignment constructor from std::vector
     STArray(SerialIter& sit, SField const& f, int depth = 0);
     explicit STArray(int n);
     explicit STArray(SField const& f);

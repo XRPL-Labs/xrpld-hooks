@@ -43,7 +43,7 @@ enum ApplyFlags : std::uint32_t {
     tapPREFER_QUEUE = 0x40,
 
     // Transaction came from a privileged source
-    tapUNLIMITED = 0x400,
+    tapUNLIMITED = 0x400
 };
 
 constexpr ApplyFlags

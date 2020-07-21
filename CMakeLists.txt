@@ -41,6 +41,7 @@ include(RippledInterface)
 
 ###
 
+include(deps/libssvm)
 include(deps/Boost)
 include(deps/OpenSSL)
 include(deps/Secp256k1)
@@ -65,5 +66,4 @@ include(RippledCore)
 include(RippledInstall)
 include(RippledCov)
 include(RippledMultiConfig)
-include(RippledDocs)
 include(RippledValidatorKeys)

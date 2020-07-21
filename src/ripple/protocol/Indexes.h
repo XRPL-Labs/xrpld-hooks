@@ -49,6 +49,25 @@ class SeqProxy;
 */
 namespace keylet {
 
+/** The (fixed) index of the object containing the emitted txns for the ledger. */
+Keylet const&
+emittedDir() noexcept;
+
+Keylet
+emitted(uint256 const& id) noexcept;
+
+Keylet
+hookDefinition(uint256 const& hash) noexcept;
+
+Keylet
+hook(AccountID const& id) noexcept;
+
+Keylet
+hookState(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept;
+
+Keylet
+hookStateDir(AccountID const& id, uint256 const& ns) noexcept;
+
 /** AccountID root */
 Keylet
 account(AccountID const& id) noexcept;

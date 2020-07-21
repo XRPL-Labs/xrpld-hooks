@@ -2,7 +2,7 @@
    declare user options/settings
 #]===================================================================]
 
-option (assert "Enables asserts, even in release builds" OFF)
+option (assert "Enables asserts, even in release builds" ON)
 
 option (reporting "Build rippled with reporting mode enabled" OFF)
 
@@ -15,7 +15,7 @@ if (unity)
     set (unity OFF CACHE BOOL "unity only available for cmake 3.16+" FORCE)
   else ()
     if (NOT is_ci)
-      set (CMAKE_UNITY_BUILD_BATCH_SIZE 15 CACHE STRING "")
+      set (CMAKE_UNITY_BUILD_BATCH_SIZE 5 CACHE STRING "")
     endif ()
   endif ()
 endif ()

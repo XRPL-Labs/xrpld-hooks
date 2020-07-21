@@ -115,6 +115,7 @@ ApplyStateTable::apply(
     STTx const& tx,
     TER ter,
     std::optional<STAmount> const& deliver,
+    std::vector<STObject> const& hookExecution,
     beast::Journal j)
 {
     // Build metadata and insert
@@ -126,6 +127,10 @@ ApplyStateTable::apply(
         TxMeta meta(tx.getTransactionID(), to.seq());
         if (deliver)
             meta.setDeliveredAmount(*deliver);
+
+        if (!hookExecution.empty())
+            meta.setHookExecutions(STArray{hookExecution, sfHookExecutions});
+
         Mods newMod;
         for (auto& item : items_)
         {

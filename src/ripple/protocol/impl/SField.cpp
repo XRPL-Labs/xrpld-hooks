@@ -59,12 +59,15 @@ static SField::private_access_tag_t access;
 #pragma push_macro("CONSTRUCT_TYPED_SFIELD")
 #undef CONSTRUCT_TYPED_SFIELD
 
+#define XSTR(x) STR(x)
+#define STR(x) #x
+
 #define CONSTRUCT_TYPED_SFIELD(sfName, txtName, stiSuffix, fieldValue, ...) \
     SF_##stiSuffix const sfName(                                            \
         access, STI_##stiSuffix, fieldValue, txtName, ##__VA_ARGS__);       \
     static_assert(                                                          \
         std::string_view(#sfName) == "sf" txtName,                          \
-        "Declaration of SField does not match its text name")
+        "Declaration of SField does not match its text name: " txtName)
 
 // clang-format off
 
@@ -88,6 +91,7 @@ CONSTRUCT_TYPED_SFIELD(sfTransactionResult,     "TransactionResult",    UINT8,  
 // 8-bit integers (uncommon)
 CONSTRUCT_TYPED_SFIELD(sfTickSize,              "TickSize",             UINT8,     16);
 CONSTRUCT_TYPED_SFIELD(sfUNLModifyDisabling,    "UNLModifyDisabling",   UINT8,     17);
+CONSTRUCT_TYPED_SFIELD(sfHookResult,            "HookResult",           UINT8,     18);
 
 // 16-bit integers
 CONSTRUCT_TYPED_SFIELD(sfLedgerEntryType,       "LedgerEntryType",      UINT16,     1, SField::sMD_Never);
@@ -95,7 +99,11 @@ CONSTRUCT_TYPED_SFIELD(sfTransactionType,       "TransactionType",      UINT16, 
 CONSTRUCT_TYPED_SFIELD(sfSignerWeight,          "SignerWeight",         UINT16,     3);
 
 // 16-bit integers (uncommon)
-CONSTRUCT_TYPED_SFIELD(sfVersion,               "Version",              UINT16,    16);
+CONSTRUCT_TYPED_SFIELD(sfVersion,               "Version",              UINT16,     16);
+CONSTRUCT_TYPED_SFIELD(sfHookStateChangeCount,  "HookStateChangeCount", UINT16,     17);
+CONSTRUCT_TYPED_SFIELD(sfHookEmitCount,         "HookEmitCount",        UINT16,     18);
+CONSTRUCT_TYPED_SFIELD(sfHookExecutionIndex,    "HookExecutionIndex",   UINT16,     19);
+CONSTRUCT_TYPED_SFIELD(sfHookApiVersion,        "HookApiVersion",       UINT16,     20);
 
 // 32-bit integers (common)
 CONSTRUCT_TYPED_SFIELD(sfFlags,                 "Flags",                UINT32,     2);
@@ -139,6 +147,8 @@ CONSTRUCT_TYPED_SFIELD(sfSignerListID,          "SignerListID",         UINT32, 
 CONSTRUCT_TYPED_SFIELD(sfSettleDelay,           "SettleDelay",          UINT32,    39);
 CONSTRUCT_TYPED_SFIELD(sfTicketCount,           "TicketCount",          UINT32,    40);
 CONSTRUCT_TYPED_SFIELD(sfTicketSequence,        "TicketSequence",       UINT32,    41);
+CONSTRUCT_TYPED_SFIELD(sfHookStateCount,        "HookStateCount",       UINT32,    42);
+CONSTRUCT_TYPED_SFIELD(sfEmitGeneration,        "EmitGeneration",       UINT32,    43);
 
 // 64-bit integers
 CONSTRUCT_TYPED_SFIELD(sfIndexNext,             "IndexNext",            UINT64,     1);
@@ -152,6 +162,13 @@ CONSTRUCT_TYPED_SFIELD(sfHighNode,              "HighNode",             UINT64, 
 CONSTRUCT_TYPED_SFIELD(sfDestinationNode,       "DestinationNode",      UINT64,     9);
 CONSTRUCT_TYPED_SFIELD(sfCookie,                "Cookie",               UINT64,    10);
 CONSTRUCT_TYPED_SFIELD(sfServerVersion,         "ServerVersion",        UINT64,    11);
+CONSTRUCT_TYPED_SFIELD(sfEmitBurden,            "EmitBurden",           UINT64,    12);
+
+// 64-bit integers (uncommon)
+CONSTRUCT_TYPED_SFIELD(sfHookOn,                "HookOn",               UINT64,    16);
+CONSTRUCT_TYPED_SFIELD(sfHookInstructionCount,  "HookInstructionCount", UINT64,    17);
+CONSTRUCT_TYPED_SFIELD(sfHookReturnCode,        "HookReturnCode",       UINT64,    18);
+CONSTRUCT_TYPED_SFIELD(sfReferenceCount,        "ReferenceCount",       UINT64,    19);
 
 // 128-bit
 CONSTRUCT_TYPED_SFIELD(sfEmailHash,             "EmailHash",            HASH128,    1);
@@ -172,6 +189,9 @@ CONSTRUCT_TYPED_SFIELD(sfLedgerIndex,           "LedgerIndex",          HASH256,
 CONSTRUCT_TYPED_SFIELD(sfWalletLocator,         "WalletLocator",        HASH256,    7);
 CONSTRUCT_TYPED_SFIELD(sfRootIndex,             "RootIndex",            HASH256,    8, SField::sMD_Always);
 CONSTRUCT_TYPED_SFIELD(sfAccountTxnID,          "AccountTxnID",         HASH256,    9);
+CONSTRUCT_TYPED_SFIELD(sfEmitParentTxnID,       "EmitParentTxnID",      HASH256,   10);
+CONSTRUCT_TYPED_SFIELD(sfEmitNonce,             "EmitNonce",            HASH256,   11);
+CONSTRUCT_TYPED_SFIELD(sfEmitHookHash,          "EmitHookHash",         HASH256,   12);
 
 // 256-bit (uncommon)
 CONSTRUCT_TYPED_SFIELD(sfBookDirectory,         "BookDirectory",        HASH256,   16);
@@ -184,6 +204,10 @@ CONSTRUCT_TYPED_SFIELD(sfChannel,               "Channel",              HASH256,
 CONSTRUCT_TYPED_SFIELD(sfConsensusHash,         "ConsensusHash",        HASH256,   23);
 CONSTRUCT_TYPED_SFIELD(sfCheckID,               "CheckID",              HASH256,   24);
 CONSTRUCT_TYPED_SFIELD(sfValidatedHash,         "ValidatedHash",        HASH256,   25);
+CONSTRUCT_TYPED_SFIELD(sfHookStateKey,          "HookStateKey",         HASH256,   26);
+CONSTRUCT_TYPED_SFIELD(sfHookHash,              "HookHash",             HASH256,   27);
+CONSTRUCT_TYPED_SFIELD(sfHookNamespace,         "HookNamespace",        HASH256,   28);
+CONSTRUCT_TYPED_SFIELD(sfHookSetTxnID,          "HookSetTxnID",         HASH256,   29);
 
 // currency amount (common)
 CONSTRUCT_TYPED_SFIELD(sfAmount,                "Amount",               AMOUNT,     1);
@@ -225,6 +249,10 @@ CONSTRUCT_TYPED_SFIELD(sfMasterSignature,       "MasterSignature",      VL,     
 CONSTRUCT_TYPED_SFIELD(sfUNLModifyValidator,    "UNLModifyValidator",   VL,        19);
 CONSTRUCT_TYPED_SFIELD(sfValidatorToDisable,    "ValidatorToDisable",   VL,        20);
 CONSTRUCT_TYPED_SFIELD(sfValidatorToReEnable,   "ValidatorToReEnable",  VL,        21);
+CONSTRUCT_TYPED_SFIELD(sfHookStateData,         "HookStateData",        VL,        22);
+CONSTRUCT_TYPED_SFIELD(sfHookReturnString,      "HookReturnString",     VL,        23);
+CONSTRUCT_TYPED_SFIELD(sfHookParameterName,     "HookParameterName",    VL,        24);
+CONSTRUCT_TYPED_SFIELD(sfHookParameterValue,    "HookParameterValue",   VL,        25);
 
 // account
 CONSTRUCT_TYPED_SFIELD(sfAccount,               "Account",              ACCOUNT,    1);
@@ -235,6 +263,10 @@ CONSTRUCT_TYPED_SFIELD(sfAuthorize,             "Authorize",            ACCOUNT,
 CONSTRUCT_TYPED_SFIELD(sfUnauthorize,           "Unauthorize",          ACCOUNT,    6);
 //                                                                                  7 is currently unused
 CONSTRUCT_TYPED_SFIELD(sfRegularKey,            "RegularKey",           ACCOUNT,    8);
+CONSTRUCT_TYPED_SFIELD(sfEmitCallback,          "EmitCallback",         ACCOUNT,    9);
+
+// account (uncommon)
+CONSTRUCT_TYPED_SFIELD(sfHookAccount,           "HookAccount",          ACCOUNT,   16);
 
 // vector of 256-bit
 CONSTRUCT_TYPED_SFIELD(sfIndexes,               "Indexes",              VECTOR256,  1, SField::sMD_Never);
@@ -256,12 +288,19 @@ CONSTRUCT_UNTYPED_SFIELD(sfNewFields,           "NewFields",            OBJECT, 
 CONSTRUCT_UNTYPED_SFIELD(sfTemplateEntry,       "TemplateEntry",        OBJECT,     9);
 CONSTRUCT_UNTYPED_SFIELD(sfMemo,                "Memo",                 OBJECT,    10);
 CONSTRUCT_UNTYPED_SFIELD(sfSignerEntry,         "SignerEntry",          OBJECT,    11);
+CONSTRUCT_UNTYPED_SFIELD(sfEmitDetails,         "EmitDetails",          OBJECT,    12);
+CONSTRUCT_UNTYPED_SFIELD(sfHook,                "Hook",                 OBJECT,    13);
 
 // inner object (uncommon)
 CONSTRUCT_UNTYPED_SFIELD(sfSigner,              "Signer",               OBJECT,    16);
 //                                                                                 17 has not been used yet
 CONSTRUCT_UNTYPED_SFIELD(sfMajority,            "Majority",             OBJECT,    18);
 CONSTRUCT_UNTYPED_SFIELD(sfDisabledValidator,   "DisabledValidator",    OBJECT,    19);
+CONSTRUCT_UNTYPED_SFIELD(sfEmittedTxn,          "EmittedTxn",           OBJECT,    20);
+CONSTRUCT_UNTYPED_SFIELD(sfHookExecution,       "HookExecution",        OBJECT,    21);
+CONSTRUCT_UNTYPED_SFIELD(sfHookDefinition,      "HookDefinition",       OBJECT,    22);
+CONSTRUCT_UNTYPED_SFIELD(sfHookParameter,       "HookParameter",        OBJECT,    23);
+CONSTRUCT_UNTYPED_SFIELD(sfHookGrant,           "HookGrant",            OBJECT,    24);
 
 // array of objects
 //                                                                            ARRAY/1 is reserved for end of array
@@ -273,10 +312,14 @@ CONSTRUCT_UNTYPED_SFIELD(sfNecessary,           "Necessary",            ARRAY,  
 CONSTRUCT_UNTYPED_SFIELD(sfSufficient,          "Sufficient",           ARRAY,      7);
 CONSTRUCT_UNTYPED_SFIELD(sfAffectedNodes,       "AffectedNodes",        ARRAY,      8);
 CONSTRUCT_UNTYPED_SFIELD(sfMemos,               "Memos",                ARRAY,      9);
+CONSTRUCT_UNTYPED_SFIELD(sfHooks,               "Hooks",                ARRAY,     10);
 
 // array of objects (uncommon)
 CONSTRUCT_UNTYPED_SFIELD(sfMajorities,          "Majorities",           ARRAY,     16);
 CONSTRUCT_UNTYPED_SFIELD(sfDisabledValidators,  "DisabledValidators",   ARRAY,     17);
+CONSTRUCT_UNTYPED_SFIELD(sfHookExecutions,      "HookExecutions",       ARRAY,     18);
+CONSTRUCT_UNTYPED_SFIELD(sfHookParameters,      "HookParameters",       ARRAY,     19);
+CONSTRUCT_UNTYPED_SFIELD(sfHookGrants,          "HookGrants",           ARRAY,     20);
 
 // clang-format on
 

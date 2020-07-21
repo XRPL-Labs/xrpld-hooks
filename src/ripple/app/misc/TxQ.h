@@ -216,6 +216,8 @@ public:
         FeeLevel64 feeLevel;
         /// LastValidLedger field of the queued transaction, if any
         std::optional<LedgerIndex> lastValid;
+        /// FirstValidLedger field of the queued transaction, if any
+        std::optional<LedgerIndex> firstValid;
         /** Potential @ref TxConsequences of applying the queued transaction
             to the open ledger.
         */
@@ -525,6 +527,7 @@ private:
         AccountID const account;
         /// Expiration ledger for the transaction
         /// (`sfLastLedgerSequence` field).
+        std::optional<LedgerIndex> const firstValid;
         std::optional<LedgerIndex> const lastValid;
         /// Transaction SeqProxy number
         /// (`sfSequence` or `sfTicketSequence` field).
