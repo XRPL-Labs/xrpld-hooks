@@ -84,6 +84,8 @@ invoke_preflight(PreflightContext const& ctx)
             return SetTrust ::preflight(ctx);
         case ttACCOUNT_DELETE:
             return DeleteAccount ::preflight(ctx);
+        case ttHOOK_SET:
+            return SetHook ::preflight(ctx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
@@ -172,6 +174,8 @@ invoke_preclaim(PreclaimContext const& ctx)
             return invoke_preclaim<SetTrust>(ctx);
         case ttACCOUNT_DELETE:
             return invoke_preclaim<DeleteAccount>(ctx);
+        case ttHOOK_SET:
+            return invoke_preclaim<SetHook>(ctx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
@@ -227,6 +231,8 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
             return SetTrust::calculateBaseFee(view, tx);
         case ttACCOUNT_DELETE:
             return DeleteAccount::calculateBaseFee(view, tx);
+        case ttHOOK_SET:
+            return SetHook::calculateBaseFee(view, tx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
@@ -295,6 +301,8 @@ invoke_calculateConsequences(STTx const& tx)
             return invoke_calculateConsequences<SetTrust>(tx);
         case ttACCOUNT_DELETE:
             return invoke_calculateConsequences<DeleteAccount>(tx);
+        case ttHOOK_SET:
+            return invoke_calculateConsequences<SetHook>(tx);
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
@@ -391,6 +399,10 @@ invoke_apply(ApplyContext& ctx)
         }
         case ttACCOUNT_DELETE: {
             DeleteAccount p(ctx);
+            return p();
+        }
+        case ttHOOK_SET: {
+            SetHook p(ctx);
             return p();
         }
         case ttAMENDMENT:

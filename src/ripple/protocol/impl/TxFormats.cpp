@@ -260,6 +260,13 @@ TxFormats::TxFormats()
             {sfUnauthorize, soeOPTIONAL},
         },
         commonFields);
+    
+    add(jss::SetHook,
+        ttHOOK_SET,
+        {
+            {sfCreateCode, soeREQUIRED},
+        },
+        commonFields);
 }
 
 TxFormats const&

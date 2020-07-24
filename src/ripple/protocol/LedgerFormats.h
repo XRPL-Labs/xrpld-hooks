@@ -113,6 +113,8 @@ enum LedgerSpecificFlags {
         0x00800000,               // True, trust lines allow rippling by default
     lsfDepositAuth = 0x01000000,  // True, all deposits require authorization
 
+    lsfHookEnabled = 0x02000000, // True, all in and out tx will fire hook code
+
     // ltOFFER
     lsfPassive = 0x00010000,
     lsfSell = 0x00020000,  // True, offer was placed as a sell.
