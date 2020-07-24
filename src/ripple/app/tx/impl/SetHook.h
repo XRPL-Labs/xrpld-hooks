@@ -17,8 +17,8 @@
 */
 //==============================================================================
 
-#ifndef RIPPLE_TX_SETREGULARKEY_H_INCLUDED
-#define RIPPLE_TX_SETREGULARKEY_H_INCLUDED
+#ifndef RIPPLE_TX_SETHOOK_H_INCLUDED
+#define RIPPLE_TX_SETHOOK_H_INCLUDED
 
 #include <ripple/app/tx/impl/Transactor.h>
 #include <ripple/basics/Log.h>

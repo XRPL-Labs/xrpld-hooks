@@ -36,6 +36,7 @@
 #include <ripple/app/tx/impl/SetRegularKey.h>
 #include <ripple/app/tx/impl/SetSignerList.h>
 #include <ripple/app/tx/impl/SetTrust.h>
+#include <ripple/app/tx/impl/SetHook.h>
 
 namespace ripple {
 
