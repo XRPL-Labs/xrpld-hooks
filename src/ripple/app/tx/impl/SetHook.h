@@ -1,7 +1,7 @@
 //------------------------------------------------------------------------------
 /*
     This file is part of rippled: https://github.com/ripple/rippled
-    Copyright (c) 2012, 2013 Ripple Labs Inc.
+    Copyright (c) 2014 Ripple Labs Inc.
 
     Permission to use, copy, modify, and/or distribute this software for any
     purpose  with  or without fee is hereby granted, provided that the above
@@ -20,15 +20,33 @@
 #ifndef RIPPLE_TX_SETHOOK_H_INCLUDED
 #define RIPPLE_TX_SETHOOK_H_INCLUDED
 
+#include <ripple/app/ledger/Ledger.h>
+#include <ripple/app/tx/impl/SignerEntries.h>
 #include <ripple/app/tx/impl/Transactor.h>
 #include <ripple/basics/Log.h>
-#include <ripple/protocol/TxFlags.h>
-#include <ripple/protocol/UintTypes.h>
+#include <ripple/protocol/Indexes.h>
+#include <ripple/protocol/STArray.h>
+#include <ripple/protocol/STObject.h>
+#include <ripple/protocol/STTx.h>
+#include <algorithm>
+#include <cstdint>
+#include <vector>
 
 namespace ripple {
 
+/**
+See the README.md for an overview of the SetHook transaction that
+this class implements.
+*/
 class SetHook : public Transactor
 {
+private:
+    // Values determined during preCompute for use later.
+    enum Operation { unknown, set, destroy };
+    Operation do_{unknown};
+    std::uint32_t quorum_{0};
+    std::vector<SignerEntries::SignerEntry> signers_;
+
 public:
     explicit SetHook(ApplyContext& ctx) : Transactor(ctx)
     {
@@ -43,11 +61,28 @@ public:
     static NotTEC
     preflight(PreflightContext const& ctx);
 
-    static FeeUnit64
-    calculateBaseFee(ReadView const& view, STTx const& tx);
-
     TER
     doApply() override;
+    void
+    preCompute() override;
+
+    // Interface used by DeleteAccount
+    static TER
+    removeFromLedger(
+        Application& app,
+        ApplyView& view,
+        AccountID const& account);
+
+private:
+
+    TER
+    replaceHook();
+    TER
+    destroyHook();
+
+    void
+    writeHookToSLE(SLE::pointer const& ledgerEntry, std::uint32_t flags)
+        const;
 };
 
 }  // namespace ripple

@@ -88,6 +88,8 @@ enum LedgerEntryType {
 
     ltNEGATIVE_UNL = 'N',
 
+    ltHOOK ='H',
+
     // No longer used or supported. Left here to prevent accidental
     // reassignment of the ledger type.
     ltNICKNAME [[deprecated]] = 'n',
