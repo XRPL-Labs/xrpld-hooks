@@ -24,6 +24,8 @@
 #include <ripple/app/tx/impl/SignerEntries.h>
 #include <ripple/app/tx/impl/Transactor.h>
 #include <ripple/basics/Log.h>
+#include <ripple/basics/Buffer.h>
+#include <ripple/basics/Blob.h>
 #include <ripple/protocol/Indexes.h>
 #include <ripple/protocol/STArray.h>
 #include <ripple/protocol/STObject.h>
@@ -44,8 +46,7 @@ private:
     // Values determined during preCompute for use later.
     enum Operation { unknown, set, destroy };
     Operation do_{unknown};
-    std::uint32_t quorum_{0};
-    std::vector<SignerEntries::SignerEntry> signers_;
+    Blob hook_;
 
 public:
     explicit SetHook(ApplyContext& ctx) : Transactor(ctx)
@@ -73,12 +74,17 @@ public:
         ApplyView& view,
         AccountID const& account);
 
+    
 private:
 
     TER
     replaceHook();
     TER
     destroyHook();
+
+    TER validateHook(
+    const Blob& code,
+    beast::Journal j);
 
     void
     writeHookToSLE(SLE::pointer const& ledgerEntry, std::uint32_t flags)

@@ -45,23 +45,13 @@ SetHook::preflight(PreflightContext const& ctx)
         JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid signer set list format.";
         return temMALFORMED;
-       
-    Blob wasm = ctx.tx.getFieldVL(sfCreateCode);
-    if (wasm.empty()) {
-        // delete operation
-    }
 
-    // set operation
-    if (std::get<3>(result) == set)
-    {
-        // Validate our settings.
-        auto const account = ctx.tx.getAccountID(sfAccount);
-        NotTEC const ter = validateQuorumAndSignerEntries(
-            std::get<1>(result), std::get<2>(result), account, ctx.j);
-        if (ter != tesSUCCESS)
-        {
-            return ter;
-        }
+    Blob hook = ctx_.tx.getFieldVL(sfCreateCode);      
+
+    if (!hook.empty()) { // if the hook is empty it's a delete request
+        TER hook_validation_result = validateHook(hook, ctx.j);
+        if (hook_validation_result != tesSUCCESS)
+            return hook_validation_result;
     }
 
     return preflight2(ctx);
@@ -70,6 +60,8 @@ SetHook::preflight(PreflightContext const& ctx)
 TER
 SetHook::doApply()
 {
+    preCompute();
+
     // Perform the operation preCompute() decided on.
     switch (do_)
     {
@@ -89,44 +81,10 @@ SetHook::doApply()
 void
 SetHook::preCompute()
 {
-    // Get the quorum and operation info.
-    auto result = determineOperation(ctx_.tx, view().flags(), j_);
-    assert(std::get<0>(result) == tesSUCCESS);
-    assert(std::get<3>(result) != unknown);
-
-    quorum_ = std::get<1>(result);
-    signers_ = std::get<2>(result);
-    do_ = std::get<3>(result);
+    hook_ = ctx_.tx.getFieldVL(sfCreateCode);
+    do_ = ( hook_.empty() ? Operation.destroy : Operation.set );
 
     return Transactor::preCompute();
-}
-
-// The return type is signed so it is compatible with the 3rd argument
-// of adjustOwnerCount() (which must be signed).
-//
-// NOTE: This way of computing the OwnerCount associated with a Hook
-// is valid until the featureMultiSignReserve amendment passes.  Once it
-// passes then just 1 OwnerCount is associated with a Hook.
-static int
-signerCountBasedOwnerCountDelta(std::size_t entryCount)
-{
-    // We always compute the full change in OwnerCount, taking into account:
-    //  o The fact that we're adding/removing a Hook and
-    //  o Accounting for the number of entries in the list.
-    // We can get away with that because lists are not adjusted incrementally;
-    // we add or remove an entire list.
-    //
-    // The rule is:
-    //  o Simply having a Hook costs 2 OwnerCount units.
-    //  o And each signer in the list costs 1 more OwnerCount unit.
-    // So, at a minimum, adding a Hook with 1 entry costs 3 OwnerCount
-    // units.  A Hook with 8 entries would cost 10 OwnerCount units.
-    //
-    // The static_cast should always be safe since entryCount should always
-    // be in the range from 1 to 8.  We've got a lot of room to grow.
-    assert(entryCount >= STTx::minMultiSigners);
-    assert(entryCount <= STTx::maxMultiSigners);
-    return 2 + static_cast<int>(entryCount);
 }
 
 static TER
@@ -177,10 +135,8 @@ SetHook::removeFromLedger(
         app, view, accountKeylet, ownerDirKeylet, hookKeylet);
 }
 
-NotTEC
 SetHook::validateHook(
     const Blob& code,
-    AccountID const& account,
     beast::Journal j)
 {
     
@@ -223,14 +179,8 @@ SetHook::replaceHook()
     // Compute new reserve.  Verify the account has funds to meet the reserve.
     std::uint32_t const oldOwnerCount{(*sle)[sfOwnerCount]};
 
-    // The required reserve changes based on featureMultiSignReserve...
+
     int addedOwnerCount{1};
-    std::uint32_t flags{lsfOneOwnerCount};
-    if (!ctx_.view().rules().enabled(featureMultiSignReserve))
-    {
-        addedOwnerCount = signerCountBasedOwnerCountDelta(signers_.size());
-        flags = 0;
-    }
 
     XRPAmount const newReserve{
         view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
@@ -241,13 +191,13 @@ SetHook::replaceHook()
     if (mPriorBalance < newReserve)
         return tecINSUFFICIENT_RESERVE;
 
-    // Everything's ducky.  Add the ltSIGNER_LIST to the ledger.
-    auto signerList = std::make_shared<SLE>(hookKeylet);
-    view().insert(signerList);
-    writeSignersToSLE(signerList, flags);
+    // Everything's ducky.  Add the ltHOOK to the ledger.
+    auto hook = std::make_shared<SLE>(hookKeylet);
+    view().insert(hook);
+    writeHookToSLE(hook, flags);
 
     auto viewJ = ctx_.app.journal("View");
-    // Add the signer list to the account's directory.
+    // Add the hook to the account's directory.
     auto const page = dirAdd(
         ctx_.view(),
         ownerDirKeylet,
@@ -256,13 +206,11 @@ SetHook::replaceHook()
         describeOwnerDir(account_),
         viewJ);
 
-    JLOG(j_.trace()) << "Create signer list for account " << toBase58(account_)
+    JLOG(j_.trace()) << "Create hook for account " << toBase58(account_)
                      << ": " << (page ? "success" : "failure");
 
     if (!page)
         return tecDIR_FULL;
-
-    signerList->setFieldU64(sfOwnerNode, *page);
 
     // If we succeeded, the new entry counts against the
     // creator's reserve.
@@ -295,25 +243,11 @@ SetHook::writeHookToSLE(
     SLE::pointer const& ledgerEntry,
     std::uint32_t flags) const
 {
-    // Assign the quorum, default HookID, and flags.
-    ledgerEntry->setFieldU32(sfSignerQuorum, quorum_);
-    ledgerEntry->setFieldU32(sfHookID, defaultHookID_);
-    if (flags)  // Only set flags if they are non-default (default is zero).
-        ledgerEntry->setFieldU32(sfFlags, flags);
+    //todo: support flags?
 
-    // Create the HookArray one SignerEntry at a time.
-    STArray toLedger(signers_.size());
-    for (auto const& entry : signers_)
-    {
-        toLedger.emplace_back(sfSignerEntry);
-        STObject& obj = toLedger.back();
-        obj.reserve(2);
-        obj.setAccountID(sfAccount, entry.account);
-        obj.setFieldU16(sfSignerWeight, entry.weight);
-    }
+    auto toLegder = std::make_unique<STBlob>(sfCreateCode, hook_.data(), hook_.size());
 
-    // Assign the SignerEntries.
-    ledgerEntry->setFieldArray(sfSignerEntries, toLedger);
+    ledgerEntry->setFieldVL(sfCreateCode, toLedger);
 }
 
 }  // namespace ripple
