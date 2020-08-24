@@ -31,7 +31,7 @@
 #include <ripple/protocol/STTx.h>
 #include <algorithm>
 #include <cstdint>
-
+#include <stdio.h>
 namespace ripple {
 
 NotTEC
@@ -41,23 +41,28 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
+printf("preflight sethook 1\n");
+
     if (!ctx.tx.isFieldPresent(sfCreateCode))
-        JLOG(ctx.j.trace())
+    {    JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid signer set list format.";
         return temMALFORMED;
+    }
+        printf("preflight sethook 2\n");
 
     Blob hook = ctx.tx.getFieldVL(sfCreateCode);      
 
     if (!hook.empty()) { // if the hook is empty it's a delete request
 
-        wasmer_instance_t *instance = NULL;
+/*        wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
             return temMALFORMED;
         }
 
         wasmer_instance_destroy(instance);
-    }
+ */ 
+   }
 
     return preflight2(ctx);
 }
@@ -205,15 +210,9 @@ TER
 SetHook::destroyHook()
 {
     auto const accountKeylet = keylet::account(account_);
-    // Destroying the signer list is only allowed if either the master key
-    // is enabled or there is a regular key.
     SLE::pointer ledgerEntry = view().peek(accountKeylet);
     if (!ledgerEntry)
         return tefINTERNAL;
-
-    if ((ledgerEntry->isFlag(lsfDisableMaster)) &&
-        (!ledgerEntry->isFieldPresent(sfRegularKey)))
-        return tecNO_ALTERNATIVE_KEY;
 
     auto const ownerDirKeylet = keylet::ownerDir(account_);
     auto const hookKeylet = keylet::hook(account_);

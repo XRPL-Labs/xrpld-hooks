@@ -176,6 +176,16 @@ LedgerFormats::LedgerFormats()
         },
         commonFields);
 
+    add(jss::Hook,
+        ltHOOK,
+        {
+            {sfOwnerNode, soeREQUIRED},
+            {sfCreateCode, soeREQUIRED},
+            {sfPreviousTxnID, soeREQUIRED},
+            {sfPreviousTxnLgrSeq, soeREQUIRED}
+        },
+        commonFields);
+
     add(jss::PayChannel,
         ltPAYCHAN,
         {
@@ -233,6 +243,7 @@ LedgerFormats::LedgerFormats()
             {sfNegativeUNLToReEnable, soeOPTIONAL},
         },
         commonFields);
+    
 }
 
 LedgerFormats const&
