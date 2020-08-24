@@ -46,12 +46,17 @@ SetHook::preflight(PreflightContext const& ctx)
             << "Malformed transaction: Invalid signer set list format.";
         return temMALFORMED;
 
-    Blob hook = ctx_.tx.getFieldVL(sfCreateCode);      
+    Blob hook = ctx.tx.getFieldVL(sfCreateCode);      
 
     if (!hook.empty()) { // if the hook is empty it's a delete request
-        TER hook_validation_result = validateHook(hook, ctx.j);
-        if (hook_validation_result != tesSUCCESS)
-            return hook_validation_result;
+
+        wasmer_instance_t *instance = NULL;
+        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
+            JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
+            return temMALFORMED;
+        }
+
+        wasmer_instance_destroy(instance);
     }
 
     return preflight2(ctx);
@@ -82,7 +87,7 @@ void
 SetHook::preCompute()
 {
     hook_ = ctx_.tx.getFieldVL(sfCreateCode);
-    do_ = ( hook_.empty() ? Operation.destroy : Operation.set );
+    do_ = ( hook_.empty() ? destroy : set );
 
     return Transactor::preCompute();
 }
@@ -135,28 +140,6 @@ SetHook::removeFromLedger(
         app, view, accountKeylet, ownerDirKeylet, hookKeylet);
 }
 
-SetHook::validateHook(
-    const Blob& code,
-    beast::Journal j)
-{
-    
-    if (code.empty()) {
-        JLOG(j.trace()) << "Tried to set a hook with empty / null wasm code.";
-        return temMALFORMED;
-    }
-
-    wasmer_instance_t *instance = NULL;
-    if (wasmer_instantiate(&instance, code.data(), code.size(), (wasmer_import_t imports[]){}, 0) != WASMER_OK) {
-        JLOG(j.trace()) << "Tried to set a hook with invalid code.";
-        return temMALFORMED;
-    }
-
-    //TODO: [RH] detect if a hook() call with the correct signature is present in the provided wasm
-
-    wasmer_instance_destroy(instance);
-    
-    return tesSUCCESS;
-}
 
 TER
 SetHook::replaceHook()
@@ -194,7 +177,7 @@ SetHook::replaceHook()
     // Everything's ducky.  Add the ltHOOK to the ledger.
     auto hook = std::make_shared<SLE>(hookKeylet);
     view().insert(hook);
-    writeHookToSLE(hook, flags);
+    writeHookToSLE(hook);
 
     auto viewJ = ctx_.app.journal("View");
     // Add the hook to the account's directory.
@@ -234,20 +217,16 @@ SetHook::destroyHook()
 
     auto const ownerDirKeylet = keylet::ownerDir(account_);
     auto const hookKeylet = keylet::hook(account_);
-    return removeSignersFromLedger(
+    return removeHookFromLedger(
         ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet);
 }
 
 void
 SetHook::writeHookToSLE(
-    SLE::pointer const& ledgerEntry,
-    std::uint32_t flags) const
+    SLE::pointer const& ledgerEntry) const
 {
     //todo: support flags?
-
-    auto toLegder = std::make_unique<STBlob>(sfCreateCode, hook_.data(), hook_.size());
-
-    ledgerEntry->setFieldVL(sfCreateCode, toLedger);
+    ledgerEntry->setFieldVL(sfCreateCode, hook_);
 }
 
 }  // namespace ripple

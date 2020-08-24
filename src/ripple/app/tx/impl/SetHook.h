@@ -82,12 +82,9 @@ private:
     TER
     destroyHook();
 
-    TER validateHook(
-    const Blob& code,
-    beast::Journal j);
 
     void
-    writeHookToSLE(SLE::pointer const& ledgerEntry, std::uint32_t flags)
+    writeHookToSLE(SLE::pointer const& ledgerEntry)
         const;
 };
 

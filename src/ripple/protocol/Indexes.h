@@ -48,6 +48,9 @@ namespace ripple {
 */
 namespace keylet {
 
+Keylet
+hook(AccountID const& id) noexcept;
+
 /** AccountID root */
 Keylet
 account(AccountID const& id) noexcept;
