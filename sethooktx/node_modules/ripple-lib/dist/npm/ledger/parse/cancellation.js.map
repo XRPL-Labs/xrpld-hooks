@@ -1,0 +1,1 @@
+{"version":3,"file":"cancellation.js","sourceRoot":"","sources":["../../../../src/ledger/parse/cancellation.ts"],"names":[],"mappings":";;;;;;;;;AAAA,+CAAgC;AAEhC,SAAS,sBAAsB,CAAC,EAAO;IACrC,MAAM,CAAC,EAAE,CAAC,EAAE,CAAC,eAAe,KAAK,aAAa,CAAC,CAAA;IAC/C,OAAO;QACL,aAAa,EAAE,EAAE,CAAC,aAAa;KAChC,CAAA;AACH,CAAC;AAED,kBAAe,sBAAsB,CAAA"}

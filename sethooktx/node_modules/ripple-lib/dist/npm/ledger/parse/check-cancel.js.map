@@ -1,0 +1,1 @@
+{"version":3,"file":"check-cancel.js","sourceRoot":"","sources":["../../../../src/ledger/parse/check-cancel.ts"],"names":[],"mappings":";;;;;;;;;AAAA,+CAAgC;AAChC,yCAA4C;AAO5C,SAAS,gBAAgB,CAAC,EAAO;IAC/B,MAAM,CAAC,EAAE,CAAC,EAAE,CAAC,eAAe,KAAK,aAAa,CAAC,CAAA;IAE/C,OAAO,wBAAe,CAAC;QACrB,OAAO,EAAE,EAAE,CAAC,OAAO;KACpB,CAAC,CAAA;AACJ,CAAC;AAED,kBAAe,gBAAgB,CAAA"}

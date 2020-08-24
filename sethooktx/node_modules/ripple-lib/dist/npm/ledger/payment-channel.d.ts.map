@@ -1,0 +1,1 @@
+{"version":3,"file":"payment-channel.d.ts","sourceRoot":"","sources":["../../../src/ledger/payment-channel.ts"],"names":[],"mappings":"AAAA,OAAO,EAEL,uBAAuB,EACxB,MAAM,yBAAyB,CAAA;AAEhC,OAAO,EAAC,SAAS,EAAC,MAAM,IAAI,CAAA;AAgB5B,iBAAe,iBAAiB,CAC9B,IAAI,EAAE,SAAS,EACf,EAAE,EAAE,MAAM,GACT,OAAO,CAAC,uBAAuB,CAAC,CAWlC;AAED,eAAe,iBAAiB,CAAA"}

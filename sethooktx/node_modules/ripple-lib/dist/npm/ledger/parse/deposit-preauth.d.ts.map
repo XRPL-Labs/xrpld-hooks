@@ -1,0 +1,1 @@
+{"version":3,"file":"deposit-preauth.d.ts","sourceRoot":"","sources":["../../../../src/ledger/parse/deposit-preauth.ts"],"names":[],"mappings":"AAGA,oBAAY,uBAAuB,GAAG;IAEpC,SAAS,EAAE,MAAM,CAAA;IAGjB,WAAW,EAAE,MAAM,CAAA;CACpB,CAAA;AAED,iBAAS,mBAAmB,CAAC,EAAE,EAAE,GAAG,GAAG,uBAAuB,CAO7D;AAED,eAAe,mBAAmB,CAAA"}

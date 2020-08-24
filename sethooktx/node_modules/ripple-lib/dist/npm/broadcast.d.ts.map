@@ -1,0 +1,1 @@
+{"version":3,"file":"broadcast.d.ts","sourceRoot":"","sources":["../../src/broadcast.ts"],"names":[],"mappings":"AACA,OAAO,EAAC,SAAS,EAAE,UAAU,EAAC,MAAM,OAAO,CAAA;AAE3C,cAAM,kBAAmB,SAAQ,SAAS;IACxC,aAAa,EAAE,MAAM,GAAG,SAAS,CAAY;IAC7C,OAAO,CAAC,KAAK,CAAa;gBAEd,OAAO,KAAA,EAAE,OAAO,GAAE,UAAe;IA2C7C,aAAa,CAAC,MAAM,KAAA;IAUpB,cAAc;CAUf;AAED,OAAO,EAAC,kBAAkB,EAAC,CAAA"}

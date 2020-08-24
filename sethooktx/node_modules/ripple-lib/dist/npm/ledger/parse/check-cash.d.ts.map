@@ -1,0 +1,1 @@
+{"version":3,"file":"check-cash.d.ts","sourceRoot":"","sources":["../../../../src/ledger/parse/check-cash.ts"],"names":[],"mappings":"AAGA,OAAO,EAAC,MAAM,EAAC,MAAM,4BAA4B,CAAA;AAEjD,oBAAY,kBAAkB,GAAG;IAE/B,OAAO,EAAE,MAAM,CAAA;IAKf,MAAM,EAAE,MAAM,CAAA;IAMd,UAAU,EAAE,MAAM,CAAA;CAGnB,CAAA;AAED,iBAAS,cAAc,CAAC,EAAE,EAAE,GAAG,GAAG,kBAAkB,CAQnD;AAED,eAAe,cAAc,CAAA"}

@@ -1,0 +1,1 @@
+{"version":3,"file":"derive.d.ts","sourceRoot":"","sources":["../../../src/offline/derive.ts"],"names":[],"mappings":"AAAA,OAAO,EAAC,aAAa,EAAE,aAAa,EAAC,MAAM,iBAAiB,CAAA;AAG5D,iBAAS,cAAc,CAAC,OAAO,EAAE;IAC/B,SAAS,EAAE,MAAM,CAAA;IACjB,GAAG,EAAE,MAAM,GAAG,KAAK,CAAA;IACnB,IAAI,EAAE,OAAO,CAAA;CACd,GAAG,MAAM,CAGT;AAED,OAAO,EAAC,aAAa,EAAE,aAAa,EAAE,cAAc,EAAC,CAAA"}

@@ -1,0 +1,1 @@
+--reporter spec --slow 500 --require babel-core/register
