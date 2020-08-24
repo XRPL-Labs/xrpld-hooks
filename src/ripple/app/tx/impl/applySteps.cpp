@@ -316,10 +316,80 @@ invoke_calculateConsequences(STTx const& tx)
                 beast::zero};
     }
 }
+/*
+    // Prepare the imports.
+    wasmer_import_t imports[] = {};
+    // Instantiate!
+    wasmer_instance_t *instance = NULL;
+    wasmer_result_t instantiation_result = ::wasmer_instantiate(&instance, bytes, len, imports, 0);
+    assert(instantiation_result == WASMER_OK);
+    // Let's call a function.
+    // Start by preparing the arguments.
+    // Value of argument #1 is `7i32`.
+    wasmer_value_t argument_one;
+    argument_one.tag = WASM_I32;
+    argument_one.value.I32 = 7;
+    // Value of argument #2 is `8i32`.
+    wasmer_value_t argument_two;
+    argument_two.tag = WASM_I32;
+    argument_two.value.I32 = 8;
+    // Prepare the arguments.
+    wasmer_value_t arguments[] = {argument_one, argument_two};
+    // Prepare the return value.
+    wasmer_value_t result_one;
+    wasmer_value_t results[] = {result_one};
+    // Call the `sum` function with the prepared arguments and the return value.
+    wasmer_result_t call_result = ::wasmer_instance_call(instance, "sum", arguments, 2, results, 1);
+    // Let's display the result.
+    printf("Call result:  %d\n", call_result);
+    printf("Result: %d\n", results[0].value.I32);
+    // `sum(7, 8) == 15`.
+    assert(results[0].value.I32 == 15);
+    assert(call_result == WASMER_OK);
+    ::wasmer_instance_destroy(instance);
+    */
 
+TER run_hook(Blob hook, ApplyContext& ctx) {
+
+        printf("running hook 1\n");
+        wasmer_instance_t *instance = NULL;
+        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
+            JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
+            return temMALFORMED;
+        }
+        printf("running hook 2\n");
+        
+        wasmer_instance_destroy(instance);
+
+        return tesSUCCESS;
+}
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)
 {
+    auto accountID = ctx.tx.getAccountID(sfAccount);
+    auto const hookSending = ledger->read(keylet::hook(accountID));
+    if (hookSending) {
+        // execute the hook on the sending account
+        Blob hook = hookSending.getFieldVL(sfCreateCode);
+        auto result = run_hook(hook, ctx);
+        if (result != tesSUCCESS) return result;     
+    }
+
+    if (ctx.tx.isFieldPresent(sfDestination)) {
+        auto const destAccountID = ctx.tx.getAccountID(sfDestination);
+        auto const hookReceiving = ledger->read(keylet::hook(destAccountID));
+        Blob hook = hookReceiving.getFieldVL(sfCreateCode);
+        if (hookReceiving) {
+            // execute the hook on the receiving account
+            auto result = run_hook(hook, ctx);
+            if (result != tesSUCCESS) return {result, false};     
+        }
+    }
+
+
+    //auto const sleSigners = ledger->read(keylet::signers(accountID));
+    //if (sleSigners)
+
     switch (ctx.tx.getTxnType())
     {
         case ttACCOUNT_SET: {
