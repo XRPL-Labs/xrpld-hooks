@@ -1,5 +1,5 @@
 const RippleAPI = require('ripple-lib').RippleAPI;
-
+const fs = require('fs');
 const api = new RippleAPI({
     server: 'ws://localhost:6005'
 });
@@ -16,10 +16,12 @@ api.on('disconnected', (code) => {
 });
 api.connect().then(() => {
   /* insert code here */
+    binary = fs.readFileSync('x.wasm').toString('hex').toUpperCase();
+    
     j = {
     Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
     TransactionType: "SetHook",
-    CreateCode: 'DEADBEEF'
+    CreateCode: binary
     }
     api.prepareTransaction(j).then( (x)=> 
         {
