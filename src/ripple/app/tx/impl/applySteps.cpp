@@ -17,6 +17,7 @@
 */
 //==============================================================================
 
+#include <ripple/basics/Hook.h>
 #include <ripple/app/tx/applySteps.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/app/tx/impl/CancelCheck.h>
@@ -349,19 +350,145 @@ invoke_calculateConsequences(STTx const& tx)
     ::wasmer_instance_destroy(instance);
     */
 
+/*
+extern "C" {
+#define ELEVENTH_ARGUMENT(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, ...) a11
+#define COUNT_ARGUMENTS(...) ELEVENTH_ARGUMENT(dummy, ## __VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
+#define __(x,y) __##x##__##y
+#define WASM_FUNC_IMPORT(funcptr, ...)\
+    {\
+    .module_name = { .bytes = (const uint8_t *) "env",\
+                     .bytes_len = 3 },\
+    .import_name = {\
+            .bytes = (const uint8_t *) #funcptr,\
+            .bytes_len = strlen( #funcptr )},\
+    .tag = 0,\
+    .value = { .func = wasmer_import_func_new(\
+      reinterpret_cast<void (*)(void*)>(funcptr),\
+      {__VA_ARGS__},\
+      COUNT_ARGUMENTS(__VA_ARGS__),\
+      {WASM_I64},\
+      1\
+      )\
+    }}    
+
+}*/
+
+//wasmer_import_t WASM_FUNC_IMPORT( void (*)(void*) functptr, char* funcname, 
+
+int64_t hook_output_dbg(wasmer_instance_context_t * ctx, uint32_t ptr, uint32_t len) {
+    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(ctx, 0) );
+    printf("HOOKAPI_output_dbg: ");
+    if (len > 1024) len = 1024;
+    for (int i = 0; i < len; ++i)
+        printf("%c", memory[ptr + i]);
+    return len;
+}
+
+wasmer_import_func_t *create_wasmer_import_function(
+    void (*function_pointer)(void *),
+    wasmer_value_tag params_signature[], 
+    int num_params, 
+    wasmer_value_tag returns_signature[], 
+    int num_returns
+    ) {
+
+  // Create a new func to hold the parameter and signature
+  // of our `print_str` host function
+  wasmer_import_func_t *func = wasmer_import_func_new(
+      function_pointer, 
+      params_signature, 
+      num_params, 
+      returns_signature, 
+      num_returns
+      );
+
+  return func;
+}
+
+void print_wasmer_error()
+{
+  int error_len = wasmer_last_error_length();
+  char *error_str = (char*)malloc(error_len);
+  wasmer_last_error_message(error_str, error_len);
+  printf("Error: `%s`\n", error_str);
+    free(error_str);
+}
+
+
 TER run_hook(Blob hook, ApplyContext& ctx) {
 
-        printf("running hook 1\n");
-        wasmer_instance_t *instance = NULL;
-        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
-            printf("hook malformed\n");
-            return temMALFORMED;
-        }
-        printf("running hook 2\n");
-        
-        wasmer_instance_destroy(instance);
+    printf("running hook 1\n");
+    wasmer_instance_t *instance = NULL;
 
-        return tesSUCCESS;
+
+    wasmer_value_tag inp[2] = {WASM_I32, WASM_I32};
+    wasmer_value_tag out[2] = {WASM_I64};
+
+    auto ptr = create_wasmer_import_function( reinterpret_cast<void (*)(void *)>(hook_output_dbg), inp, 2, out, 1); 
+
+  const char *module_name = "env";
+  wasmer_byte_array module_name_bytes = {
+    .bytes = (const uint8_t *) module_name,
+    .bytes_len = strlen(module_name)
+  };
+
+  // Define our add_to_counter import
+  wasmer_byte_array function_name_bytes = { 
+    .bytes = (const uint8_t *) "hook_output_dbg",
+    .bytes_len = strlen("hook_output_dbg")
+  };
+
+  wasmer_import_t imports[] =  {
+      { .module_name = module_name_bytes,
+        .import_name = function_name_bytes,
+        .tag = WASM_FUNCTION,
+        .value = {
+            .func = ptr
+        } 
+      }
+  };
+
+
+
+
+    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != WASMER_OK) {
+        printf("hook malformed\n");
+    
+        print_wasmer_error();
+
+        return temMALFORMED;
+    }
+    printf("running hook 2\n");
+
+    wasmer_value_t params[] = {{ 0 }};
+    
+    wasmer_value_t result_one = { 0 };
+    wasmer_value_t results[] = {result_one};
+
+    if (wasmer_instance_call(
+        instance,
+        "hook",
+        params,
+        0,
+        results,
+        1
+    ) != WASMER_OK) {
+        printf("hook() call failed\n");
+        print_wasmer_error();
+        return temMALFORMED; /// todo: [RH] should be a hook execution error code tecHOOK_ERROR?
+    }
+
+    int64_t response_tag = results[0].tag;
+    int64_t response_value = results[0].value.I64;
+
+    printf("hook return code was: %ld\n", response_value);
+
+    // todo: [RH] memory leak here, destroy the imports, instance using a smart pointer
+    wasmer_instance_destroy(instance);
+    printf("running hook 3\n");
+
+    return tesSUCCESS;
 }
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)

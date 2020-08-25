@@ -54,7 +54,7 @@ printf("preflight sethook 1\n");
 
     if (!hook.empty()) { // if the hook is empty it's a delete request
         printf("preflight sethook 3\n");
-
+/*
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
@@ -63,7 +63,7 @@ printf("preflight sethook 1\n");
         printf("preflight sethook 4\n");
 
         wasmer_instance_destroy(instance);
- 
+ */
    }
 
         printf("preflight sethook 5\n");
