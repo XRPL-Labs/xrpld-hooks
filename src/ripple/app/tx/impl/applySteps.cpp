@@ -385,27 +385,6 @@ int64_t hook_output_dbg(wasmer_instance_context_t * ctx, uint32_t ptr, uint32_t 
     return len;
 }
 
-wasmer_import_func_t *create_wasmer_import_function(
-    void (*function_pointer)(void *),
-    wasmer_value_tag params_signature[], 
-    int num_params, 
-    wasmer_value_tag returns_signature[], 
-    int num_returns
-    ) {
-
-  // Create a new func to hold the parameter and signature
-  // of our `print_str` host function
-  wasmer_import_func_t *func = wasmer_import_func_new(
-      function_pointer, 
-      params_signature, 
-      num_params, 
-      returns_signature, 
-      num_returns
-      );
-
-  return func;
-}
-
 void print_wasmer_error()
 {
   int error_len = wasmer_last_error_length();
@@ -422,29 +401,25 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
     wasmer_instance_t *instance = NULL;
 
 
-    wasmer_value_tag inp[2] = {WASM_I32, WASM_I32};
-    wasmer_value_tag out[2] = {WASM_I64};
 
-    auto ptr = create_wasmer_import_function( reinterpret_cast<void (*)(void *)>(hook_output_dbg), inp, 2, out, 1); 
-
-  const char *module_name = "env";
-  wasmer_byte_array module_name_bytes = {
-    .bytes = (const uint8_t *) module_name,
-    .bytes_len = strlen(module_name)
-  };
-
-  // Define our add_to_counter import
-  wasmer_byte_array function_name_bytes = { 
-    .bytes = (const uint8_t *) "hook_output_dbg",
-    .bytes_len = strlen("hook_output_dbg")
-  };
 
   wasmer_import_t imports[] =  {
-      { .module_name = module_name_bytes,
-        .import_name = function_name_bytes,
-        .tag = WASM_FUNCTION,
+      { .module_name = {
+            .bytes = (const uint8_t *) "env",
+            .bytes_len = 3
+        },
+        .import_name = {
+            .bytes = (const uint8_t *) "hook_output_dbg",
+            .bytes_len = strlen("hook_output_dbg")
+        },
+        .tag = wasmer_import_export_kind::WASM_FUNCTION,
         .value = {
-            .func = ptr
+            .func = wasmer_import_func_new(
+                    reinterpret_cast<void (*)(void *)>(hook_output_dbg),
+                    std::begin({wasmer_value_tag::WASM_I32, wasmer_value_tag::WASM_I32}),
+                    2,
+                    std::begin({wasmer_value_tag::WASM_I64}),
+                    1)
         } 
       }
   };
@@ -452,7 +427,7 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
 
 
 
-    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != WASMER_OK) {
+    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != wasmer_result_t::WASMER_OK) {
         printf("hook malformed\n");
     
         print_wasmer_error();
@@ -461,25 +436,27 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
     }
     printf("running hook 2\n");
 
-    wasmer_value_t params[] = {{ 0 }};
-    
-    wasmer_value_t result_one = { 0 };
+    wasmer_value_t argument_one;
+    argument_one.tag = wasmer_value_tag::WASM_I64;
+    argument_one.value.I64 = 0;
+    wasmer_value_t arguments[] = {argument_one};
+
+    wasmer_value_t result_one;
     wasmer_value_t results[] = {result_one};
 
     if (wasmer_instance_call(
         instance,
         "hook",
-        params,
-        0,
+        arguments,
+        1,
         results,
         1
-    ) != WASMER_OK) {
+    ) != wasmer_result_t::WASMER_OK) {
         printf("hook() call failed\n");
         print_wasmer_error();
         return temMALFORMED; /// todo: [RH] should be a hook execution error code tecHOOK_ERROR?
     }
 
-    int64_t response_tag = results[0].tag;
     int64_t response_value = results[0].value.I64;
 
     printf("hook return code was: %ld\n", response_value);

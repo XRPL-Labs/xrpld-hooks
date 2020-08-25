@@ -30,6 +30,9 @@ api.connect().then(() => {
         console.log(s)
         api.submit(s.signedTransaction).then( response => {
             console.log(response.resultCode, response.resultMessage);
+        
+
+        
         }).catch ( e=> { console.log(e) });
 
 
