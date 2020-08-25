@@ -327,7 +327,9 @@ void print_wasmer_error()
   printf("Error: `%s`\n", error_str);
     free(error_str);
 }
-wasmer_import_t hook_func_import ( auto func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params ) {
+
+template <typename F>
+wasmer_import_t hook_func_import ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params ) {
     return
     {   .module_name = { .bytes = (const uint8_t *) "env", .bytes_len = 3 },
         .import_name = { .bytes = (const uint8_t *) call_name.data(), .bytes_len = call_name.size() },
@@ -344,7 +346,10 @@ wasmer_import_t hook_func_import ( auto func, std::string_view call_name, std::i
     };
 }
 
-int64_t hook_output_dbg ( ApplyContext& apply_ctx, wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len ) {
+int64_t hook_output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len ) {
+    
+    ApplyContext* apply_ctx = (ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
+
     uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
     printf("HOOKAPI_output_dbg: ");
     if (len > 1024) len = 1024;
@@ -353,17 +358,17 @@ int64_t hook_output_dbg ( ApplyContext& apply_ctx, wasmer_instance_context_t * w
     return len;
 }
 
+int64_t hook_get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {    
+    ApplyContext* apply_ctx = (ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
+    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
+}
 
-
-
-TER run_hook(Blob hook, ApplyContext& ctx) {
+TER run_hook(Blob hook, ApplyContext& apply_ctx) {
 
     wasmer_instance_t *instance = NULL;
 
     wasmer_import_t imports[] = {
-        hook_func_import ( hook_output_dbg
-                
-                , "output_dbg", { WI32, WI32 } ) 
+        hook_func_import ( hook_output_dbg, "hook_output_dbg", { WI32, WI32 } )
     };
 
 
@@ -372,6 +377,9 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
         print_wasmer_error();
         return temMALFORMED;
     }
+
+    wasmer_instance_context_data_set ( instance, &apply_ctx );
+        printf("Set ApplyContext: %lx\n", (void*)&apply_ctx);
 
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
