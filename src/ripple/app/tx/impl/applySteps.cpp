@@ -354,7 +354,7 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
         printf("running hook 1\n");
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
-            JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
+            printf("hook malformed\n");
             return temMALFORMED;
         }
         printf("running hook 2\n");
@@ -366,19 +366,21 @@ TER run_hook(Blob hook, ApplyContext& ctx) {
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)
 {
+
+    auto const& ledger = ctx.view();
     auto accountID = ctx.tx.getAccountID(sfAccount);
-    auto const hookSending = ledger->read(keylet::hook(accountID));
+    auto const hookSending = ledger.read(keylet::hook(accountID));
     if (hookSending) {
         // execute the hook on the sending account
-        Blob hook = hookSending.getFieldVL(sfCreateCode);
+        Blob hook = hookSending->getFieldVL(sfCreateCode);
         auto result = run_hook(hook, ctx);
-        if (result != tesSUCCESS) return result;     
+        if (result != tesSUCCESS) return {result, false};     
     }
 
     if (ctx.tx.isFieldPresent(sfDestination)) {
         auto const destAccountID = ctx.tx.getAccountID(sfDestination);
-        auto const hookReceiving = ledger->read(keylet::hook(destAccountID));
-        Blob hook = hookReceiving.getFieldVL(sfCreateCode);
+        auto const hookReceiving = ledger.read(keylet::hook(destAccountID));
+        Blob hook = hookReceiving->getFieldVL(sfCreateCode);
         if (hookReceiving) {
             // execute the hook on the receiving account
             auto result = run_hook(hook, ctx);
