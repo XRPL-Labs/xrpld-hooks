@@ -317,73 +317,7 @@ invoke_calculateConsequences(STTx const& tx)
                 beast::zero};
     }
 }
-/*
-    // Prepare the imports.
-    wasmer_import_t imports[] = {};
-    // Instantiate!
-    wasmer_instance_t *instance = NULL;
-    wasmer_result_t instantiation_result = ::wasmer_instantiate(&instance, bytes, len, imports, 0);
-    assert(instantiation_result == WASMER_OK);
-    // Let's call a function.
-    // Start by preparing the arguments.
-    // Value of argument #1 is `7i32`.
-    wasmer_value_t argument_one;
-    argument_one.tag = WASM_I32;
-    argument_one.value.I32 = 7;
-    // Value of argument #2 is `8i32`.
-    wasmer_value_t argument_two;
-    argument_two.tag = WASM_I32;
-    argument_two.value.I32 = 8;
-    // Prepare the arguments.
-    wasmer_value_t arguments[] = {argument_one, argument_two};
-    // Prepare the return value.
-    wasmer_value_t result_one;
-    wasmer_value_t results[] = {result_one};
-    // Call the `sum` function with the prepared arguments and the return value.
-    wasmer_result_t call_result = ::wasmer_instance_call(instance, "sum", arguments, 2, results, 1);
-    // Let's display the result.
-    printf("Call result:  %d\n", call_result);
-    printf("Result: %d\n", results[0].value.I32);
-    // `sum(7, 8) == 15`.
-    assert(results[0].value.I32 == 15);
-    assert(call_result == WASMER_OK);
-    ::wasmer_instance_destroy(instance);
-    */
 
-/*
-extern "C" {
-#define ELEVENTH_ARGUMENT(a1, a2, a3, a4, a5, a6, a7, a8, a9, a10, a11, ...) a11
-#define COUNT_ARGUMENTS(...) ELEVENTH_ARGUMENT(dummy, ## __VA_ARGS__, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0)
-#define __(x,y) __##x##__##y
-#define WASM_FUNC_IMPORT(funcptr, ...)\
-    {\
-    .module_name = { .bytes = (const uint8_t *) "env",\
-                     .bytes_len = 3 },\
-    .import_name = {\
-            .bytes = (const uint8_t *) #funcptr,\
-            .bytes_len = strlen( #funcptr )},\
-    .tag = 0,\
-    .value = { .func = wasmer_import_func_new(\
-      reinterpret_cast<void (*)(void*)>(funcptr),\
-      {__VA_ARGS__},\
-      COUNT_ARGUMENTS(__VA_ARGS__),\
-      {WASM_I64},\
-      1\
-      )\
-    }}    
-
-}*/
-
-//wasmer_import_t WASM_FUNC_IMPORT( void (*)(void*) functptr, char* funcname, 
-
-int64_t hook_output_dbg(wasmer_instance_context_t * ctx, uint32_t ptr, uint32_t len) {
-    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(ctx, 0) );
-    printf("HOOKAPI_output_dbg: ");
-    if (len > 1024) len = 1024;
-    for (int i = 0; i < len; ++i)
-        printf("%c", memory[ptr + i]);
-    return len;
-}
 
 void print_wasmer_error()
 {
@@ -393,56 +327,54 @@ void print_wasmer_error()
   printf("Error: `%s`\n", error_str);
     free(error_str);
 }
+wasmer_import_t hook_func_import ( auto func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params ) {
+    return
+    {   .module_name = { .bytes = (const uint8_t *) "env", .bytes_len = 3 },
+        .import_name = { .bytes = (const uint8_t *) call_name.data(), .bytes_len = call_name.size() },
+        .tag = wasmer_import_export_kind::WASM_FUNCTION,
+        .value = { .func = 
+            wasmer_import_func_new(
+                reinterpret_cast<void (*)(void*)>(func),
+                std::begin( func_params ),
+                func_params.size(),
+                std::begin( { WI64 } ),
+                1
+            )
+        } 
+    };
+}
+
+int64_t hook_output_dbg ( ApplyContext& apply_ctx, wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len ) {
+    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
+    printf("HOOKAPI_output_dbg: ");
+    if (len > 1024) len = 1024;
+    for (int i = 0; i < len; ++i)
+        printf("%c", memory[ptr + i]);
+    return len;
+}
+
+
 
 
 TER run_hook(Blob hook, ApplyContext& ctx) {
 
-    printf("running hook 1\n");
     wasmer_instance_t *instance = NULL;
 
-
-
-
-  wasmer_import_t imports[] =  {
-      { .module_name = {
-            .bytes = (const uint8_t *) "env",
-            .bytes_len = 3
-        },
-        .import_name = {
-            .bytes = (const uint8_t *) "hook_output_dbg",
-            .bytes_len = strlen("hook_output_dbg")
-        },
-        .tag = wasmer_import_export_kind::WASM_FUNCTION,
-        .value = {
-            .func = wasmer_import_func_new(
-                    reinterpret_cast<void (*)(void *)>(hook_output_dbg),
-                    std::begin({wasmer_value_tag::WASM_I32, wasmer_value_tag::WASM_I32}),
-                    2,
-                    std::begin({wasmer_value_tag::WASM_I64}),
-                    1)
-        } 
-      }
-  };
-
-
+    wasmer_import_t imports[] = {
+        hook_func_import ( hook_output_dbg
+                
+                , "output_dbg", { WI32, WI32 } ) 
+    };
 
 
     if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != wasmer_result_t::WASMER_OK) {
         printf("hook malformed\n");
-    
         print_wasmer_error();
-
         return temMALFORMED;
     }
-    printf("running hook 2\n");
 
-    wasmer_value_t argument_one;
-    argument_one.tag = wasmer_value_tag::WASM_I64;
-    argument_one.value.I64 = 0;
-    wasmer_value_t arguments[] = {argument_one};
-
-    wasmer_value_t result_one;
-    wasmer_value_t results[] = {result_one};
+    wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
+    wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
 
     if (wasmer_instance_call(
         instance,
