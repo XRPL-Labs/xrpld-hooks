@@ -51,6 +51,9 @@ namespace keylet {
 Keylet
 hook(AccountID const& id) noexcept;
 
+Keylet
+hook_state(AccountID const& id, uint256 const& key) noexcept;
+
 /** AccountID root */
 Keylet
 account(AccountID const& id) noexcept;

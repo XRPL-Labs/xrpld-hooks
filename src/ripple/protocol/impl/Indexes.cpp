@@ -60,6 +60,7 @@ enum class LedgerNameSpace : std::uint16_t {
     DEPOSIT_PREAUTH = 'p',
     NEGATIVE_UNL = 'N',
     HOOK = 'H',
+    HOOK_STATE = 'v', 
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.
@@ -122,6 +123,12 @@ Keylet
 hook(AccountID const& id) noexcept
 {
     return {ltHOOK, indexHash(LedgerNameSpace::HOOK, id)};
+}
+
+Keylet
+hook_state(AccountID const& id, uint256 const& key) noexcept
+{
+    return {ltHOOK_STATE, indexHash(LedgerNameSpace::HOOK_STATE, id, key)};
 }
 
 Keylet

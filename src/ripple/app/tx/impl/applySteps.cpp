@@ -17,8 +17,8 @@
 */
 //==============================================================================
 
-#include <ripple/basics/Hook.h>
 #include <ripple/app/tx/applySteps.h>
+#include <ripple/app/tx/applyHook.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/app/tx/impl/CancelCheck.h>
 #include <ripple/app/tx/impl/CancelOffer.h>
@@ -319,61 +319,6 @@ invoke_calculateConsequences(STTx const& tx)
 }
 
 
-void print_wasmer_error()
-{
-  int error_len = wasmer_last_error_length();
-  char *error_str = (char*)malloc(error_len);
-  wasmer_last_error_message(error_str, error_len);
-  printf("Error: `%s`\n", error_str);
-    free(error_str);
-}
-
-
-
-TER run_hook(Blob hook, ApplyContext& apply_ctx) {
-
-    wasmer_instance_t *instance = NULL;
-
-    wasmer_import_t imports[] = {
-        hook_internal::func_import ( hook_api::output_dbg, "output_dbg", { WI32, WI32 } )
-    };
-
-
-    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != wasmer_result_t::WASMER_OK) {
-        printf("hook malformed\n");
-        print_wasmer_error();
-        return temMALFORMED;
-    }
-
-    wasmer_instance_context_data_set ( instance, &apply_ctx );
-        printf("Set ApplyContext: %lx\n", (void*)&apply_ctx);
-
-    wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
-    wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
-
-    if (wasmer_instance_call(
-        instance,
-        "hook",
-        arguments,
-        1,
-        results,
-        1
-    ) != wasmer_result_t::WASMER_OK) {
-        printf("hook() call failed\n");
-        print_wasmer_error();
-        return temMALFORMED; /// todo: [RH] should be a hook execution error code tecHOOK_ERROR?
-    }
-
-    int64_t response_value = results[0].value.I64;
-
-    printf("hook return code was: %ld\n", response_value);
-
-    // todo: [RH] memory leak here, destroy the imports, instance using a smart pointer
-    wasmer_instance_destroy(instance);
-    printf("running hook 3\n");
-
-    return tesSUCCESS;
-}
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)
 {
@@ -384,7 +329,7 @@ invoke_apply(ApplyContext& ctx)
     if (hookSending) {
         // execute the hook on the sending account
         Blob hook = hookSending->getFieldVL(sfCreateCode);
-        auto result = run_hook(hook, ctx);
+        auto result = hook::apply(hook, ctx);
         if (result != tesSUCCESS) return {result, false};     
     }
 
@@ -394,7 +339,7 @@ invoke_apply(ApplyContext& ctx)
         Blob hook = hookReceiving->getFieldVL(sfCreateCode);
         if (hookReceiving) {
             // execute the hook on the receiving account
-            auto result = run_hook(hook, ctx);
+            auto result = hook::apply(hook, ctx);
             if (result != tesSUCCESS) return {result, false};     
         }
     }

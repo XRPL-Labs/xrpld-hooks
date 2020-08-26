@@ -89,6 +89,7 @@ enum LedgerEntryType {
     ltNEGATIVE_UNL = 'N',
 
     ltHOOK ='H',
+    ltHOOK_STATE ='v',
 
     // No longer used or supported. Left here to prevent accidental
     // reassignment of the ledger type.

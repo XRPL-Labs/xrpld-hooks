@@ -428,6 +428,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/Taker.cpp
   src/ripple/app/tx/impl/Transactor.cpp
   src/ripple/app/tx/impl/apply.cpp
+  src/ripple/app/tx/impl/applyHook.cpp
   src/ripple/app/tx/impl/applySteps.cpp
   #[===============================[
      main sources:
@@ -438,7 +439,6 @@ target_sources (rippled PRIVATE
   src/ripple/basics/impl/PerfLogImp.cpp
   src/ripple/basics/impl/ResolverAsio.cpp
   src/ripple/basics/impl/UptimeClock.cpp
-  src/ripple/basics/impl/Hook.cpp
   src/ripple/basics/impl/make_SSLContext.cpp
   src/ripple/basics/impl/mulDiv.cpp
   #[===============================[

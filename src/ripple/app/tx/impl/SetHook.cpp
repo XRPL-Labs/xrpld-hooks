@@ -21,7 +21,7 @@
 
 #include <ripple/app/ledger/Ledger.h>
 #include <ripple/basics/Log.h>
-#include <ripple/basics/Hook.h>
+#include <ripple/app/tx/applyHook.h>
 
 #include <ripple/ledger/ApplyView.h>
 #include <ripple/protocol/Feature.h>
@@ -54,6 +54,8 @@ printf("preflight sethook 1\n");
 
     if (!hook.empty()) { // if the hook is empty it's a delete request
         printf("preflight sethook 3\n");
+
+        //todo: [RH] check wasm guest's function table to ensure only api functions are present        
 /*
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
@@ -228,7 +230,7 @@ void
 SetHook::writeHookToSLE(
     SLE::pointer const& ledgerEntry) const
 {
-    //todo: support flags?
+    //todo: [RH] support flags?
     ledgerEntry->setFieldVL(sfCreateCode, hook_);
 }
 
