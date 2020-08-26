@@ -227,6 +227,7 @@ SF_Blob const sfUNLModifyValidator(access, STI_VL, 19, "UNLModifyValidator");
 SF_Blob const sfNegativeUNLToDisable(access, STI_VL, 20, "ValidatorToDisable");
 SF_Blob const
     sfNegativeUNLToReEnable(access, STI_VL, 21, "ValidatorToReEnable");
+SF_Blob const sfHookData(access, STI_VL, 22, "HookData");
 
 // account
 SF_Account const sfAccount(access, STI_ACCOUNT, 1, "Account");

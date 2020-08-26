@@ -113,6 +113,7 @@ enum TEMcodes : TERUnderlyingType {
     temBAD_TICK_SIZE,
     temINVALID_ACCOUNT_ID,
     temCANNOT_PREAUTH_SELF,
+    temHOOK_DATA_TOO_LARGE,
 
     // An intermediate result used internally, should never be returned.
     temUNCERTAIN,

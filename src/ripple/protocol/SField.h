@@ -464,6 +464,7 @@ extern SF_Blob const sfFundCode;
 extern SF_Blob const sfRemoveCode;
 extern SF_Blob const sfExpireCode;
 extern SF_Blob const sfCreateCode;
+extern SF_Blob const sfHookData;
 extern SF_Blob const sfMemoType;
 extern SF_Blob const sfMemoData;
 extern SF_Blob const sfMemoFormat;

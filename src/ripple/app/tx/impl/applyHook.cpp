@@ -1,15 +1,17 @@
 #include <ripple/app/tx/applyHook.h>
+#include <ripple/basics/Log.h>
+#include <ripple/basics/Slice.h>
 using namespace ripple;
-/*
+
 static TER
 hook::removeHookStateFromLedger(
-    Application& app,
+    beast::Journal& j,
     ApplyView& view,
     Keylet const& accountKeylet,
     Keylet const& ownerDirKeylet,
     Keylet const& hookStateKeylet)
 {
-    SLE::pointer hook = view.peek(hookKeylet);
+    SLE::pointer hookState = view.peek(hookStateKeylet);
 
     // If the signer list doesn't exist we've already succeeded in deleting it.
     if (!hookState)
@@ -27,7 +29,7 @@ hook::removeHookStateFromLedger(
         view,
         view.peek(accountKeylet),
         -1,
-        app.journal("View"));
+        j("View"));
 
     // remove the actual hook
     view.erase(hookState);
@@ -36,88 +38,59 @@ hook::removeHookStateFromLedger(
 }
 
 TER
-hook::replaceHook()
+hook::replaceHook(
+    beast::Journal& j,
+    ApplyView& view,
+    AccountID& account,
+    Slice& data)
 {
-    auto const accountKeylet = keylet::account(account_);
-    auto const ownerDirKeylet = keylet::ownerDir(account_);
-    auto const hookKeylet = keylet::hook(account_);
 
-    // This may be either a create or a replace.  Preemptively remove any
-    // old hook.  May reduce the reserve, so this is done before
-    // checking the reserve.
-    if (TER const ter = removeHookFromLedger(
-            ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet))
+    if (data.size() > hook::state_max_blob_size) {
+       return temHOOK_DATA_TOO_LARGE; 
+    } 
+
+    int addedOwnerCount{ ( view.peek(hookStateKeylet) ? 0 : 1 ) };
+    
+    if (TER const ter = removeHookStateFromLedger(
+            j, view(), accountKeylet, ownerDirKeylet, hookStateKeylet))
         return ter;
 
     auto const sle = view().peek(accountKeylet);
     if (!sle)
         return tefINTERNAL;
 
-    // Compute new reserve.  Verify the account has funds to meet the reserve.
     std::uint32_t const oldOwnerCount{(*sle)[sfOwnerCount]};
-
-
-    int addedOwnerCount{1};
 
     XRPAmount const newReserve{
         view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
 
-    // We check the reserve against the starting balance because we want to
-    // allow dipping into the reserve to pay fees.  This behavior is consistent
-    // with CreateTicket.
     if (mPriorBalance < newReserve)
         return tecINSUFFICIENT_RESERVE;
 
-    // Everything's ducky.  Add the ltHOOK to the ledger.
-    auto hook = std::make_shared<SLE>(hookKeylet);
-    view().insert(hook);
-    writeHookToSLE(hook);
+    auto hookState = std::make_shared<SLE>(hookStateKeylet);
+    view().insert(hookState);
+    writeHookStateToSLE(hookState);
+    hookState->setFieldVL(sfHookData, data);
 
-    auto viewJ = ctx_.app.journal("View");
+    auto viewJ = j("View");
     // Add the hook to the account's directory.
     auto const page = dirAdd(
         ctx_.view(),
         ownerDirKeylet,
-        hookKeylet.key,
+        hookStateKeylet.key,
         false,
-        describeOwnerDir(account_),
+        describeOwnerDir(account),
         viewJ);
 
-    JLOG(j_.trace()) << "Create hook for account " << toBase58(account_)
+    JLOG(j.trace()) << "Create/update hook state for account " << toBase58(account)
                      << ": " << (page ? "success" : "failure");
 
     if (!page)
         return tecDIR_FULL;
 
-    // If we succeeded, the new entry counts against the
-    // creator's reserve.
     adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
-
-TER
-Hook::destroyHookState()
-{
-    auto const accountKeylet = keylet::account(account_);
-    SLE::pointer ledgerEntry = view().peek(accountKeylet);
-    if (!ledgerEntry)
-        return tefINTERNAL;
-
-    auto const ownerDirKeylet = keylet::ownerDir(account_);
-    auto const hookKeylet = keylet::hook(account_);
-    return removeHookFromLedger(
-        ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet);
-}
-
-void
-Hook::writeHookStateToSLE(
-    SLE::pointer const& ledgerEntry) const
-{
-    //todo: [RH] support flags?
-    ledgerEntry->setFieldVL(sfCreateCode, hook_);
-}
-*/
-
 
 void hook::print_wasmer_error()
 {
@@ -170,20 +143,38 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx) {
 }
 
 
-
 int64_t hook_api::output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len ) {
 
-    ripple::ApplyContext* apply_ctx = (ripple::ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
 
-    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
     printf("HOOKAPI_output_dbg: ");
     if (len > 1024) len = 1024;
-    for (int i = 0; i < len; ++i)
+    for (int i = 0; i < len && i < memory_length; ++i)
         printf("%c", memory[ptr + i]);
     return len;
+
+}
+int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len ) {
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
+
+    if (key_ptr + 32 > memory_length || data_ptr_in + hook::state_max_blob_size > memory_length) {
+        JLOG(j.trace())
+            << "Hook tried to set_state using memory outside of the wasm instance limit";
+        return OUT_OF_BOUNDS;
+    }
+
+    
+
 }
 
-int64_t hook_api::get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {
+int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr key_ptr, uint32_t data_ptr_out ) {
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
+
+}
+
+/*int64_t hook_api::get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {
     ripple::ApplyContext* apply_ctx = (ripple::ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
     uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
-}
+}*/

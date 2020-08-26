@@ -186,6 +186,14 @@ LedgerFormats::LedgerFormats()
         },
         commonFields);
 
+    add(jss::HookState,
+        ltHOOK_STATE,
+        {
+            {sfOwnerNode, soeREQUIRED},
+            {sfHookData, soeREQUIRED}
+        },
+        commonFields);
+
     add(jss::PayChannel,
         ltPAYCHAN,
         {
