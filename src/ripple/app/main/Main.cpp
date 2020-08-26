@@ -32,6 +32,7 @@
 #include <ripple/protocol/BuildInfo.h>
 #include <ripple/resource/Fees.h>
 #include <ripple/rpc/RPCHandler.h>
+#include <ripple/basics/Hook.h>
 
 #include <beast/unit_test/match.hpp>
 #include <test/unit_test/multi_runner.h>

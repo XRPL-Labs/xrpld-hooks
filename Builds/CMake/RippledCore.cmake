@@ -438,6 +438,7 @@ target_sources (rippled PRIVATE
   src/ripple/basics/impl/PerfLogImp.cpp
   src/ripple/basics/impl/ResolverAsio.cpp
   src/ripple/basics/impl/UptimeClock.cpp
+  src/ripple/basics/impl/Hook.cpp
   src/ripple/basics/impl/make_SSLContext.cpp
   src/ripple/basics/impl/mulDiv.cpp
   #[===============================[
