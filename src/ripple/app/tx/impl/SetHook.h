@@ -67,25 +67,30 @@ public:
     void
     preCompute() override;
 
-    // Interface used by DeleteAccount
-    static TER
-    removeFromLedger(
-        Application& app,
-        ApplyView& view,
-        AccountID const& account);
-
-    
 private:
 
     TER
     replaceHook();
     TER
     destroyHook();
+    TER 
+    destroyHookState(
+        Application& app,
+        ApplyView& view,
+        const AccoundID& account,
+        Keylet const& accountKeylet,
+        Keylet const& ownerDirKeylet,
+        Keylet const& hookKeylet
+    );
+    TER
+    removeHookFromLedger(
+        Application& app,
+        ApplyView& view,
+        Keylet const& accountKeylet,
+        Keylet const& ownerDirKeylet,
+        Keylet const& hookKeylet
+    );
 
-
-    void
-    writeHookToSLE(SLE::pointer const& ledgerEntry)
-        const;
 };
 
 }  // namespace ripple

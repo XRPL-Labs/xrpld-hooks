@@ -4,11 +4,14 @@
 #include <ripple/beast/utility/Journal.h>    
 #include "wasmer.hh"
 
+
 namespace hook_api {
 
     enum api_return_code {
         SUCCESS = 0, // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
-        OUT_OF_BOUNDS = -1
+        OUT_OF_BOUNDS = -1,
+        INTERNAL_ERROR = -2, // eg directory is corrupt
+        TOO_BIG = -3    // something you tried to store was too big
     };
 
     // this is the api that wasm modules use to communicate with rippled
@@ -21,7 +24,23 @@ namespace hook_api {
 
 namespace hook {
 
-    constexpr state_max_blob_size = 128;
+    struct HookContext {
+        ApplyContext& apply_ctx;
+        AccountID& account;
+        Keylet const& accountKeylet;
+        Keylet const& ownerDirKeylet;
+        Keylet const& hookKeylet;
+    }
+
+    //todo: [RH] change this to a validator votable figure
+    const int max_hook_data = 128;
+
+    TER
+    hook::setHookState(
+        HookContext& hookCtx,
+        Keylet const& hookStateKeylet,
+        Slice& data
+    )
 
     void print_wasmer_error();
     ripple::TER apply(ripple::Blob hook, ripple::ApplyContext& apply_ctx);
@@ -30,6 +49,8 @@ namespace hook {
 
 #ifndef RIPPLE_HOOK_H_INCLUDED
 #define RIPPLE_HOOK_H_INCLUDED
+#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
+    (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
     wasmer_import_t imports[] = {
@@ -40,7 +61,8 @@ namespace hook {
     };
 
 #define HOOK_SETUP()\
-    ApplyContext* apply_ctx = (ApplyContext*) wasmer_instance_context_data_get( wasm_ctx );\
+    HookContext* hook_ctx = (HookContext*) wasmer_instance_context_data_get( wasm_ctx );\
+    ApplyContext* apply_ctx = hook_ctx->apply_ctx;\
     beast::Journal& j = apply_ctx.journal;\
     wasmer_memory_t* memory_ctx = wasmer_instance_context_memory( wasm_ctx, 0 );\
     uint8_t* memory = wasmer_memory_data( memory_ctx );\

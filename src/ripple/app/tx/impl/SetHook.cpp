@@ -41,22 +41,25 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-printf("preflight sethook 1\n");
+    printf("preflight sethook 1\n");
 
     if (!ctx.tx.isFieldPresent(sfCreateCode))
     {    JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid signer set list format.";
         return temMALFORMED;
     }
-        printf("preflight sethook 2\n");
+    
+    printf("preflight sethook 2\n");
 
+    return preflight2(ctx);
+
+    /*
     Blob hook = ctx.tx.getFieldVL(sfCreateCode);      
 
     if (!hook.empty()) { // if the hook is empty it's a delete request
         printf("preflight sethook 3\n");
 
         //todo: [RH] check wasm guest's function table to ensure only api functions are present        
-/*
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
@@ -65,12 +68,11 @@ printf("preflight sethook 1\n");
         printf("preflight sethook 4\n");
 
         wasmer_instance_destroy(instance);
- */
    }
 
         printf("preflight sethook 5\n");
 
-    return preflight2(ctx);
+    */
 }
 
 TER
@@ -103,42 +105,9 @@ SetHook::preCompute()
     return Transactor::preCompute();
 }
 
-static TER
-removeHookFromLedger(
-    Application& app,
-    ApplyView& view,
-    Keylet const& accountKeylet,
-    Keylet const& ownerDirKeylet,
-    Keylet const& hookKeylet)
-{
-    SLE::pointer hook = view.peek(hookKeylet);
-
-    // If the signer list doesn't exist we've already succeeded in deleting it.
-    if (!hook)
-        return tesSUCCESS;
-
-    // Remove the node from the account directory.
-    auto const hint = (*hook)[sfOwnerNode];
-
-    if (!view.dirRemove(ownerDirKeylet, hint, hookKeylet.key, false))
-    {
-        return tefBAD_LEDGER;
-    }
-
-    adjustOwnerCount(
-        view,
-        view.peek(accountKeylet),
-        -1,
-        app.journal("View"));
-
-    // remove the actual hook
-    view.erase(hook);
-
-    return tesSUCCESS;
-}
 
 TER
-SetHook::destroyHookState(
+SetHook::destroyEntireHookState(
     Application& app,
     ApplyView& view,
     const AccoundID& account,
@@ -186,7 +155,8 @@ SetHook::destroyHookState(
         if (nodeType == ltHOOK_STATE) {
             // delete it!
             // todo: [RH] check if it's safe to delete while iterating ???
-            if (!view.dirRemove(ownerDirKeylet, account_, hookKeylet.key, false))
+            auto const hint = (*sleItem)[sfOwnerNode];
+            if (!view.dirRemove(ownerDirKeylet, hint, hookKeylet.key, false))
             {
                 return tefBAD_LEDGER;
             }
@@ -199,11 +169,13 @@ SetHook::destroyHookState(
 
     return tesSUCCESS;
 }
+
 TER
 SetHook::replaceHook()
 {
 
-    const int hookDataMaxSize = 128; //todo: [RH] change this to a validator votable figure
+    const int hookDataMaxSize = hook::max_hook_data; 
+
 
     auto const accountKeylet = keylet::account(account_);
     auto const ownerDirKeylet = keylet::ownerDir(account_);
@@ -230,7 +202,7 @@ SetHook::replaceHook()
     if (hook_.empty() && oldHook && oldHook->getFieldVL(sfCreateCode).empty()) {
         // this is a special case for destroying the existing state data of a previously removed contract
         if (TER const ter = 
-                destroyHookState(ctx_.app, view(), account_, accountKeylet, ownerDirKeylet, hookKeylet))
+                destroyEntireHookState(ctx_.app, view(), account_, accountKeylet, ownerDirKeylet, hookKeylet))
             return ter;
         return tesSUCCESS;
     }
@@ -259,14 +231,6 @@ SetHook::replaceHook()
     auto hook = std::make_shared<SLE>(hookKeylet);
     view().insert(hook);
 
-    /*{sfOwnerNode, soeREQUIRED},
-            {sfCreateCode, soeREQUIRED},
-            {sfPreviousTxnID, soeREQUIRED},
-            {sfPreviousTxnLgrSeq, soeREQUIRED},
-            {sfHookStateCount, soeREQUIRED},
-            {sfHookCodeReserve, soeREQUIRED},
-            {sfHookDataMaxSize, soeREQUIRED}, // this is set at time of creation according to what the validators voted on
-    },*/
     hook->setFieldVL(sfCreateCode, hook_);
     hook->setFieldU32(sfHookStateCount, stateCount);
     hook->setFieldU32(sfHookReserveCount, newReserveUnits);
@@ -288,10 +252,48 @@ SetHook::replaceHook()
 
     if (!page)
         return tecDIR_FULL;
+    
+    hook->setFieldU64(sfOwnerNode, *page);
 
     adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
+
+TER
+SetHook::removeHookFromLedger(
+    Application& app,
+    ApplyView& view,
+    Keylet const& accountKeylet,
+    Keylet const& ownerDirKeylet,
+    Keylet const& hookKeylet)
+{
+    SLE::pointer hook = view.peek(hookKeylet);
+
+    // If the signer list doesn't exist we've already succeeded in deleting it.
+    if (!hook)
+        return tesSUCCESS;
+
+    // Remove the node from the account directory.
+    auto const hint = (*hook)[sfOwnerNode];
+
+    //todo: [RH] we probably don't need to delete this every time
+    if (!view.dirRemove(ownerDirKeylet, hint, hookKeylet.key, false))
+    {
+        return tefBAD_LEDGER;
+    }
+
+    adjustOwnerCount(
+        view,
+        view.peek(accountKeylet),
+        -1,
+        app.journal("View"));
+
+    // remove the actual hook
+    view.erase(hook);
+
+    return tesSUCCESS;
+}
+
 
 TER
 SetHook::destroyHook()
@@ -305,12 +307,6 @@ SetHook::destroyHook()
     auto const hookKeylet = keylet::hook(account_);
     return removeHookFromLedger(
         ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet);
-}
-
-void
-SetHook::writeHookToSLE(
-    SLE::pointer const& ledgerEntry) const
-{
 }
 
 }  // namespace ripple

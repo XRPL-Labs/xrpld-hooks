@@ -3,27 +3,32 @@
 #include <ripple/basics/Slice.h>
 using namespace ripple;
 
-
 TER
 hook::setHookState(
-    beast::Journal& j,
-    ApplyView& view,
-    AccountID& account,
-    Slice& data,
-    Keylet const& accountKeylet,
-    Keylet const& ownerDirKeylet,
-    Keylet const& hookStateKeylet
-    )
-{
+    HookContext& hookCtx,
+    Keylet const& hookStateKeylet,
+    Slice& data
+){
 
     auto const sle = view().peek(accountKeylet);
     if (!sle)
         return tefINTERNAL;
 
+    auto const hook = view().peek(hookKeylet);
+    if (!hook) { // [RH] should this be more than trace??
+        JLOG(j.trace()) << "Attempted to set a hook state for a hook that doesnt exist " << toBase58(account);
+        return tefINTERNAL;
+    }
+
+    uint32_t hookDataMax = hook->getFieldU32(sfHookDataMaxSize);
+
     // if the blob is too large don't set it
-    if (data.size() > hook::state_max_blob_size) {
+    if (data.size() > hookDataMax) {
        return temHOOK_DATA_TOO_LARGE; 
     } 
+
+    uint32_t stateCount = hook->getFieldU32(sfHookStateCount);
+    uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
 
     auto const oldHookState = view.peek(oldHookState);
 
@@ -33,37 +38,66 @@ hook::setHookState(
         if (!view.peek(hookStateKeylet))
             return tesSUCCESS; // a request to remove a non-existent entry is defined as success
 
-        // Remove the node from the account directory.
         auto const hint = (*hookState)[sfOwnerNode];
 
+        // Remove the node from the account directory.
         if (!view.dirRemove(ownerDirKeylet, hint, hookStateKeylet.key, false))
         {
             return tefBAD_LEDGER;
         }
 
-        adjustOwnerCount(
-            view,
-            view.peek(accountKeylet),
-            -1,
-            j("View"));
-
         // remove the actual hook state obj
         view.erase(oldHookState);
+
+        // adjust state object count
+        if (stateCount > 0)
+            --stateCount; // guard this because in the "impossible" event it is already 0 we'll wrap back to int_max
+
+        // if removing this state entry would destroy the allotment then reduce the owner count
+        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) < oldStateReserve)
+            adjustOwnerCount(view(), sle, -1, app.journal("View"));
+        
+        hook->setFieldU32(sfHookStateCount, COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount));
 
         return tesSUCCESS;
     }
 
-    // execution to this point means we are updating or creating a state hook
     
+    std::uint32_t const ownerCount{(*sle)[sfOwnerCount]};
+
+    // execution to this point means we are updating or creating a state hook
     auto const hookStateOld = view().peek(hookStateKeylet);
-    if (hookStateOld) 
+    if (hookStateOld) { 
         view.erase(hookStateOld);
+    } else {
+
+        ++stateCount;
+
+        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) > oldStateReserve) {
+            // the hook used its allocated allotment of state entries for its previous ownercount
+            // increment ownercount and give it another allotment
+    
+            ++ownerCount;
+            XRPAmount const newReserve{
+                view().fees().accountReserve(ownerCount)};
+
+            if (STAmount((*sle)[sfBalance]).xrp() < newReserve)
+                return tecINSUFFICIENT_RESERVE;
+
+            
+            adjustOwnerCount(view(), sle, 1, app.journal("View"));
+
+        }
+
+        // update state count
+        hook->setFieldU32(sfHookStateCount, stateCount);
+
+    }
 
     // add new data to ledger
     auto hookStateNew = std::make_shared<SLE>(hookStateKeylet);
     view().insert(hookStateNew);
     hookStateNew->setFieldVL(sfHookData, data);
-
 
     if (!hookStateOld) {
         auto viewJ = j("View");
@@ -81,9 +115,11 @@ hook::setHookState(
         
         if (!page)
             return tecDIR_FULL;
+
+        hookStateNew->setFieldU64(sfOwnerNode, *page);
+
     }
 
-    //adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
 
@@ -96,7 +132,7 @@ void hook::print_wasmer_error()
     free(error_str);
 }
 
-TER hook::apply(Blob hook, ApplyContext& apply_ctx) {
+TER hook::apply(Blob hook, ApplyContext& apply_ctx, AccountID& account) {
 
     wasmer_instance_t *instance = NULL;
 
@@ -107,8 +143,17 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx) {
         return temMALFORMED;
     }
 
-    wasmer_instance_context_data_set ( instance, &apply_ctx );
-        printf("Set ApplyContext: %lx\n", (void*)&apply_ctx);
+
+    HookContext hook_ctx {
+        .apply_ctx = apply_ctx,
+        .account = account,
+        .accountKeylet = keylet::account(account),
+        .ownerDirKeylet = keylet::ownerDir(account),
+        .hookKeylet = keylet::hook(account)
+    };
+
+    wasmer_instance_context_data_set ( instance, &hook_ctx );
+    printf("Set HookContext: %lx\n", (void*)&hook_ctx);
 
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
@@ -159,7 +204,20 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
         return OUT_OF_BOUNDS;
     }
 
-    
+    //todo: [RH] compute hookStateKeylet from wasm's key_ptr  
+
+    auto const sle = apply_ctx.view().peek(hook_ctx.hookKeylet);
+    if (!sle)
+        return INERNAL_ERROR;
+
+    uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize); 
+    if (in_len > maxSize)
+        return TOO_BIG;
+   
+    // execution to here means we can store state
+    setHookState(hook_ctx,
+    Keylet const& hookStateKeylet,
+    Slice& data
 
 }
 

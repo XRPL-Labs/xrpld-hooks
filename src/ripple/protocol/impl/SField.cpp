@@ -133,7 +133,6 @@ SF_U64 const sfHighNode(access, STI_UINT64, 8, "HighNode");
 SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
-SF_U64 const sfHookNode(access, STI_UINT64, 12, "HookNode");
 
 // 128-bit
 SF_U128 const sfEmailHash(access, STI_HASH128, 1, "EmailHash");

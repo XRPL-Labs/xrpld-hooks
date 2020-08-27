@@ -406,7 +406,6 @@ extern SF_U64 const sfHighNode;
 extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
-extern SF_U64 const sfHookNode;
 
 // 128-bit
 extern SF_U128 const sfEmailHash;

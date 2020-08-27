@@ -179,6 +179,7 @@ LedgerFormats::LedgerFormats()
     add(jss::Hook,
         ltHOOK,
         {
+            {sfAccount, soeREQUIRED},
             {sfOwnerNode, soeREQUIRED},
             {sfCreateCode, soeREQUIRED},
             {sfPreviousTxnID, soeREQUIRED},
@@ -193,8 +194,8 @@ LedgerFormats::LedgerFormats()
     add(jss::HookState,
         ltHOOK_STATE,
         {
+            {sfAccount, soeREQUIRED},
             {sfOwnerNode, soeREQUIRED},   
-            {sfHookNode, soeREQUIRED},   
             {sfHookData, soeREQUIRED},
         },
         commonFields);

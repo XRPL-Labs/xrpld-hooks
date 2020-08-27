@@ -329,7 +329,7 @@ invoke_apply(ApplyContext& ctx)
     if (hookSending) {
         // execute the hook on the sending account
         Blob hook = hookSending->getFieldVL(sfCreateCode);
-        auto result = hook::apply(hook, ctx);
+        auto result = hook::apply(hook, ctx, accountID);
         if (result != tesSUCCESS) return {result, false};     
     }
 
@@ -339,7 +339,7 @@ invoke_apply(ApplyContext& ctx)
         Blob hook = hookReceiving->getFieldVL(sfCreateCode);
         if (hookReceiving) {
             // execute the hook on the receiving account
-            auto result = hook::apply(hook, ctx);
+            auto result = hook::apply(hook, ctx, destAccountID);
             if (result != tesSUCCESS) return {result, false};     
         }
     }
