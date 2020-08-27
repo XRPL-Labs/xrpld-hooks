@@ -349,6 +349,7 @@ extern SF_U16 const sfSignerWeight;
 
 // 16-bit integers (uncommon)
 extern SF_U16 const sfVersion;
+extern SF_U16 const sfHookDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
 
 // 32-bit integers (common)
 extern SF_U32 const sfFlags;
@@ -390,6 +391,8 @@ extern SF_U32 const sfCancelAfter;
 extern SF_U32 const sfFinishAfter;
 extern SF_U32 const sfSignerListID;
 extern SF_U32 const sfSettleDelay;
+extern SF_U32 const sfHookStateCount;
+extern SF_U32 const sfHookReserveCount;
 
 // 64-bit integers
 extern SF_U64 const sfIndexNext;
@@ -403,6 +406,7 @@ extern SF_U64 const sfHighNode;
 extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
+extern SF_U64 const sfHookNode;
 
 // 128-bit
 extern SF_U128 const sfEmailHash;

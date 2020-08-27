@@ -138,23 +138,73 @@ removeHookFromLedger(
 }
 
 TER
-SetHook::removeFromLedger(
+SetHook::destroyHookState(
     Application& app,
     ApplyView& view,
-    AccountID const& account)
-{
-    auto const accountKeylet = keylet::account(account);
-    auto const ownerDirKeylet = keylet::ownerDir(account);
-    auto const hookKeylet = keylet::hook(account);
+    const AccoundID& account,
+    Keylet const& accountKeylet,
+    Keylet const& ownerDirKeylet,
+    Keylet const& hookKeylet
+) {
 
-    return removeHookFromLedger(
-        app, view, accountKeylet, ownerDirKeylet, hookKeylet);
+    std::shared_ptr<SLE const> sleDirNode{};
+    unsigned int uDirEntry{0};
+    uint256 dirEntry{beast::zero};
+
+    if (!cdirFirst(
+            view(),
+            ownerDirKeylet.key,
+            sleDirNode,
+            uDirEntry,
+            dirEntry,
+            app.journal)) {
+            JLOG(app.journal("View"))
+                << "SetHook (delete state): account directory missing " << account;
+        return tefINTERNAL;
+    }
+
+    std::int32_t deletableDirEntryCount{0};
+    do
+    {
+        // Make sure any directory node types that we find are the kind
+        // we can delete.
+        Keylet const itemKeylet{ltCHILD, dirEntry}; // todo: ??? [RH] can I just specify ltHOOK_STATE here ???
+        auto sleItem = view().read(itemKeylet);
+        if (!sleItem)
+        {
+            // Directory node has an invalid index.  Bail out.
+            JLOG(app.journal.fatal())
+                << "SetHook (delete state): directory node in ledger " << view().seq()
+                << " has index to object that is missing: "
+                << to_string(dirEntry);
+            return tefBAD_LEDGER;
+        }
+
+        LedgerEntryType const nodeType{
+            safe_cast<LedgerEntryType>((*sleItem)[sfLedgerEntryType])};
+
+        if (nodeType == ltHOOK_STATE) {
+            // delete it!
+            // todo: [RH] check if it's safe to delete while iterating ???
+            if (!view.dirRemove(ownerDirKeylet, account_, hookKeylet.key, false))
+            {
+                return tefBAD_LEDGER;
+            }
+            view.erase(sleItem);
+        }
+
+
+    } while (cdirNext(
+        view(), ownerDirKeylet.key, sleDirNode, uDirEntry, dirEntry, app.journal));
+
+    return tesSUCCESS;
 }
-
-
 TER
 SetHook::replaceHook()
 {
+
+    const int hookDataMaxSize = 128; //todo: [RH] change this to a validator votable figure
+
     auto const accountKeylet = keylet::account(account_);
     auto const ownerDirKeylet = keylet::ownerDir(account_);
     auto const hookKeylet = keylet::hook(account_);
@@ -162,6 +212,30 @@ SetHook::replaceHook()
     // This may be either a create or a replace.  Preemptively remove any
     // old hook.  May reduce the reserve, so this is done before
     // checking the reserve.
+
+    auto const oldHook = view().peek(hookKeylet);
+    
+    // get the current state count, if any
+    uint32_t stateCount = ( oldHook ? oldHook->getFieldU32(sfHookStateCount) : 0 );
+   
+    // get the previously reserved amount, if any 
+    uint32_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookCodeReserve) : 0 );
+
+    // get the new cost to store, if any
+    uint32_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)hookDataMaxSize) ); 
+
+    // get existing flags
+    uint32_t flags = ( oldHook ?  oldHook->getFieldU32(sfFlags) : 0 );
+
+    if (hook_.empty() && oldHook && oldHook->getFieldVL(sfCreateCode).empty()) {
+        // this is a special case for destroying the existing state data of a previously removed contract
+        if (TER const ter = 
+                destroyHookState(ctx_.app, view(), account_, accountKeylet, ownerDirKeylet, hookKeylet))
+            return ter;
+        return tesSUCCESS;
+    }
+
+    // remove the existing hook object in anticipation of readding
     if (TER const ter = removeHookFromLedger(
             ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet))
         return ter;
@@ -170,25 +244,34 @@ SetHook::replaceHook()
     if (!sle)
         return tefINTERNAL;
 
+
     // Compute new reserve.  Verify the account has funds to meet the reserve.
     std::uint32_t const oldOwnerCount{(*sle)[sfOwnerCount]};
 
-
-    int addedOwnerCount{1};
+    int addedOwnerCount = newReserveUnits - previousReserveUnits;
 
     XRPAmount const newReserve{
         view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
 
-    // We check the reserve against the starting balance because we want to
-    // allow dipping into the reserve to pay fees.  This behavior is consistent
-    // with CreateTicket.
     if (mPriorBalance < newReserve)
         return tecINSUFFICIENT_RESERVE;
 
-    // Everything's ducky.  Add the ltHOOK to the ledger.
     auto hook = std::make_shared<SLE>(hookKeylet);
     view().insert(hook);
-    writeHookToSLE(hook);
+
+    /*{sfOwnerNode, soeREQUIRED},
+            {sfCreateCode, soeREQUIRED},
+            {sfPreviousTxnID, soeREQUIRED},
+            {sfPreviousTxnLgrSeq, soeREQUIRED},
+            {sfHookStateCount, soeREQUIRED},
+            {sfHookCodeReserve, soeREQUIRED},
+            {sfHookDataMaxSize, soeREQUIRED}, // this is set at time of creation according to what the validators voted on
+    },*/
+    hook->setFieldVL(sfCreateCode, hook_);
+    hook->setFieldU32(sfHookStateCount, stateCount);
+    hook->setFieldU32(sfHookReserveCount, newReserveUnits);
+    hook->setFieldU32(sfHookDataMaxSize, hookDataMaxSize); 
+    hook->setFieldU32(sfFlags, flags);
 
     auto viewJ = ctx_.app.journal("View");
     // Add the hook to the account's directory.
@@ -206,8 +289,6 @@ SetHook::replaceHook()
     if (!page)
         return tecDIR_FULL;
 
-    // If we succeeded, the new entry counts against the
-    // creator's reserve.
     adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
@@ -230,8 +311,6 @@ void
 SetHook::writeHookToSLE(
     SLE::pointer const& ledgerEntry) const
 {
-    //todo: [RH] support flags?
-    ledgerEntry->setFieldVL(sfCreateCode, hook_);
 }
 
 }  // namespace ripple

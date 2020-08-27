@@ -70,6 +70,7 @@ SF_U16 const sfSignerWeight(access, STI_UINT16, 3, "SignerWeight");
 
 // 16-bit integers (uncommon)
 SF_U16 const sfVersion(access, STI_UINT16, 16, "Version");
+SF_U16 const sfHookDataMaxSize(access, STI_UINT16, 17, "HookDataMaxSize");
 
 // 32-bit integers (common)
 SF_U32 const sfFlags(access, STI_UINT32, 2, "Flags");
@@ -117,6 +118,8 @@ SF_U32 const sfCancelAfter(access, STI_UINT32, 36, "CancelAfter");
 SF_U32 const sfFinishAfter(access, STI_UINT32, 37, "FinishAfter");
 SF_U32 const sfSignerListID(access, STI_UINT32, 38, "SignerListID");
 SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
+SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
+SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 
 // 64-bit integers
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
@@ -130,6 +133,7 @@ SF_U64 const sfHighNode(access, STI_UINT64, 8, "HighNode");
 SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
+SF_U64 const sfHookNode(access, STI_UINT64, 12, "HookNode");
 
 // 128-bit
 SF_U128 const sfEmailHash(access, STI_HASH128, 1, "EmailHash");

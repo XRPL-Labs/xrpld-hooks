@@ -3,92 +3,87 @@
 #include <ripple/basics/Slice.h>
 using namespace ripple;
 
-static TER
-hook::removeHookStateFromLedger(
-    beast::Journal& j,
-    ApplyView& view,
-    Keylet const& accountKeylet,
-    Keylet const& ownerDirKeylet,
-    Keylet const& hookStateKeylet)
-{
-    SLE::pointer hookState = view.peek(hookStateKeylet);
-
-    // If the signer list doesn't exist we've already succeeded in deleting it.
-    if (!hookState)
-        return tesSUCCESS;
-
-    // Remove the node from the account directory.
-    auto const hint = (*hookState)[sfOwnerNode];
-
-    if (!view.dirRemove(ownerDirKeylet, hint, hookStateKeylet.key, false))
-    {
-        return tefBAD_LEDGER;
-    }
-
-    adjustOwnerCount(
-        view,
-        view.peek(accountKeylet),
-        -1,
-        j("View"));
-
-    // remove the actual hook
-    view.erase(hookState);
-
-    return tesSUCCESS;
-}
 
 TER
-hook::replaceHook(
+hook::setHookState(
     beast::Journal& j,
     ApplyView& view,
     AccountID& account,
-    Slice& data)
+    Slice& data,
+    Keylet const& accountKeylet,
+    Keylet const& ownerDirKeylet,
+    Keylet const& hookStateKeylet
+    )
 {
-
-    if (data.size() > hook::state_max_blob_size) {
-       return temHOOK_DATA_TOO_LARGE; 
-    } 
-
-    int addedOwnerCount{ ( view.peek(hookStateKeylet) ? 0 : 1 ) };
-    
-    if (TER const ter = removeHookStateFromLedger(
-            j, view(), accountKeylet, ownerDirKeylet, hookStateKeylet))
-        return ter;
 
     auto const sle = view().peek(accountKeylet);
     if (!sle)
         return tefINTERNAL;
 
-    std::uint32_t const oldOwnerCount{(*sle)[sfOwnerCount]};
+    // if the blob is too large don't set it
+    if (data.size() > hook::state_max_blob_size) {
+       return temHOOK_DATA_TOO_LARGE; 
+    } 
 
-    XRPAmount const newReserve{
-        view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
+    auto const oldHookState = view.peek(oldHookState);
 
-    if (mPriorBalance < newReserve)
-        return tecINSUFFICIENT_RESERVE;
+    // if the blob is nil then delete the entry if it exists
+    if (data.size() == 0) {
+    
+        if (!view.peek(hookStateKeylet))
+            return tesSUCCESS; // a request to remove a non-existent entry is defined as success
 
-    auto hookState = std::make_shared<SLE>(hookStateKeylet);
-    view().insert(hookState);
-    writeHookStateToSLE(hookState);
-    hookState->setFieldVL(sfHookData, data);
+        // Remove the node from the account directory.
+        auto const hint = (*hookState)[sfOwnerNode];
 
-    auto viewJ = j("View");
-    // Add the hook to the account's directory.
-    auto const page = dirAdd(
-        ctx_.view(),
-        ownerDirKeylet,
-        hookStateKeylet.key,
-        false,
-        describeOwnerDir(account),
-        viewJ);
+        if (!view.dirRemove(ownerDirKeylet, hint, hookStateKeylet.key, false))
+        {
+            return tefBAD_LEDGER;
+        }
 
-    JLOG(j.trace()) << "Create/update hook state for account " << toBase58(account)
+        adjustOwnerCount(
+            view,
+            view.peek(accountKeylet),
+            -1,
+            j("View"));
+
+        // remove the actual hook state obj
+        view.erase(oldHookState);
+
+        return tesSUCCESS;
+    }
+
+    // execution to this point means we are updating or creating a state hook
+    
+    auto const hookStateOld = view().peek(hookStateKeylet);
+    if (hookStateOld) 
+        view.erase(hookStateOld);
+
+    // add new data to ledger
+    auto hookStateNew = std::make_shared<SLE>(hookStateKeylet);
+    view().insert(hookStateNew);
+    hookStateNew->setFieldVL(sfHookData, data);
+
+
+    if (!hookStateOld) {
+        auto viewJ = j("View");
+        // Add the hook to the account's directory if it wasn't there already
+        auto const page = dirAdd(
+            view,
+            ownerDirKeylet,
+            hookStateKeylet.key,
+            false,
+            describeOwnerDir(account),
+            viewJ);
+        
+        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(account)
                      << ": " << (page ? "success" : "failure");
+        
+        if (!page)
+            return tecDIR_FULL;
+    }
 
-    if (!page)
-        return tecDIR_FULL;
-
-    adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
+    //adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
 
