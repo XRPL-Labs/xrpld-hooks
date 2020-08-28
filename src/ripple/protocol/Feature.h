@@ -369,6 +369,7 @@ extern uint256 const fix1781;
 extern uint256 const featureHardenedValidations;
 extern uint256 const fixAmendmentMajorityCalc;
 extern uint256 const featureNegativeUNL;
+extern uint256 const featureHooks;
 
 }  // namespace ripple
 

@@ -73,15 +73,18 @@ private:
     replaceHook();
     TER
     destroyHook();
-    TER 
-    destroyHookState(
+
+    TER
+    destroyEntireHookState(
         Application& app,
         ApplyView& view,
-        const AccoundID& account,
-        Keylet const& accountKeylet,
-        Keylet const& ownerDirKeylet,
-        Keylet const& hookKeylet
+        const AccountID& account,
+        const Keylet & accountKeylet,
+        const Keylet & ownerDirKeylet,
+        const Keylet & hookKeylet
     );
+
+
     TER
     removeHookFromLedger(
         Application& app,

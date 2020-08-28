@@ -196,34 +196,63 @@ int64_t hook_api::output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t pt
 }
 int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len ) {
 
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
 
     if (key_ptr + 32 > memory_length || data_ptr_in + hook::state_max_blob_size > memory_length) {
         JLOG(j.trace())
             << "Hook tried to set_state using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
     }
-
-    //todo: [RH] compute hookStateKeylet from wasm's key_ptr  
+    
+    if (in_len == 0)
+        return TOO_SMALL;
 
     auto const sle = apply_ctx.view().peek(hook_ctx.hookKeylet);
     if (!sle)
         return INERNAL_ERROR;
+    
+    auto HSKeylet = keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr));
 
     uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize); 
     if (in_len > maxSize)
         return TOO_BIG;
    
     // execution to here means we can store state
-    setHookState(hook_ctx,
-    Keylet const& hookStateKeylet,
-    Slice& data
+    if ( TER const result = setHookState(hook_ctx, HSKeylet, Slice(memory + data_ptr_in,  in_len)) )
+        return TER_TO_HOOK_RETURN_CODE(result);
 
+    return in_len;
 }
 
-int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr key_ptr, uint32_t data_ptr_out ) {
+int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out ) {
 
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
+
+    if (key_ptr + 32 > memory_length) {
+        JLOG(j.trace())
+            << "Hook tried to get_state using memory outside of the wasm instance limit";
+        return OUT_OF_BOUNDS;
+    }
+    
+    auto const sle = apply_ctx.view().peek(hook_ctx.hookKeylet);
+    if (!sle)
+        return INERNAL_ERROR;
+
+    auto HSKeylet = keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr));
+    if (!HSKeylet)
+        return DOESNT_EXIST;
+    
+    Blob b = HSKeylet->getFieldVL(sfHookData);
+
+    if (data_ptr_out + b.size() > memory_length) {
+        JLOG(j.trace())
+            << "Hook: get_state tried to retreive blob of " << b.size() << " bytes past end of wasm memory";
+        return OUT_OF_BOUNDS;
+    }
+
+    ::memcpy(data_ptr_out, b.data(), b.size());
+
+    return b.size();
 
 }
 

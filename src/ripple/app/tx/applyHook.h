@@ -7,17 +7,22 @@
 
 namespace hook_api {
 
+#define TER_TO_HOOK_RETURN_CODE(x)\
+    (((x) << 16)*-1)
+
     enum api_return_code {
         SUCCESS = 0, // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
-        OUT_OF_BOUNDS = -1,
-        INTERNAL_ERROR = -2, // eg directory is corrupt
-        TOO_BIG = -3    // something you tried to store was too big
-    };
+        OUT_OF_BOUNDS = -1,         // could not read or write to a pointer to provided by hook because it would be out of bounds
+        INTERNAL_ERROR = -2,        // eg directory is corrupt
+        TOO_BIG = -3,               // something you tried to store was too big
+        TOO_SMALL = -4,             // something you tried to store or provide was too small
+        DOESNT_EXIST = -5           // something you requested wasn't found
+    }; // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
     // this is the api that wasm modules use to communicate with rippled
     int64_t output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
-    int64_t set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr key_ptr, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr key_ptr, uint32_t data_ptr_out, uint32_t out_len );
+    int64_t set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
+    int64_t get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
 
     //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
 }
@@ -25,22 +30,22 @@ namespace hook_api {
 namespace hook {
 
     struct HookContext {
-        ApplyContext& apply_ctx;
-        AccountID& account;
-        Keylet const& accountKeylet;
-        Keylet const& ownerDirKeylet;
-        Keylet const& hookKeylet;
-    }
+        ripple::ApplyContext& apply_ctx;
+        ripple::AccountID& account;
+        ripple::Keylet const& accountKeylet;
+        ripple::Keylet const& ownerDirKeylet;
+        ripple::Keylet const& hookKeylet;
+    };
 
     //todo: [RH] change this to a validator votable figure
     const int max_hook_data = 128;
 
-    TER
-    hook::setHookState(
+    ripple::TER
+    setHookState(
         HookContext& hookCtx,
-        Keylet const& hookStateKeylet,
-        Slice& data
-    )
+        ripple::Keylet const& hookStateKeylet,
+        ripple::Slice& data
+    );
 
     void print_wasmer_error();
     ripple::TER apply(ripple::Blob hook, ripple::ApplyContext& apply_ctx);

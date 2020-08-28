@@ -106,28 +106,30 @@ SetHook::preCompute()
 }
 
 
+
 TER
 SetHook::destroyEntireHookState(
     Application& app,
     ApplyView& view,
-    const AccoundID& account,
-    Keylet const& accountKeylet,
-    Keylet const& ownerDirKeylet,
-    Keylet const& hookKeylet
+    const AccountID& account,
+    const Keylet & accountKeylet,
+    const Keylet & ownerDirKeylet,
+    const Keylet & hookKeylet
 ) {
 
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
     uint256 dirEntry{beast::zero};
 
+    auto j = app.journal("View");
     if (!cdirFirst(
-            view(),
+            view,
             ownerDirKeylet.key,
             sleDirNode,
             uDirEntry,
             dirEntry,
-            app.journal)) {
-            JLOG(app.journal("View"))
+            j)) {
+            JLOG(j.fatal())
                 << "SetHook (delete state): account directory missing " << account;
         return tefINTERNAL;
     }
@@ -138,12 +140,12 @@ SetHook::destroyEntireHookState(
         // Make sure any directory node types that we find are the kind
         // we can delete.
         Keylet const itemKeylet{ltCHILD, dirEntry}; // todo: ??? [RH] can I just specify ltHOOK_STATE here ???
-        auto sleItem = view().read(itemKeylet);
+        auto sleItem = view.read(itemKeylet);
         if (!sleItem)
         {
             // Directory node has an invalid index.  Bail out.
-            JLOG(app.journal.fatal())
-                << "SetHook (delete state): directory node in ledger " << view().seq()
+            JLOG(j.fatal())
+                << "SetHook (delete state): directory node in ledger " << view.seq()
                 << " has index to object that is missing: "
                 << to_string(dirEntry);
             return tefBAD_LEDGER;
@@ -160,12 +162,12 @@ SetHook::destroyEntireHookState(
             {
                 return tefBAD_LEDGER;
             }
-            view.erase(sleItem);
+            view.erase(itemKeylet);
         }
 
 
     } while (cdirNext(
-        view(), ownerDirKeylet.key, sleDirNode, uDirEntry, dirEntry, app.journal));
+        view, ownerDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j));
 
     return tesSUCCESS;
 }
@@ -247,7 +249,7 @@ SetHook::replaceHook()
         describeOwnerDir(account_),
         viewJ);
 
-    JLOG(j_.trace()) << "Create hook for account " << toBase58(account_)
+    JLOG(viewJ.trace()) << "Create hook for account " << toBase58(account_)
                      << ": " << (page ? "success" : "failure");
 
     if (!page)
