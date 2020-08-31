@@ -10,13 +10,15 @@ hook::setHookState(
     Slice& data
 ){
 
-    auto const sle = view().peek(accountKeylet);
+    auto& view = hookCtx.apply_ctx.view();
+    auto j = hookCtx.apply_ctx.app.journal("View");
+    auto const sle = view.peek(hookCtx.accountKeylet);
     if (!sle)
         return tefINTERNAL;
 
-    auto const hook = view().peek(hookKeylet);
+    auto const hook = view.peek(hookCtx.hookKeylet);
     if (!hook) { // [RH] should this be more than trace??
-        JLOG(j.trace()) << "Attempted to set a hook state for a hook that doesnt exist " << toBase58(account);
+        JLOG(j.trace()) << "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookCtx.account);
         return tefINTERNAL;
     }
 
@@ -30,7 +32,7 @@ hook::setHookState(
     uint32_t stateCount = hook->getFieldU32(sfHookStateCount);
     uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
 
-    auto const oldHookState = view.peek(oldHookState);
+    auto const oldHookState = view.peek(hookStateKeylet);
 
     // if the blob is nil then delete the entry if it exists
     if (data.size() == 0) {
@@ -38,10 +40,10 @@ hook::setHookState(
         if (!view.peek(hookStateKeylet))
             return tesSUCCESS; // a request to remove a non-existent entry is defined as success
 
-        auto const hint = (*hookState)[sfOwnerNode];
+        auto const hint = (*oldHookState)[sfOwnerNode];
 
         // Remove the node from the account directory.
-        if (!view.dirRemove(ownerDirKeylet, hint, hookStateKeylet.key, false))
+        if (!view.dirRemove(hookCtx.ownerDirKeylet, hint, hookStateKeylet.key, false))
         {
             return tefBAD_LEDGER;
         }
@@ -55,7 +57,7 @@ hook::setHookState(
 
         // if removing this state entry would destroy the allotment then reduce the owner count
         if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) < oldStateReserve)
-            adjustOwnerCount(view(), sle, -1, app.journal("View"));
+            adjustOwnerCount(view, sle, -1, j);
         
         hook->setFieldU32(sfHookStateCount, COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount));
 
@@ -63,12 +65,10 @@ hook::setHookState(
     }
 
     
-    std::uint32_t const ownerCount{(*sle)[sfOwnerCount]};
+    std::uint32_t ownerCount{(*sle)[sfOwnerCount]};
 
-    // execution to this point means we are updating or creating a state hook
-    auto const hookStateOld = view().peek(hookStateKeylet);
-    if (hookStateOld) { 
-        view.erase(hookStateOld);
+    if (oldHookState) { 
+        view.erase(oldHookState);
     } else {
 
         ++stateCount;
@@ -79,13 +79,13 @@ hook::setHookState(
     
             ++ownerCount;
             XRPAmount const newReserve{
-                view().fees().accountReserve(ownerCount)};
+                view.fees().accountReserve(ownerCount)};
 
             if (STAmount((*sle)[sfBalance]).xrp() < newReserve)
                 return tecINSUFFICIENT_RESERVE;
 
             
-            adjustOwnerCount(view(), sle, 1, app.journal("View"));
+            adjustOwnerCount(view, sle, 1, j);
 
         }
 
@@ -95,28 +95,27 @@ hook::setHookState(
     }
 
     // add new data to ledger
-    auto hookStateNew = std::make_shared<SLE>(hookStateKeylet);
-    view().insert(hookStateNew);
-    hookStateNew->setFieldVL(sfHookData, data);
+    auto newHookState = std::make_shared<SLE>(hookStateKeylet);
+    view.insert(newHookState);
+    newHookState->setFieldVL(sfHookData, data);
 
-    if (!hookStateOld) {
-        auto viewJ = j("View");
+    if (!oldHookState) {
         // Add the hook to the account's directory if it wasn't there already
         auto const page = dirAdd(
             view,
-            ownerDirKeylet,
+            hookCtx.ownerDirKeylet,
             hookStateKeylet.key,
             false,
-            describeOwnerDir(account),
-            viewJ);
+            describeOwnerDir(hookCtx.account),
+            j);
         
-        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(account)
+        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(hookCtx.account)
                      << ": " << (page ? "success" : "failure");
         
         if (!page)
             return tecDIR_FULL;
 
-        hookStateNew->setFieldU64(sfOwnerNode, *page);
+        newHookState->setFieldU64(sfOwnerNode, *page);
 
     }
 
@@ -132,7 +131,7 @@ void hook::print_wasmer_error()
     free(error_str);
 }
 
-TER hook::apply(Blob hook, ApplyContext& apply_ctx, AccountID& account) {
+TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
 
     wasmer_instance_t *instance = NULL;
 
@@ -198,7 +197,7 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
 
-    if (key_ptr + 32 > memory_length || data_ptr_in + hook::state_max_blob_size > memory_length) {
+    if (key_ptr + 32 > memory_length || data_ptr_in + hook::maxHookDataSize() > memory_length) {
         JLOG(j.trace())
             << "Hook tried to set_state using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
@@ -207,9 +206,9 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
     if (in_len == 0)
         return TOO_SMALL;
 
-    auto const sle = apply_ctx.view().peek(hook_ctx.hookKeylet);
+    auto const sle = view.peek(hook_ctx.hookKeylet);
     if (!sle)
-        return INERNAL_ERROR;
+        return INTERNAL_ERROR;
     
     auto HSKeylet = keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr));
 
@@ -218,41 +217,45 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
         return TOO_BIG;
    
     // execution to here means we can store state
-    if ( TER const result = setHookState(hook_ctx, HSKeylet, Slice(memory + data_ptr_in,  in_len)) )
+    auto slice = Slice(memory + data_ptr_in,  in_len);
+
+    if ( TER const result = setHookState(hook_ctx, HSKeylet, slice) )
         return TER_TO_HOOK_RETURN_CODE(result);
 
     return in_len;
 }
 
-int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out ) {
+int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len ) {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
 
-    if (key_ptr + 32 > memory_length) {
+    if (key_ptr + out_len > memory_length) {
         JLOG(j.trace())
             << "Hook tried to get_state using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
     }
     
-    auto const sle = apply_ctx.view().peek(hook_ctx.hookKeylet);
+    auto const sle = view.peek(hook_ctx.hookKeylet);
     if (!sle)
-        return INERNAL_ERROR;
+        return INTERNAL_ERROR;
 
-    auto HSKeylet = keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr));
-    if (!HSKeylet)
+    auto hsSLE = view.peek(keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr)));
+    if (!hsSLE)
         return DOESNT_EXIST;
     
-    Blob b = HSKeylet->getFieldVL(sfHookData);
+    Blob b = hsSLE->getFieldVL(sfHookData);
 
-    if (data_ptr_out + b.size() > memory_length) {
+    int bytes_to_write = std::min(static_cast<int>(b.size()), static_cast<int>(out_len));
+
+    if (data_ptr_out + bytes_to_write > memory_length) {
         JLOG(j.trace())
             << "Hook: get_state tried to retreive blob of " << b.size() << " bytes past end of wasm memory";
         return OUT_OF_BOUNDS;
     }
 
-    ::memcpy(data_ptr_out, b.data(), b.size());
+    ::memcpy(memory + data_ptr_out, b.data(), bytes_to_write);
 
-    return b.size();
+    return bytes_to_write;
 
 }
 

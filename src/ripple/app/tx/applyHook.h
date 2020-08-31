@@ -8,8 +8,17 @@
 namespace hook_api {
 
 #define TER_TO_HOOK_RETURN_CODE(x)\
-    (((x) << 16)*-1)
+    (((TERtoInt(x)) << 16)*-1)
 
+    // this is the api that wasm modules use to communicate with rippled
+    int64_t output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
+    int64_t set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
+    int64_t get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
+
+    //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
+    
+#ifndef RIPPLE_HOOK_H_INCLUDED1
+#define RIPPLE_HOOK_H_INCLUDED1
     enum api_return_code {
         SUCCESS = 0, // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
         OUT_OF_BOUNDS = -1,         // could not read or write to a pointer to provided by hook because it would be out of bounds
@@ -18,27 +27,32 @@ namespace hook_api {
         TOO_SMALL = -4,             // something you tried to store or provide was too small
         DOESNT_EXIST = -5           // something you requested wasn't found
     }; // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
-
-    // this is the api that wasm modules use to communicate with rippled
-    int64_t output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
-    int64_t set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
-
-    //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
+#endif
 }
 
 namespace hook {
+    void print_wasmer_error();
 
+    ripple::TER apply(ripple::Blob, ripple::ApplyContext&, const ripple::AccountID&);
+
+    struct HookContext;
+
+    int maxHookDataSize(void);
+
+#ifndef RIPPLE_HOOK_H_INCLUDED
+#define RIPPLE_HOOK_H_INCLUDED
     struct HookContext {
         ripple::ApplyContext& apply_ctx;
-        ripple::AccountID& account;
+        const ripple::AccountID& account;
         ripple::Keylet const& accountKeylet;
         ripple::Keylet const& ownerDirKeylet;
         ripple::Keylet const& hookKeylet;
     };
 
     //todo: [RH] change this to a validator votable figure
-    const int max_hook_data = 128;
+    int maxHookDataSize(void) {
+        return 128;
+    }
 
     ripple::TER
     setHookState(
@@ -47,13 +61,9 @@ namespace hook {
         ripple::Slice& data
     );
 
-    void print_wasmer_error();
-    ripple::TER apply(ripple::Blob hook, ripple::ApplyContext& apply_ctx);
     template <typename F>
     wasmer_import_t functionImport ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params );
 
-#ifndef RIPPLE_HOOK_H_INCLUDED
-#define RIPPLE_HOOK_H_INCLUDED
 #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
@@ -66,12 +76,13 @@ namespace hook {
     };
 
 #define HOOK_SETUP()\
-    HookContext* hook_ctx = (HookContext*) wasmer_instance_context_data_get( wasm_ctx );\
-    ApplyContext* apply_ctx = hook_ctx->apply_ctx;\
-    beast::Journal& j = apply_ctx.journal;\
-    wasmer_memory_t* memory_ctx = wasmer_instance_context_memory( wasm_ctx, 0 );\
+    hook::HookContext& hook_ctx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\
+    ApplyContext& apply_ctx = hook_ctx.apply_ctx;\
+    auto& view = apply_ctx.view();\
+    auto j = apply_ctx.app.journal("View");\
+    const wasmer_memory_t* memory_ctx = wasmer_instance_context_memory( wasm_ctx, 0 );\
     uint8_t* memory = wasmer_memory_data( memory_ctx );\
-    uint32_t memory_length = wasmer_memory_data_length ( memory_ctx );    
+    const uint32_t memory_length = wasmer_memory_data_length ( memory_ctx );    
 
 
 #else

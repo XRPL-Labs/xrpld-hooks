@@ -134,13 +134,12 @@ SetHook::destroyEntireHookState(
         return tefINTERNAL;
     }
 
-    std::int32_t deletableDirEntryCount{0};
     do
     {
         // Make sure any directory node types that we find are the kind
         // we can delete.
         Keylet const itemKeylet{ltCHILD, dirEntry}; // todo: ??? [RH] can I just specify ltHOOK_STATE here ???
-        auto sleItem = view.read(itemKeylet);
+        auto sleItem = view.peek(itemKeylet);
         if (!sleItem)
         {
             // Directory node has an invalid index.  Bail out.
@@ -151,8 +150,7 @@ SetHook::destroyEntireHookState(
             return tefBAD_LEDGER;
         }
 
-        LedgerEntryType const nodeType{
-            safe_cast<LedgerEntryType>((*sleItem)[sfLedgerEntryType])};
+        auto nodeType = sleItem->getFieldU16(sfLedgerEntryType);
 
         if (nodeType == ltHOOK_STATE) {
             // delete it!
@@ -162,7 +160,7 @@ SetHook::destroyEntireHookState(
             {
                 return tefBAD_LEDGER;
             }
-            view.erase(itemKeylet);
+            view.erase(sleItem);
         }
 
 
@@ -176,7 +174,7 @@ TER
 SetHook::replaceHook()
 {
 
-    const int hookDataMaxSize = hook::max_hook_data; 
+    const int hookDataMaxSize = hook::maxHookDataSize(); 
 
 
     auto const accountKeylet = keylet::account(account_);
@@ -193,7 +191,7 @@ SetHook::replaceHook()
     uint32_t stateCount = ( oldHook ? oldHook->getFieldU32(sfHookStateCount) : 0 );
    
     // get the previously reserved amount, if any 
-    uint32_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookCodeReserve) : 0 );
+    uint32_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookReserveCount) : 0 );
 
     // get the new cost to store, if any
     uint32_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)hookDataMaxSize) ); 

@@ -324,8 +324,8 @@ invoke_apply(ApplyContext& ctx)
 {
 
     auto const& ledger = ctx.view();
-    auto accountID = ctx.tx.getAccountID(sfAccount);
-    auto const hookSending = ledger.read(keylet::hook(accountID));
+    auto const& accountID = ctx.tx.getAccountID(sfAccount);
+    auto const& hookSending = ledger.read(keylet::hook(accountID));
     if (hookSending) {
         // execute the hook on the sending account
         Blob hook = hookSending->getFieldVL(sfCreateCode);
@@ -334,8 +334,8 @@ invoke_apply(ApplyContext& ctx)
     }
 
     if (ctx.tx.isFieldPresent(sfDestination)) {
-        auto const destAccountID = ctx.tx.getAccountID(sfDestination);
-        auto const hookReceiving = ledger.read(keylet::hook(destAccountID));
+        auto const& destAccountID = ctx.tx.getAccountID(sfDestination);
+        auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
         Blob hook = hookReceiving->getFieldVL(sfCreateCode);
         if (hookReceiving) {
             // execute the hook on the receiving account
