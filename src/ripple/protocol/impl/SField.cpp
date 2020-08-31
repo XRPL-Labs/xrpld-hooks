@@ -70,7 +70,6 @@ SF_U16 const sfSignerWeight(access, STI_UINT16, 3, "SignerWeight");
 
 // 16-bit integers (uncommon)
 SF_U16 const sfVersion(access, STI_UINT16, 16, "Version");
-SF_U16 const sfHookDataMaxSize(access, STI_UINT16, 17, "HookDataMaxSize");
 
 // 32-bit integers (common)
 SF_U32 const sfFlags(access, STI_UINT32, 2, "Flags");
@@ -120,6 +119,7 @@ SF_U32 const sfSignerListID(access, STI_UINT32, 38, "SignerListID");
 SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
 SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
 SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
+SF_U32 const sfHookDataMaxSize(access, STI_UINT32, 42, "HookDataMaxSize");
 
 // 64-bit integers
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
