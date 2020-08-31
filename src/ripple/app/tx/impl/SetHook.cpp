@@ -79,29 +79,13 @@ TER
 SetHook::doApply()
 {
     preCompute();
-
-    // Perform the operation preCompute() decided on.
-    switch (do_)
-    {
-        case set:
-            return replaceHook();
-
-        case destroy:
-            return destroyHook();
-
-        default:
-            break;
-    }
-    assert(false);  // Should not be possible to get here.
-    return temMALFORMED;
+    return setHook();
 }
 
 void
 SetHook::preCompute()
 {
     hook_ = ctx_.tx.getFieldVL(sfCreateCode);
-    do_ = ( hook_.empty() ? destroy : set );
-
     return Transactor::preCompute();
 }
 
@@ -116,6 +100,8 @@ SetHook::destroyEntireHookState(
     const Keylet & ownerDirKeylet,
     const Keylet & hookKeylet
 ) {
+
+    printf("destroyEntireHookState called\n");
 
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
@@ -150,7 +136,10 @@ SetHook::destroyEntireHookState(
             return tefBAD_LEDGER;
         }
 
+
         auto nodeType = sleItem->getFieldU16(sfLedgerEntryType);
+
+        printf("destroyEntireHookState iterator: %d\n", nodeType);
 
         if (nodeType == ltHOOK_STATE) {
             // delete it!
@@ -171,7 +160,7 @@ SetHook::destroyEntireHookState(
 }
 
 TER
-SetHook::replaceHook()
+SetHook::setHook()
 {
 
     const int blobMax = hook::maxHookDataSize(); 
@@ -197,10 +186,11 @@ SetHook::replaceHook()
     int64_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)blobMax) ); 
 
     
-    // get existing flags
-   // uint32_t flags = ( oldHook ?  oldHook->getFieldU32(sfFlags) : 0 );
+    printf("hook empty? %s\n", ( hook_.empty() ? "yes" : "no" ));
+    printf("old hook present? %s\n", ( oldHook ? "yes" : "no" ));
+    printf("tx sfCreateCode empty?? %s\n", ( (oldHook) && oldHook->getFieldVL(sfCreateCode).empty() ? "yes" : "no" ));
 
-    if (hook_.empty() && oldHook && oldHook->getFieldVL(sfCreateCode).empty()) {
+    if (hook_.empty() && !oldHook) {
         // this is a special case for destroying the existing state data of a previously removed contract
         if (TER const ter = 
                 destroyEntireHookState(ctx_.app, view(), account_, accountKeylet, ownerDirKeylet, hookKeylet))
@@ -227,42 +217,45 @@ SetHook::replaceHook()
     printf("prevReserveUnits: %d\n", previousReserveUnits);
     printf("hook data size: %d\n", hook_.size());
 
-    if (addedOwnerCount >= (1ULL<<32))
-        return tefINTERNAL;
+//    if (addedOwnerCount >= (1ULL<<32))
+//        return tefINTERNAL;
 
     XRPAmount const newReserve{
         view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
 
     if (mPriorBalance < newReserve)
         return tecINSUFFICIENT_RESERVE;
-
-    auto hook = std::make_shared<SLE>(hookKeylet);
-    view().insert(hook);
-
-    hook->setFieldVL(sfCreateCode, hook_);
-    hook->setFieldU32(sfHookStateCount, stateCount);
-    hook->setFieldU32(sfHookReserveCount, newReserveUnits);
-    hook->setFieldU32(sfHookDataMaxSize, blobMax); 
-   // hook->setFieldU32(sfFlags, flags);
-
+    
     auto viewJ = ctx_.app.journal("View");
-    // Add the hook to the account's directory.
-    auto const page = dirAdd(
-        ctx_.view(),
-        ownerDirKeylet,
-        hookKeylet.key,
-        false,
-        describeOwnerDir(account_),
-        viewJ);
 
-    JLOG(viewJ.trace()) << "Create hook for account " << toBase58(account_)
-                     << ": " << (page ? "success" : "failure");
+    if (!hook_.empty()) {
+        auto hook = std::make_shared<SLE>(hookKeylet);
+        view().insert(hook);
 
-    if (!page)
-        return tecDIR_FULL;
-    
-    hook->setFieldU64(sfOwnerNode, *page);
-    
+        hook->setFieldVL(sfCreateCode, hook_);
+        hook->setFieldU32(sfHookStateCount, stateCount);
+        hook->setFieldU32(sfHookReserveCount, newReserveUnits);
+        hook->setFieldU32(sfHookDataMaxSize, blobMax); 
+       // hook->setFieldU32(sfFlags, flags);
+
+        // Add the hook to the account's directory.
+        auto const page = dirAdd(
+            ctx_.view(),
+            ownerDirKeylet,
+            hookKeylet.key,
+            false,
+            describeOwnerDir(account_),
+            viewJ);
+
+        JLOG(viewJ.trace()) << "Create hook for account " << toBase58(account_)
+                         << ": " << (page ? "success" : "failure");
+
+        if (!page)
+            return tecDIR_FULL;
+        
+        hook->setFieldU64(sfOwnerNode, *page);
+    }
+
     printf("adjust owner count on sethook %d\n", addedOwnerCount);
     fflush(stdout);
 
@@ -299,19 +292,5 @@ SetHook::removeHookFromLedger(
     return tesSUCCESS;
 }
 
-
-TER
-SetHook::destroyHook()
-{
-    auto const accountKeylet = keylet::account(account_);
-    SLE::pointer ledgerEntry = view().peek(accountKeylet);
-    if (!ledgerEntry)
-        return tefINTERNAL;
-
-    auto const ownerDirKeylet = keylet::ownerDir(account_);
-    auto const hookKeylet = keylet::hook(account_);
-    return removeHookFromLedger(
-        ctx_.app, view(), accountKeylet, ownerDirKeylet, hookKeylet);
-}
 
 }  // namespace ripple

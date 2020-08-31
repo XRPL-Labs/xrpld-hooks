@@ -44,8 +44,6 @@ class SetHook : public Transactor
 {
 private:
     // Values determined during preCompute for use later.
-    enum Operation { unknown, set, destroy };
-    Operation do_{unknown};
     Blob hook_;
 
 public:
@@ -70,9 +68,7 @@ public:
 private:
 
     TER
-    replaceHook();
-    TER
-    destroyHook();
+    setHook();
 
     TER
     destroyEntireHookState(
