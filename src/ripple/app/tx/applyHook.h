@@ -68,11 +68,11 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
+    const int imports_count = 3;
     wasmer_import_t imports[] = {
         functionImport ( hook_api::output_dbg,  "output_dbg",   { WI32, WI32        } ),
         functionImport ( hook_api::set_state,   "set_state",    { WI32, WI32, WI32  } ),
         functionImport ( hook_api::get_state,   "get_state",    { WI32, WI32, WI32  } )
-   //     functionImport ( hook_api::get_current_ledger_id, "get_current_ledger_id", { WI32 } )
     };
 
 #define HOOK_SETUP()\
@@ -85,8 +85,6 @@ namespace hook {
     const uint32_t memory_length = wasmer_memory_data_length ( memory_ctx );    
 
 
-#else
-    extern wasmer_import_t imports[];
 #endif
 
 }

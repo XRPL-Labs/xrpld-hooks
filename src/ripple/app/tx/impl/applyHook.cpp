@@ -136,7 +136,7 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
     wasmer_instance_t *instance = NULL;
 
 
-    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, 1) != wasmer_result_t::WASMER_OK) {
+    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) != wasmer_result_t::WASMER_OK) {
         printf("hook malformed\n");
         print_wasmer_error();
         return temMALFORMED;
