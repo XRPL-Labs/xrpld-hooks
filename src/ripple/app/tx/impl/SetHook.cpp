@@ -174,7 +174,7 @@ TER
 SetHook::replaceHook()
 {
 
-    const int hookDataMaxSize = hook::maxHookDataSize(); 
+    const int blobMax = hook::maxHookDataSize(); 
 
 
     auto const accountKeylet = keylet::account(account_);
@@ -191,13 +191,14 @@ SetHook::replaceHook()
     uint32_t stateCount = ( oldHook ? oldHook->getFieldU32(sfHookStateCount) : 0 );
    
     // get the previously reserved amount, if any 
-    uint32_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookReserveCount) : 0 );
+    int64_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookReserveCount) : 0 );
 
     // get the new cost to store, if any
-    uint32_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)hookDataMaxSize) ); 
+    int64_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)blobMax) ); 
 
+    
     // get existing flags
-    uint32_t flags = ( oldHook ?  oldHook->getFieldU32(sfFlags) : 0 );
+   // uint32_t flags = ( oldHook ?  oldHook->getFieldU32(sfFlags) : 0 );
 
     if (hook_.empty() && oldHook && oldHook->getFieldVL(sfCreateCode).empty()) {
         // this is a special case for destroying the existing state data of a previously removed contract
@@ -220,7 +221,14 @@ SetHook::replaceHook()
     // Compute new reserve.  Verify the account has funds to meet the reserve.
     std::uint32_t const oldOwnerCount{(*sle)[sfOwnerCount]};
 
-    int addedOwnerCount = newReserveUnits - previousReserveUnits;
+    int64_t addedOwnerCount = newReserveUnits - previousReserveUnits;
+
+    printf("newReserveUnits: %d\n", newReserveUnits);
+    printf("prevReserveUnits: %d\n", previousReserveUnits);
+    printf("hook data size: %d\n", hook_.size());
+
+    if (addedOwnerCount >= (1ULL<<32))
+        return tefINTERNAL;
 
     XRPAmount const newReserve{
         view().fees().accountReserve(oldOwnerCount + addedOwnerCount)};
@@ -234,8 +242,8 @@ SetHook::replaceHook()
     hook->setFieldVL(sfCreateCode, hook_);
     hook->setFieldU32(sfHookStateCount, stateCount);
     hook->setFieldU32(sfHookReserveCount, newReserveUnits);
-    hook->setFieldU32(sfHookDataMaxSize, hookDataMaxSize); 
-    hook->setFieldU32(sfFlags, flags);
+    hook->setFieldU32(sfHookDataMaxSize, blobMax); 
+   // hook->setFieldU32(sfFlags, flags);
 
     auto viewJ = ctx_.app.journal("View");
     // Add the hook to the account's directory.
@@ -254,6 +262,9 @@ SetHook::replaceHook()
         return tecDIR_FULL;
     
     hook->setFieldU64(sfOwnerNode, *page);
+    
+    printf("adjust owner count on sethook %d\n", addedOwnerCount);
+    fflush(stdout);
 
     adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
@@ -281,12 +292,6 @@ SetHook::removeHookFromLedger(
     {
         return tefBAD_LEDGER;
     }
-
-    adjustOwnerCount(
-        view,
-        view.peek(accountKeylet),
-        -1,
-        app.journal("View"));
 
     // remove the actual hook
     view.erase(hook);
