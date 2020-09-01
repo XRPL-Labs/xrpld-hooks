@@ -106,6 +106,9 @@ SetHook::destroyEntireHookState(
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
     uint256 dirEntry{beast::zero};
+    
+    if (dirIsEmpty(view, ownerDirKeylet))
+        return tesSUCCESS;
 
     auto j = app.journal("View");
     if (!cdirFirst(
@@ -145,7 +148,7 @@ SetHook::destroyEntireHookState(
             // delete it!
             // todo: [RH] check if it's safe to delete while iterating ???
             auto const hint = (*sleItem)[sfOwnerNode];
-            if (!view.dirRemove(ownerDirKeylet, hint, hookKeylet.key, false))
+            if (!view.dirRemove(ownerDirKeylet, hint, itemKeylet.key, false))
             {
                 return tefBAD_LEDGER;
             }
