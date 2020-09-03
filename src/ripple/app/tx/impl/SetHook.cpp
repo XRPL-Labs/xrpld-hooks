@@ -43,9 +43,11 @@ SetHook::preflight(PreflightContext const& ctx)
 
     printf("preflight sethook 1\n");
 
-    if (!ctx.tx.isFieldPresent(sfCreateCode))
-    {    JLOG(ctx.j.trace())
-            << "Malformed transaction: Invalid signer set list format.";
+    if (     !ctx.tx.isFieldPresent(sfCreateCode) ||
+             !ctx.tx.isFieldPresent(sfHookFlags)  
+    ) {   
+        JLOG(ctx.j.trace())
+            << "Malformed transaction: Invalid SetHook format.";
         return temMALFORMED;
     }
     
@@ -86,6 +88,7 @@ void
 SetHook::preCompute()
 {
     hook_ = ctx_.tx.getFieldVL(sfCreateCode);
+    flags_ = ctx_.tx.getFieldU32(sfHookFlags);
     return Transactor::preCompute();
 }
 
@@ -239,6 +242,7 @@ SetHook::setHook()
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
         hook->setFieldU32(sfHookDataMaxSize, blobMax); 
+        hook->setFieldU32(sfHookFlags, flags_); 
        // hook->setFieldU32(sfFlags, flags);
 
         // Add the hook to the account's directory.
@@ -255,7 +259,6 @@ SetHook::setHook()
 
         if (!page)
             return tecDIR_FULL;
-        
         hook->setFieldU64(sfOwnerNode, *page);
     }
 

@@ -120,6 +120,7 @@ SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
 SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
 SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 SF_U32 const sfHookDataMaxSize(access, STI_UINT32, 42, "HookDataMaxSize");
+SF_U32 const sfHookFlags(access, STI_UINT32, 43, "HookFlags");
 
 // 64-bit integers
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");

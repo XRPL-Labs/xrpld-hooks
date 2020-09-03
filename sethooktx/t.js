@@ -19,9 +19,10 @@ api.connect().then(() => {
     binary = fs.readFileSync('x.wasm').toString('hex').toUpperCase();
     
     j = {
-    Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
-    TransactionType: "SetHook",
-    CreateCode: binary
+        Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
+        TransactionType: "SetHook",
+        CreateCode: binary,
+        HookFlags: 0
     }
     api.prepareTransaction(j).then( (x)=> 
         {

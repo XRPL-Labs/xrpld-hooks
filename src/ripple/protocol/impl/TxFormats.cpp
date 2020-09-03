@@ -265,6 +265,7 @@ TxFormats::TxFormats()
         ttHOOK_SET,
         {
             {sfCreateCode, soeREQUIRED},
+            {sfHookFlags, soeREQUIRED},
         },
         commonFields);
 }
