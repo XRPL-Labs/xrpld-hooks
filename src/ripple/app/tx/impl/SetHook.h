@@ -45,7 +45,7 @@ class SetHook : public Transactor
 private:
     // Values determined during preCompute for use later.
     Blob hook_;
-    uint32_t flags_;
+    uint32_t hookOn_;
 public:
     explicit SetHook(ApplyContext& ctx) : Transactor(ctx)
     {

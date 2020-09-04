@@ -44,7 +44,7 @@ SetHook::preflight(PreflightContext const& ctx)
     printf("preflight sethook 1\n");
 
     if (     !ctx.tx.isFieldPresent(sfCreateCode) ||
-             !ctx.tx.isFieldPresent(sfHookFlags)  
+             !ctx.tx.isFieldPresent(sfHookOn)  
     ) {   
         JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid SetHook format.";
@@ -88,7 +88,7 @@ void
 SetHook::preCompute()
 {
     hook_ = ctx_.tx.getFieldVL(sfCreateCode);
-    flags_ = ctx_.tx.getFieldU32(sfHookFlags);
+    hookOn_ = ctx_.tx.getFieldU64(sfHookOn);
     return Transactor::preCompute();
 }
 
@@ -242,8 +242,7 @@ SetHook::setHook()
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
         hook->setFieldU32(sfHookDataMaxSize, blobMax); 
-        hook->setFieldU32(sfHookFlags, flags_); 
-       // hook->setFieldU32(sfFlags, flags);
+        hook->setFieldU64(sfHookOn, hookOn_); 
 
         // Add the hook to the account's directory.
         auto const page = dirAdd(

@@ -22,7 +22,7 @@ api.connect().then(() => {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "SetHook",
         CreateCode: binary,
-        HookFlags: 0
+        HookOn: '0000000000000000'
     }
     api.prepareTransaction(j).then( (x)=> 
         {
