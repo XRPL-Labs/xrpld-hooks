@@ -47,6 +47,8 @@ namespace hook {
         ripple::Keylet const& accountKeylet;
         ripple::Keylet const& ownerDirKeylet;
         ripple::Keylet const& hookKeylet;
+        // uint256 key -> [ has_been_modified, current_state ]
+        std::shared_ptr<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>> changedState; 
     };
 
     //todo: [RH] change this to a validator votable figure
@@ -84,6 +86,16 @@ namespace hook {
     uint8_t* memory = wasmer_memory_data( memory_ctx );\
     const uint32_t memory_length = wasmer_memory_data_length ( memory_ctx );    
 
+
+#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len, host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+    {int bytes_to_write = std::min(static_cast<int>(host_src_len), static_cast<int>(guest_dst_len));\
+    if (guest_dst_ptr + bytes_to_write > guest_memory_length) {\
+        JLOG(j.trace())\
+            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len << " bytes past end of wasm memory";\
+        return OUT_OF_BOUNDS;\
+    }\
+    ::memcpy(host_memory_ptr + guest_dst_ptr, host_src_ptr, bytes_to_write);\
+    return bytes_to_write;}
 
 #endif
 

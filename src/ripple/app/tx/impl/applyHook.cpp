@@ -148,7 +148,9 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
         .account = account,
         .accountKeylet = keylet::account(account),
         .ownerDirKeylet = keylet::ownerDir(account),
-        .hookKeylet = keylet::hook(account)
+        .hookKeylet = keylet::hook(account),
+        .changedState = 
+            std::make_shared<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>>()
     };
 
     wasmer_instance_context_data_set ( instance, &hook_ctx );
@@ -225,6 +227,8 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
     return in_len;
 }
 
+
+
 int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len ) {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
@@ -234,29 +238,35 @@ int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
             << "Hook tried to get_state using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
     }
-    
+   
+    ripple::uint256 key= ripple::uint256::fromVoid(memory + key_ptr);
+
+    // first check if the requested state was previously cached this session
+    const auto& cacheEntry = hook_ctx.changedState->find(key);
+    if (cacheEntry != hook_ctx.changedState->end())
+        WRITE_WASM_MEMORY_AND_RETURN(
+            data_ptr_out, out_len,
+            cacheEntry->second.second.data(), cacheEntry->second.second.size(),
+            memory, memory_length);
+
+    // cache miss look it up
     auto const sle = view.peek(hook_ctx.hookKeylet);
     if (!sle)
         return INTERNAL_ERROR;
 
-    auto hsSLE = view.peek(keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr)));
+    auto hsSLE = view.peek(keylet::hook_state(hook_ctx.account, key));
     if (!hsSLE)
         return DOESNT_EXIST;
     
     Blob b = hsSLE->getFieldVL(sfHookData);
 
-    int bytes_to_write = std::min(static_cast<int>(b.size()), static_cast<int>(out_len));
+    // it exists add it to cache and return it
+    hook_ctx.changedState->emplace(key, std::pair<bool, ripple::Blob>(false, b));
 
-    if (data_ptr_out + bytes_to_write > memory_length) {
-        JLOG(j.trace())
-            << "Hook: get_state tried to retreive blob of " << b.size() << " bytes past end of wasm memory";
-        return OUT_OF_BOUNDS;
-    }
-
-    ::memcpy(memory + data_ptr_out, b.data(), bytes_to_write);
-
-    return bytes_to_write;
-
+    WRITE_WASM_MEMORY_AND_RETURN(
+        data_ptr_out, out_len,
+        b.data(), b.size(),
+        memory, memory_length);
 }
 
 /*int64_t hook_api::get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {
