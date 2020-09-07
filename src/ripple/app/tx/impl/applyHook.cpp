@@ -10,8 +10,8 @@ hook::setHookState(
     Slice& data
 ){
 
-    auto& view = hookCtx.apply_ctx.view();
-    auto j = hookCtx.apply_ctx.app.journal("View");
+    auto& view = hookCtx.applyCtx.view();
+    auto j = hookCtx.applyCtx.app.journal("View");
     auto const sle = view.peek(hookCtx.accountKeylet);
     if (!sle)
         return tefINTERNAL;
@@ -122,7 +122,7 @@ hook::setHookState(
     return tesSUCCESS;
 }
 
-void hook::print_wasmer_error()
+void hook::printWasmerError()
 {
   int error_len = wasmer_last_error_length();
   char *error_str = (char*)malloc(error_len);
@@ -131,30 +131,31 @@ void hook::print_wasmer_error()
     free(error_str);
 }
 
-TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
+TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
 
     wasmer_instance_t *instance = NULL;
 
 
     if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) != wasmer_result_t::WASMER_OK) {
         printf("hook malformed\n");
-        print_wasmer_error();
+        printWasmerError();
         return temMALFORMED;
     }
 
 
-    HookContext hook_ctx {
-        .apply_ctx = apply_ctx,
+    HookContext hookCtx {
+        .applyCtx = applyCtx,
         .account = account,
         .accountKeylet = keylet::account(account),
         .ownerDirKeylet = keylet::ownerDir(account),
         .hookKeylet = keylet::hook(account),
         .changedState = 
-            std::make_shared<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>>()
+            std::make_shared<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>>(),
+        .exitType = hook_api::ExitType::ROLLBACK // default is to rollback unless hook calls accept() or reject()
     };
 
-    wasmer_instance_context_data_set ( instance, &hook_ctx );
-    printf("Set HookContext: %lx\n", (void*)&hook_ctx);
+    wasmer_instance_context_data_set ( instance, &hookCtx );
+    printf("Set HookContext: %lx\n", (void*)&hookCtx);
 
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
@@ -168,9 +169,12 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
         1
     ) != wasmer_result_t::WASMER_OK) {
         printf("hook() call failed\n");
-        print_wasmer_error();
+        printWasmerError();
         return temMALFORMED; /// todo: [RH] should be a hook execution error code tecHOOK_ERROR?
     }
+
+
+
 
     int64_t response_value = results[0].value.I64;
 
@@ -186,7 +190,7 @@ TER hook::apply(Blob hook, ApplyContext& apply_ctx, const AccountID& account) {
 
 int64_t hook_api::output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len ) {
 
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx on current stack
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
 
     printf("HOOKAPI_output_dbg: ");
     if (len > 1024) len = 1024;
@@ -197,7 +201,7 @@ int64_t hook_api::output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t pt
 }
 int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len ) {
 
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (key_ptr + 32 > memory_length || data_ptr_in + hook::maxHookDataSize() > memory_length) {
         JLOG(j.trace())
@@ -208,30 +212,51 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
     if (in_len == 0)
         return TOO_SMALL;
 
-    auto const sle = view.peek(hook_ctx.hookKeylet);
+    auto const sle = view.peek(hookCtx.hookKeylet);
     if (!sle)
         return INTERNAL_ERROR;
     
-    auto HSKeylet = keylet::hook_state(hook_ctx.account, ripple::uint256::fromVoid(memory + key_ptr));
-
     uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize); 
     if (in_len > maxSize)
         return TOO_BIG;
    
-    // execution to here means we can store state
-    auto slice = Slice(memory + data_ptr_in,  in_len);
-
-    if ( TER const result = setHookState(hook_ctx, HSKeylet, slice) )
-        return TER_TO_HOOK_RETURN_CODE(result);
+    ripple::uint256 key = ripple::uint256::fromVoid(memory + key_ptr);
+    
+    (*hookCtx.changedState)[key] =
+        std::pair<bool, ripple::Blob> (true, 
+                {memory + data_ptr_in,  memory + data_ptr_in + in_len});
 
     return in_len;
+
+}
+
+
+void hook::commitChangesToLedger ( HookContext& hookCtx ) {
+
+
+    // first write all changes to state
+
+    for (const auto& cacheEntry : *(hookCtx.changedState)) {
+        bool is_modified = cacheEntry.second.first;
+        const auto& key = cacheEntry.first;
+        const auto& blob = cacheEntry.second.second;
+        if (is_modified) {
+            // this entry isn't just cached, it was actually modified
+            auto HSKeylet = keylet::hook_state(hookCtx.account, key);
+            auto slice = Slice(blob.data(), blob.size());
+            setHookState(hookCtx, HSKeylet, slice); // should not fail because checks were done before map insertion
+        }
+    }
+
+    // next write all output pseudotx
+    // RH TODO ^
 }
 
 
 
 int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len ) {
 
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, apply_ctx, hook_ctx on current stack
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (key_ptr + out_len > memory_length) {
         JLOG(j.trace())
@@ -242,26 +267,26 @@ int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
     ripple::uint256 key= ripple::uint256::fromVoid(memory + key_ptr);
 
     // first check if the requested state was previously cached this session
-    const auto& cacheEntry = hook_ctx.changedState->find(key);
-    if (cacheEntry != hook_ctx.changedState->end())
+    const auto& cacheEntry = hookCtx.changedState->find(key);
+    if (cacheEntry != hookCtx.changedState->end())
         WRITE_WASM_MEMORY_AND_RETURN(
             data_ptr_out, out_len,
             cacheEntry->second.second.data(), cacheEntry->second.second.size(),
             memory, memory_length);
 
     // cache miss look it up
-    auto const sle = view.peek(hook_ctx.hookKeylet);
+    auto const sle = view.peek(hookCtx.hookKeylet);
     if (!sle)
         return INTERNAL_ERROR;
 
-    auto hsSLE = view.peek(keylet::hook_state(hook_ctx.account, key));
+    auto hsSLE = view.peek(keylet::hook_state(hookCtx.account, key));
     if (!hsSLE)
         return DOESNT_EXIST;
     
     Blob b = hsSLE->getFieldVL(sfHookData);
 
     // it exists add it to cache and return it
-    hook_ctx.changedState->emplace(key, std::pair<bool, ripple::Blob>(false, b));
+    hookCtx.changedState->emplace(key, std::pair<bool, ripple::Blob>(false, b));
 
     WRITE_WASM_MEMORY_AND_RETURN(
         data_ptr_out, out_len,
@@ -269,7 +294,46 @@ int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
         memory, memory_length);
 }
 
+
+
+int64_t hook_api::accept     ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+    return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::ACCEPT);
+}
+int64_t hook_api::reject     ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+    return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::REJECT);
+}
+int64_t hook_api::rollback   ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+    return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::ROLLBACK);
+}
+
+int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, hook_api::ExitType exitType ) {
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (data_ptr_in) {
+        if (NOT_IN_BOUNDS(data_ptr_in, in_len)) {
+            JLOG(j.trace())
+                << "Hook tried to accept/reject/rollback but specified memory outside of the wasm instance limit when specifying a reason string";
+            return OUT_OF_BOUNDS;
+        }
+
+        hookCtx.exitReason = std::string ( (const char*)(memory + data_ptr_in), (size_t)in_len  );
+    }
+
+    hookCtx.exitType = exitType;
+
+    wasmer_raise_runtime_error(0, 0);
+
+    // unreachable
+    return 0;
+
+}
+//int64_t reject      ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_out, uint32_t out_len );
+//int64_t rollback    ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_out, uint32_t out_len );
+
+
+
 /*int64_t hook_api::get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {
-    ripple::ApplyContext* apply_ctx = (ripple::ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
+    ripple::ApplyContext* applyCtx = (ripple::ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
     uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
 }*/
