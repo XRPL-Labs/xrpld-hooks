@@ -334,24 +334,24 @@ invoke_apply(ApplyContext& ctx)
     auto const& ledger = ctx.view();
     auto const& accountID = ctx.tx.getAccountID(sfAccount);
     auto const& hookSending = ledger.read(keylet::hook(accountID));
-    if (hookSending &&
-        canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn))
-    ) {
+    if (hookSending && 
+        canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+    {
         // execute the hook on the sending account
-        Blob hook = hookSending->getFieldVL(sfCreateCode);
-        auto result = hook::apply(hook, ctx, accountID);
+        auto result = hook::apply(
+                hookSending->getFieldVL(sfCreateCode), ctx, accountID);
         if (result != tesSUCCESS) return {result, false};     
     }
 
     if (ctx.tx.isFieldPresent(sfDestination)) {
         auto const& destAccountID = ctx.tx.getAccountID(sfDestination);
         auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
-        Blob hook = hookReceiving->getFieldVL(sfCreateCode);
-        if (hookReceiving &&
-            canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn))
-        ) {
+        if (hookReceiving && 
+            canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+        {
             // execute the hook on the receiving account
-            auto result = hook::apply(hook, ctx, destAccountID);
+            auto result = hook::apply(
+                    hookReceiving->getFieldVL(sfCreateCode), ctx, destAccountID);
             if (result != tesSUCCESS) return {result, false};     
         }
     }

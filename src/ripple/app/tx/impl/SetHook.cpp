@@ -238,6 +238,7 @@ SetHook::setHook()
         auto hook = std::make_shared<SLE>(hookKeylet);
         view().insert(hook);
 
+        hook->setAccountID(sfAccount, account_);
         hook->setFieldVL(sfCreateCode, hook_);
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
