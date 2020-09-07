@@ -65,6 +65,7 @@ namespace hook {
         std::shared_ptr<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>> changedState;
         hook_api::ExitType exitType;
         std::string exitReason {""};
+        int64_t exitCode {-1};
     };
 
     //todo: [RH] change this to a validator votable figure
@@ -90,7 +91,7 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 3;
+    const int imports_count = 6;
     wasmer_import_t imports[] = {
         functionImport ( hook_api::output_dbg,  "output_dbg",   { WI32, WI32        } ),
         functionImport ( hook_api::set_state,   "set_state",    { WI32, WI32, WI32  } ),

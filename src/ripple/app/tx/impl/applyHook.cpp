@@ -151,7 +151,9 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
         .hookKeylet = keylet::hook(account),
         .changedState = 
             std::make_shared<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>>(),
-        .exitType = hook_api::ExitType::ROLLBACK // default is to rollback unless hook calls accept() or reject()
+        .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept() or reject()
+        .exitReason = std::string(""),
+        .exitCode = -1
     };
 
     wasmer_instance_context_data_set ( instance, &hookCtx );
@@ -160,31 +162,45 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
 
-    if (wasmer_instance_call(
+    wasmer_instance_call(
         instance,
         "hook",
         arguments,
         1,
         results,
         1
-    ) != wasmer_result_t::WASMER_OK) {
+    ); 
+    
+    
+    /*!= wasmer_result_t::WASMER_OK) {
         printf("hook() call failed\n");
         printWasmerError();
         return temMALFORMED; /// todo: [RH] should be a hook execution error code tecHOOK_ERROR?
+    }*/
+
+    printf( "hook exit type was: %s\n", 
+            ( hookCtx.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : 
+            ( hookCtx.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) );
+
+    printf( "hook exit reason was: `%s`\n", hookCtx.exitReason.c_str() );
+
+    printf( "hook exit code was: %d\n", hookCtx.exitCode );
+
+    if (hookCtx.exitType != hook_api::ExitType::ROLLBACK) {
+        printf("Committing changes made by hook\n");
+        commitChangesToLedger(hookCtx);
     }
 
-
-
-
-    int64_t response_value = results[0].value.I64;
-
-    printf("hook return code was: %ld\n", response_value);
 
     // todo: [RH] memory leak here, destroy the imports, instance using a smart pointer
     wasmer_instance_destroy(instance);
     printf("running hook 3\n");
 
-    return tesSUCCESS;
+    if (hookCtx.exitType == hook_api::ExitType::ACCEPT) {
+        return tesSUCCESS;
+    } else {
+        return terNO_AUTH;
+    }
 }
 
 
@@ -321,6 +337,7 @@ int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_co
     }
 
     hookCtx.exitType = exitType;
+    hookCtx.exitCode = error_code;
 
     wasmer_raise_runtime_error(0, 0);
 
