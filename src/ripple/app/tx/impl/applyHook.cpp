@@ -199,7 +199,7 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
     if (hookCtx.exitType == hook_api::ExitType::ACCEPT) {
         return tesSUCCESS;
     } else {
-        return terNO_AUTH;
+        return terHOOK_REJECTED;
     }
 }
 

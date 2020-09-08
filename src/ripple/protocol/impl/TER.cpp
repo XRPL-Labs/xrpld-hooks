@@ -162,6 +162,7 @@ transResults()
         MAKE_ERROR(terPRE_SEQ,                "Missing/inapplicable prior transaction."),
         MAKE_ERROR(terOWNERS,                 "Non-zero owner count."),
         MAKE_ERROR(terQUEUED,                 "Held until escalated fee drops."),
+        MAKE_ERROR(terHOOK_REJECTED,          "Rejected by hook on sending or receiving account."),
 
         MAKE_ERROR(tesSUCCESS,                "The transaction was applied. Only final in a validated ledger."),
     };
