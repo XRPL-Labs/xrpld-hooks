@@ -339,7 +339,7 @@ int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_co
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (data_ptr_in) {
-        if (NOT_IN_BOUNDS(data_ptr_in, in_len)) {
+        if (NOT_IN_BOUNDS(data_ptr_in, in_len, memory_length)) {
             JLOG(j.trace())
                 << "Hook tried to accept/reject/rollback but specified memory outside of the wasm instance limit when specifying a reason string";
             return OUT_OF_BOUNDS;
@@ -355,6 +355,40 @@ int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_co
 
     // unreachable
     return 0;
+
+}
+
+int64_t hook_api::get_tx_type ( wasmer_instance_context_t * wasm_ctx ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    return applyCtx.tx.getTxnType();
+}
+
+int64_t hook_api::get_tx_field ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(data_ptr_out, out_len, memory_length)) 
+        return OUT_OF_BOUNDS;
+   
+    auto const& tx = applyCtx.tx;
+
+    SField const& fieldType = ripple::SField::getField( field_id );
+
+    if (fieldType == sfInvalid)
+        return -1;
+
+    if (tx.getFieldIndex(fieldType) == -1)
+        return -2;
+
+    auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
+    
+    std::string out = field.getFullText();
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        data_ptr_out, out_len,
+        out.data(), out.size(),
+        memory, memory_length);    
 
 }
 //int64_t reject      ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_out, uint32_t out_len );

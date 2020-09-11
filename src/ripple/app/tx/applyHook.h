@@ -37,7 +37,10 @@ namespace hook_api {
     int64_t accept      ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
     int64_t reject      ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
     int64_t rollback    ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    
+   
+    int64_t get_tx_type ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_tx_field ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
+
     int64_t _exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
 
     //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
@@ -93,16 +96,18 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 6;
+    const int imports_count = 8;
     wasmer_import_t imports[] = {
-        functionImport ( hook_api::output_dbg,  "output_dbg",   { WI32, WI32        } ),
-        functionImport ( hook_api::set_state,   "set_state",    { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::get_state,   "get_state",    { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::accept,      "accept",       { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::reject,      "reject",       { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::rollback,    "rollback",     { WI32, WI32, WI32  } )
-    };
+        functionImport ( hook_api::output_dbg,      "output_dbg",       { WI32, WI32        } ),
+        functionImport ( hook_api::set_state,       "set_state",        { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::get_state,       "get_state",        { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::get_tx_type,     "get_tx_type",      {                   } ),
+        functionImport ( hook_api::get_tx_field,    "get_tx_field",     { WI32, WI32, WI32  } ),
 
+    };
 
 #define HOOK_SETUP()\
     hook::HookContext& hookCtx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\
@@ -125,7 +130,7 @@ namespace hook {
     return bytes_to_write;}
 
 // ptr = pointer inside the wasm memory space
-#define NOT_IN_BOUNDS(ptr, len)\
+#define NOT_IN_BOUNDS(ptr, len, memory_length)\
     (ptr > memory_length || static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
 
 
