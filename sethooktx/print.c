@@ -7,10 +7,11 @@ int64_t hook(int64_t reserved ) {
 
     char buffer[129];
     buffer[0] = '\0';
-   /* memcpy(buffer, "hook saw sfDestination was ", 27);
+    memcpy(buffer, "hook saw sfDestination was ", 27);
     if (get_tx_field(sfDestination, buffer + 27, 101) <= 0)
         reject(1, 0, 0);
-*/
+
+    output_dbg(buffer, 128);
 
     int out = 0;
     BUF_TO_DEC("98765", 5, out);

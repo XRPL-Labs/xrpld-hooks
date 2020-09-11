@@ -384,7 +384,7 @@ int64_t hook_api::get_tx_field ( wasmer_instance_context_t * wasm_ctx, uint32_t 
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
     
-    std::string out = field.getFullText();
+    std::string out = field.getText();
 
     WRITE_WASM_MEMORY_AND_RETURN(
         data_ptr_out, out_len,

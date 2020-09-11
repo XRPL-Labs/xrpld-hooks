@@ -31,7 +31,7 @@ extern int64_t get_tx_field ( uint32_t field_id, uint32_t data_ptr_out, uint32_t
         if (digit_count < len - 1) {\
             buf[digit_count] = 0;\
             for (; digit_count > 0; --digit_count, numin3 /= 10)\
-                buf[digit_count] = '0' + (numin3 % 10);\
+                buf[digit_count-1] = '0' + (numin3 % 10);\
         }\
     }
 
