@@ -220,10 +220,11 @@ int64_t hook_api::output_dbg ( wasmer_instance_context_t * wasm_ctx, uint32_t pt
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
 
-    printf("HOOKAPI_output_dbg: ");
+    printf("HOOKAPI_output_dbg: `");
     if (len > 1024) len = 1024;
     for (int i = 0; i < len && i < memory_length; ++i)
         printf("%c", memory[ptr + i]);
+    printf("`\n");
     return len;
 
 }
