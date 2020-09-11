@@ -3,6 +3,16 @@
 #include <ripple/basics/Slice.h>
 using namespace ripple;
 
+bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
+    // invert ttHOOK_SET bit
+    hookOn ^= (1ULL << ttHOOK_SET);
+    // invert entire field
+    hookOn ^= 0xFFFFFFFFFFFFFFFFULL;
+    return (hookOn >> txType) & 1;
+}
+
+
+
 TER
 hook::setHookState(
     HookContext& hookCtx,
@@ -186,6 +196,8 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
 
     printf( "hook exit code was: %d\n", hookCtx.exitCode );
 
+    printf( "hook ledger no: %d\n", hookCtx.applyCtx.view().info().seq);
+
     if (hookCtx.exitType != hook_api::ExitType::ROLLBACK) {
         printf("Committing changes made by hook\n");
         commitChangesToLedger(hookCtx);
@@ -199,7 +211,7 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
     if (hookCtx.exitType == hook_api::ExitType::ACCEPT) {
         return tesSUCCESS;
     } else {
-        return terHOOK_REJECTED;
+        return tecHOOK_REJECTED;
     }
 }
 

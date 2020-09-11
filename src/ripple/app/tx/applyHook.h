@@ -44,7 +44,9 @@ namespace hook_api {
 }
 
 namespace hook {
-    
+
+    bool canHook(ripple::TxType txType, uint64_t hookOn);
+
     void printWasmerError();
 
     ripple::TER apply(ripple::Blob, ripple::ApplyContext&, const ripple::AccountID&);

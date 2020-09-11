@@ -18,7 +18,6 @@
 //==============================================================================
 
 #include <ripple/app/tx/applySteps.h>
-#include <ripple/app/tx/applyHook.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/app/tx/impl/CancelCheck.h>
 #include <ripple/app/tx/impl/CancelOffer.h>
@@ -318,47 +317,9 @@ invoke_calculateConsequences(STTx const& tx)
     }
 }
 
-bool canHook(TxType txType, uint64_t hookOn) {
-    // invert ttHOOK_SET bit
-    hookOn ^= (1ULL << ttHOOK_SET);
-    // invert entire field
-    hookOn ^= 0xFFFFFFFFFFFFFFFFULL;
-    return (hookOn >> txType) & 1;
-}
-
-
 static std::pair<TER, bool>
 invoke_apply(ApplyContext& ctx)
 {
-
-    auto const& ledger = ctx.view();
-    auto const& accountID = ctx.tx.getAccountID(sfAccount);
-    auto const& hookSending = ledger.read(keylet::hook(accountID));
-    if (hookSending && 
-        canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
-    {
-        // execute the hook on the sending account
-        auto result = hook::apply(
-                hookSending->getFieldVL(sfCreateCode), ctx, accountID);
-        if (result != tesSUCCESS) return {result, false};     
-    }
-
-    if (ctx.tx.isFieldPresent(sfDestination)) {
-        auto const& destAccountID = ctx.tx.getAccountID(sfDestination);
-        auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
-        if (hookReceiving && 
-            canHook(ctx.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
-        {
-            // execute the hook on the receiving account
-            auto result = hook::apply(
-                    hookReceiving->getFieldVL(sfCreateCode), ctx, destAccountID);
-            if (result != tesSUCCESS) return {result, false};     
-        }
-    }
-
-
-    //auto const sleSigners = ledger->read(keylet::signers(accountID));
-    //if (sleSigners)
 
     switch (ctx.tx.getTxnType())
     {

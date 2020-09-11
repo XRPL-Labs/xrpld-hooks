@@ -17,6 +17,7 @@
 */
 //==============================================================================
 
+#include <ripple/app/tx/applyHook.h>
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/tx/apply.h>
@@ -646,8 +647,41 @@ Transactor::operator()()
 #endif
 
     auto result = ctx_.preclaimResult;
-    if (result == tesSUCCESS)
-        result = apply();
+
+    if (result == tesSUCCESS) {
+
+        // check if hooking is required
+        auto const& ledger = ctx_.view();
+        auto const& accountID = ctx_.tx.getAccountID(sfAccount);
+        auto const& hookSending = ledger.read(keylet::hook(accountID));
+        if (hookSending &&
+            hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+        {
+            // execute the hook on the sending account
+            auto hookResult = hook::apply(
+                    hookSending->getFieldVL(sfCreateCode), ctx_, accountID);
+            if (hookResult != tesSUCCESS) 
+                result = tecHOOK_REJECTED;
+        }
+
+        if (ctx_.tx.isFieldPresent(sfDestination)) {
+            auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
+            auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
+            if (hookReceiving &&
+                hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+            {
+                // execute the hook on the receiving account
+                auto hookResult = hook::apply(
+                        hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID);
+                if (hookResult != tesSUCCESS)
+                    result = tecHOOK_REJECTED;
+            }
+        }
+
+        // fall through allows normal apply
+        if (result == tesSUCCESS)
+            result = apply();
+    }
 
     // No transaction can return temUNKNOWN from apply,
     // and it can't be passed in from a preclaim.

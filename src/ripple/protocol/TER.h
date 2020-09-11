@@ -197,8 +197,7 @@ enum TERcodes : TERUnderlyingType {
                      // burden network.
     terLAST,         // DEPRECATED.
     terNO_RIPPLE,    // Rippling not allowed
-    terQUEUED,       // Transaction is being held in TxQ until fee drops
-    terHOOK_REJECTED // A hook on the sending or receiving account rejected the tx
+    terQUEUED        // Transaction is being held in TxQ until fee drops
 };
 
 //------------------------------------------------------------------------------
@@ -277,6 +276,7 @@ enum TECcodes : TERUnderlyingType {
     tecKILLED = 150,
     tecHAS_OBLIGATIONS = 151,
     tecTOO_SOON = 152,
+    tecHOOK_REJECTED = 153,
 };
 
 //------------------------------------------------------------------------------
