@@ -366,7 +366,11 @@ int64_t hook_api::get_tx_type ( wasmer_instance_context_t * wasm_ctx )
     return applyCtx.tx.getTxnType();
 }
 
-int64_t hook_api::get_tx_field ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len ) 
+int64_t hook_api::get_tx_field (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t field_id,
+        uint32_t data_ptr_out,
+        uint32_t out_len ) 
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(data_ptr_out, out_len, memory_length)) 
@@ -392,12 +396,69 @@ int64_t hook_api::get_tx_field ( wasmer_instance_context_t * wasm_ctx, uint32_t 
         memory, memory_length);    
 
 }
-//int64_t reject      ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_out, uint32_t out_len );
-//int64_t rollback    ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_out, uint32_t out_len );
+
+
+int64_t hook_api::get_obj_by_hash (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t hash_ptr ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(hash_ptr, 64, memory_length)) 
+        return OUT_OF_BOUNDS;
+
+    // check if we can emplace the object to a slot
+    if (hookCtx.slot_counter > 255 && hookCtx.slot_free.size() == 0)
+        return NO_FREE_SLOTS;
+
+    // find the object
+    
+    uint256 hash;
+    if (!hash.SetHexExact((const char*)(memory + hash_ptr)))   // RH NOTE: if ever changed to allow whitespace do a bounds check
+        return INVALID_ARGUMENT;
+
+    std::cout << "looking for hash: " << hash << "\n";
+
+    auto hObj{applyCtx.app.getNodeStore().fetch(hash, 0)};
+    if (!hObj) {
+        std::cout << "(hash not found)\n";
+        return DOESNT_EXIST;
+    }
+
+    std::cout << "(hash found)\n";
+    int slot = -1;
+    if (hookCtx.slot_free.size() > 0) {
+        slot = hookCtx.slot_free.front();
+        hookCtx.slot_free.pop();
+    }
+    else slot = hookCtx.slot_counter++;
+
+    hookCtx.slot.emplace(slot, hObj);
+
+    std::cout << "assigned to slot: " << slot << "\n";
+    return slot;
+}
+
+
+int64_t hook_api::output_dbg_obj (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t slot )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.slot.find(slot) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+
+    auto const& node = hookCtx.slot[slot];
+
+    std::cout << "debug: object in slot " << slot << ":\n" <<
+        "\thash: " << node->getHash() << "\n" <<
+        "\ttype: " << node->getType() << "\n" <<
+        "\tdata: \n";
+    auto const& data = node->getData();
+    for (uint8_t c: data)
+        std::cout << std::setfill('0') << std::setw(2) << std::hex << c;
+
+    return 1;
+} 
 
 
 
-/*int64_t hook_api::get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr ) {
-    ripple::ApplyContext* applyCtx = (ripple::ApplyContext*) wasmer_instance_context_data_get(wasm_ctx);
-    uint8_t *memory = wasmer_memory_data( wasmer_instance_context_memory(wasm_ctx, 0) );
-}*/
