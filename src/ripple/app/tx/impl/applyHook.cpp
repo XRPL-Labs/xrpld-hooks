@@ -1,6 +1,10 @@
 #include <ripple/app/tx/applyHook.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/Slice.h>
+#include <ripple/app/misc/Transaction.h>
+#include <ripple/protocol/ErrorCodes.h>
+#include <ripple/app/ledger/TransactionMaster.h>
+
 using namespace ripple;
 
 bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
@@ -418,11 +422,10 @@ int64_t hook_api::get_obj_by_hash (
 
     std::cout << "looking for hash: " << hash << "\n";
 
-    auto hObj{applyCtx.app.getNodeStore().fetch(hash, 0)};
-    if (!hObj) {
-        std::cout << "(hash not found)\n";
+    ripple::error_code_i ec { ripple::error_code_i::rpcUNKNOWN }; 
+    std::shared_ptr<ripple::Transaction> hTx = applyCtx.app.getMasterTransaction().fetch(hash, ec);
+    if (!hTx)// || ec != ripple::error_code_i::rpcSUCCESS)
         return DOESNT_EXIST;
-    }
 
     std::cout << "(hash found)\n";
     int slot = -1;
@@ -432,7 +435,7 @@ int64_t hook_api::get_obj_by_hash (
     }
     else slot = hookCtx.slot_counter++;
 
-    hookCtx.slot.emplace(slot, hObj);
+    hookCtx.slot.emplace(slot, hTx);
 
     std::cout << "assigned to slot: " << slot << "\n";
     return slot;
@@ -444,19 +447,19 @@ int64_t hook_api::output_dbg_obj (
         uint32_t slot )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
     if (hookCtx.slot.find(slot) == hookCtx.slot.end())
         return DOESNT_EXIST;
-
     auto const& node = hookCtx.slot[slot];
 
-    std::cout << "debug: object in slot " << slot << ":\n" <<
-        "\thash: " << node->getHash() << "\n" <<
+    std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
+/*        "\thash: " << node->getHash() << "\n" <<
         "\ttype: " << node->getType() << "\n" <<
         "\tdata: \n";
     auto const& data = node->getData();
     for (uint8_t c: data)
         std::cout << std::setfill('0') << std::setw(2) << std::hex << c;
-
+*/
     return 1;
 } 
 

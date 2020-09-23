@@ -2,7 +2,8 @@
 #include <ripple/protocol/TER.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/beast/utility/Journal.h>
-#include <ripple/nodestore/NodeObject.h>
+//#include <ripple/nodestore/NodeObject.h>
+#include <ripple/app/misc/Transaction.h>
 #include <queue>
 #include "wasmer.hh"
 
@@ -75,7 +76,7 @@ namespace hook {
         hook_api::ExitType exitType;
         std::string exitReason {""};
         int64_t exitCode {-1};
-        std::map<int, std::shared_ptr<ripple::NodeObject>> slot;
+        std::map<int, std::shared_ptr<ripple::Transaction>> slot;
         int slot_counter { 1 };
         std::queue<int> slot_free {};
     };
