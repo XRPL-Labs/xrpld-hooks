@@ -18,3 +18,9 @@ int64_t hook(int64_t reserved ) {
     return 0;
 
 }
+
+
+int64_t* info_1(int32_t aaaa, int32_t bbbb) {
+
+    return aaaa + bbbb;
+}

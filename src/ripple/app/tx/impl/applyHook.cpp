@@ -463,5 +463,17 @@ int64_t hook_api::output_dbg_obj (
     return 1;
 } 
 
+int64_t hook_api::submit_tx_raw (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t tx_ptr_in,
+        uint32_t in_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(tx_ptr_in, in_len, memory_length))
+        return OUT_OF_BOUNDS;
 
+    
+
+
+}
 

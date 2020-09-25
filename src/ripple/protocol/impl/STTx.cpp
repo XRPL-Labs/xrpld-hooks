@@ -526,6 +526,10 @@ isPseudoTx(STObject const& tx)
     auto t = tx[~sfTransactionType];
     if (!t)
         return false;
+    
+    if (tx.getFieldIndex(sfPseudoDetails) != -1)
+        return true;
+    
     auto tt = safe_cast<TxType>(*t);
     return tt == ttAMENDMENT || tt == ttFEE || tt == ttUNL_MODIFY;
 }

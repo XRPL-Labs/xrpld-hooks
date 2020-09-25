@@ -1,7 +1,7 @@
 all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm
 
 x.wasm: x.c
-	wasmcc x.c -o x.wasm -Wl,--allow-undefined 
+	wasmcc x.c -o x.wasm  -Wl,--allow-undefined 
 
 accept.wasm: accept.c
 	wasmcc accept.c -o accept.wasm -Wl,--allow-undefined 

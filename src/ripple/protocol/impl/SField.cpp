@@ -133,7 +133,11 @@ SF_U64 const sfHighNode(access, STI_UINT64, 8, "HighNode");
 SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
+
 SF_U64 const sfHookOn(access, STI_UINT64, 12, "HookOn");
+
+SF_U64 const sfPseudoGeneration(access, STI_UINT64, 12, "PseudoGeneration");
+SF_U64 const sfPseudoBurden(access, STI_UINT64, 12, "PseudoBurden");
 
 // 128-bit
 SF_U128 const sfEmailHash(access, STI_HASH128, 1, "EmailHash");
@@ -172,6 +176,8 @@ SF_U256 const sfPayChannel(access, STI_HASH256, 22, "Channel");
 SF_U256 const sfConsensusHash(access, STI_HASH256, 23, "ConsensusHash");
 SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
+
+SF_U256 const sfPseudoParentTxnID(access, STI_HASH256, 26, "PseudoParentTxnID");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");
@@ -243,6 +249,8 @@ SF_Account const sfUnauthorize(access, STI_ACCOUNT, 6, "Unauthorize");
 SF_Account const sfTarget(access, STI_ACCOUNT, 7, "Target");
 SF_Account const sfRegularKey(access, STI_ACCOUNT, 8, "RegularKey");
 
+SF_Account const sfPseudoCallback(access, STI_ACCOUNT, 9, "PseudoCallback"); //hook to callback when pseudo is included in a ledger 
+
 // path set
 SField const sfPaths(access, STI_PATHSET, 1, "Paths");
 
@@ -289,6 +297,8 @@ SField const sfNecessary(access, STI_ARRAY, 6, "Necessary");
 SField const sfSufficient(access, STI_ARRAY, 7, "Sufficient");
 SField const sfAffectedNodes(access, STI_ARRAY, 8, "AffectedNodes");
 SField const sfMemos(access, STI_ARRAY, 9, "Memos");
+
+SField const sfPseudoDetails(access, STI_ARRAY, 10, "PseudoDetails");   // if this is present on a transaction then the transaction was produced by a hook
 
 // array of objects (uncommon)
 SField const sfMajorities(access, STI_ARRAY, 16, "Majorities");

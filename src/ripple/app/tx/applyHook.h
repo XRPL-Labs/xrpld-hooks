@@ -46,7 +46,8 @@ namespace hook_api {
     int64_t get_tx_field    ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
     int64_t get_obj_by_hash ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
     int64_t output_dbg_obj  ( wasmer_instance_context_t * wasm_ctx, uint32_t slot );
-    int64_t _exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
+    int64_t _exit           ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
+    int64_t submit_tx_raw   ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_ptr, uint32_t len );
 
     //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
 }
@@ -104,7 +105,7 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 10;
+    const int imports_count = 11;
     wasmer_import_t imports[] = {
         functionImport ( hook_api::output_dbg,         "output_dbg",       { WI32, WI32        } ),
         functionImport ( hook_api::set_state,          "set_state",        { WI32, WI32, WI32  } ),
@@ -115,7 +116,8 @@ namespace hook {
         functionImport ( hook_api::get_tx_type,        "get_tx_type",      {                   } ),
         functionImport ( hook_api::get_tx_field,       "get_tx_field",     { WI32, WI32, WI32  } ),
         functionImport ( hook_api::get_obj_by_hash,    "get_obj_by_hash",  { WI32              } ),
-        functionImport ( hook_api::output_dbg_obj,     "output_dbg_obj",   { WI32              } )
+        functionImport ( hook_api::output_dbg_obj,     "output_dbg_obj",   { WI32              } ),
+        functionImport ( hook_api::submit_tx_raw,      "submit_tx_raw",    { WI32, WI32        } )
     };
 
 #define HOOK_SETUP()\

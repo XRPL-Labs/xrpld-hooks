@@ -407,6 +407,8 @@ extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
 extern SF_U64 const sfHookOn; 
+extern SF_U64 const sfPseudoGeneration; 
+extern SF_U64 const sfPseudoBurden; 
 
 // 128-bit
 extern SF_U128 const sfEmailHash;
@@ -427,6 +429,7 @@ extern SF_U256 const sfLedgerIndex;
 extern SF_U256 const sfWalletLocator;
 extern SF_U256 const sfRootIndex;
 extern SF_U256 const sfAccountTxnID;
+extern SF_U256 const sfPseudoParentTxnID;
 
 // 256-bit (uncommon)
 extern SF_U256 const sfBookDirectory;
@@ -490,6 +493,7 @@ extern SF_Account const sfAuthorize;
 extern SF_Account const sfUnauthorize;
 extern SF_Account const sfTarget;
 extern SF_Account const sfRegularKey;
+extern SF_Account const sfPseudoCallback;
 
 // path set
 extern SField const sfPaths;
@@ -527,6 +531,7 @@ extern SField const sfAffectedNodes;
 extern SField const sfMemos;
 extern SField const sfMajorities;
 extern SField const sfNegativeUNL;
+extern SField const sfPseudoDetails;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple
