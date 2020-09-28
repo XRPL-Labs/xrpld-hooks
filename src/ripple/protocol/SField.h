@@ -430,6 +430,7 @@ extern SF_U256 const sfWalletLocator;
 extern SF_U256 const sfRootIndex;
 extern SF_U256 const sfAccountTxnID;
 extern SF_U256 const sfPseudoParentTxnID;
+extern SF_U256 const sfPseudoNonce;
 
 // 256-bit (uncommon)
 extern SF_U256 const sfBookDirectory;
