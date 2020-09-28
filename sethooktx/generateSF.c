@@ -125,6 +125,8 @@ printf("#define sfDestinationNode %d\n", field_code( STI_UINT64, 9, "Destination
 printf("#define sfCookie %d\n", field_code( STI_UINT64, 10, "Cookie"));
 printf("#define sfServerVersion %d\n", field_code( STI_UINT64, 11, "ServerVersion"));
 printf("#define sfHookOn %d\n", field_code( STI_UINT64, 12, "HookOn"));
+printf("#define sfPseudoGeneration %d\n", field_code( STI_UINT64, 13, "PseudoGeneration"));
+printf("#define sfPseudoBurden %d\n", field_code( STI_UINT64, 14, "PseudoBurden"));
 
 // 128-bit
 printf("#define sfEmailHash %d\n", field_code( STI_HASH128, 1, "EmailHash"));
@@ -157,6 +159,8 @@ printf("#define sfPayChannel %d\n", field_code( STI_HASH256, 22, "Channel"));
 printf("#define sfConsensusHash %d\n", field_code( STI_HASH256, 23, "ConsensusHash"));
 printf("#define sfCheckID %d\n", field_code( STI_HASH256, 24, "CheckID"));
 printf("#define sfValidatedHash %d\n", field_code( STI_HASH256, 25, "ValidatedHash"));
+printf("#define sfPseudoParentTxnID %d\n", field_code( STI_HASH256, 26, "PseudoParentTxnID"));
+printf("#define sfPseudoNonce %d\n", field_code( STI_HASH256, 27, "PseudoNonce"));
 
 // currency amount (common)
 printf("#define sfAmount %d\n", field_code( STI_AMOUNT, 1, "Amount"));
@@ -235,6 +239,7 @@ printf("#define sfSigner %d\n", field_code( STI_OBJECT, 16, "Signer"));
 //                                                                                 17 has not been used yet...
 printf("#define sfMajority %d\n", field_code( STI_OBJECT, 18, "Majority"));
 printf("#define sfNegativeUNLEntry %d\n", field_code( STI_OBJECT, 19, "DisabledValidator"));
+printf("#define sfPseudoDetails %d\n", field_code( STI_OBJECT, 20, "PseudoDetails"));
 
 // array of objects
 // ARRAY/1 is reserved for end of array
