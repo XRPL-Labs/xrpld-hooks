@@ -10,6 +10,7 @@ extern int64_t get_tx_type  ( );
 extern int64_t get_tx_field     ( uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
 extern int64_t get_obj_by_hash  ( unsigned char* hash );
 extern int64_t output_dbg_obj   ( int32_t slot );
+extern int64_t get_hook_account ( unsigned char* buf, int32_t len );
 
 #define DPRINT(x)\
     {output_dbg((x), sizeof((x)));}
@@ -38,6 +39,17 @@ extern int64_t output_dbg_obj   ( int32_t slot );
             (buf)[digit_count] = 0;\
             for (; digit_count > 0; --digit_count, numin3 /= 10)\
                 (buf)[digit_count-1] = '0' + (numin3 % 10);\
+        }\
+    }
+
+#define TO_HEX( buf_out_master, buf_in, buf_in_len )\
+    {\
+        unsigned char* buf_out = buf_out_master;\
+        for (int i = 0; i < buf_in_len; ++i) {\
+            int low  = (buf_in[i] & 0xFU);\
+            int high = (buf_in[i] >> 4U) & 0xFU;\
+            *buf_out++ = ( high < 10 ? high + '0' : (high - 10) + 'A' );\
+            *buf_out++ = ( low  < 10 ? low  + '0' : (low  - 10) + 'A' );\
         }\
     }
 
@@ -264,7 +276,6 @@ extern int64_t output_dbg_obj   ( int32_t slot );
  * 83140000000000000000000000000000000000000000 // 22 acount to
  */
 
-// consumes 49 bytes
 #define PREPARE_PAYMENT_SIMPLE_SIZE 126 
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount, drops_fee, to_address, dest_tag, src_tag)\
     {\

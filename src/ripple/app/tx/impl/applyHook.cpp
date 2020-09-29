@@ -463,7 +463,7 @@ int64_t hook_api::output_dbg_obj (
     return 1;
 } 
 
-int64_t hook_api::submit_tx_raw (
+int64_t hook_api::emit_tx (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t tx_ptr_in,
         uint32_t in_len )
@@ -472,8 +472,23 @@ int64_t hook_api::submit_tx_raw (
     if (NOT_IN_BOUNDS(tx_ptr_in, in_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    
+    // RH TODO finish
 
-
+    return 0;
 }
 
+int64_t hook_api::get_hook_account (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t ptr_out,
+        uint32_t out_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(ptr_out, out_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        ptr_out, out_len,
+        hookCtx.account.data(), 20,
+        memory, memory_length);
+}
