@@ -363,14 +363,81 @@ int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_co
 
 }
 
-int64_t hook_api::get_tx_type ( wasmer_instance_context_t * wasm_ctx ) 
+
+int64_t hook_api::get_txn_id ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t data_ptr_out )
+{
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    auto const& txID = applyCtx.tx.getTransactionID();
+    
+    if (NOT_IN_BOUNDS(data_ptr_out, txID.size(), memory_length)) 
+        return OUT_OF_BOUNDS;
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        data_ptr_out, out_len,
+        txID.data(), txID.size(),
+        memory, memory_length);
+}
+
+int64_t hook_api::get_txn_type ( wasmer_instance_context_t * wasm_ctx ) 
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     return applyCtx.tx.getTxnType();
 }
 
-int64_t hook_api::get_tx_field (
+int64_t hook_api::get_burden ( wasmer_instance_context_t * wasm_ctx ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    auto const& tx = applyCtx.tx;
+    if (!tx.isFieldPresent(sfPseudoDetails)) 
+        return 1; // burden is always 1 if the tx wasn't a pseudo
+
+    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfPseudoDetails).downcast<STObject>();
+
+    if (!pd.isFieldPresent(sfPseudoBurden)) {
+        JLOG(j.trace())
+            << "Hook found sfPseudoDetails but sfPseudoBurden was not in the object? ... ignoring";
+        return 1;
+    }
+
+    uint64_t burden = pd.getFieldU64(sfPseudoBurden);
+    burden &= ((1ULL << 63)-1); // wipe out the two high bits just in case somehow they are set
+    return (int64_t)(burden);
+
+}
+
+int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    auto const& tx = applyCtx.tx;
+    if (!tx.isFieldPresent(sfPseudoDetails)) 
+        return 1; // burden is always 1 if the tx wasn't a pseudo
+
+    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfPseudoDetails).downcast<STObject>();
+
+    if (!pd.isFieldPresent(sfGeneration)) {
+        JLOG(j.trace())
+            << "Hook found sfPseudoDetails but sfPseudoGeneration was not in the object? ... ignoring";
+        return 1;
+    }
+
+    return pd.getFieldU32(sfPseudoGeneration);
+}
+
+
+int64_t hook_api::get_ledger_seq ( wasmer_instance_context_t * wasm_ctx ) 
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    return applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
+}
+
+int64_t hook_api::get_txn_field (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t field_id,
         uint32_t data_ptr_out,
@@ -463,7 +530,7 @@ int64_t hook_api::output_dbg_obj (
     return 1;
 } 
 
-int64_t hook_api::emit_tx (
+int64_t hook_api::emit_txn (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t tx_ptr_in,
         uint32_t in_len )
@@ -491,4 +558,170 @@ int64_t hook_api::get_hook_account (
         ptr_out, out_len,
         hookCtx.account.data(), 20,
         memory, memory_length);
+}
+
+int64_t hook_api::get_nonce ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t ptr_out)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
+    if (NOT_IN_BOUNDS(ptr_out, 32, memory_length))
+        return OUT_OF_BOUNDS;
+
+    auto hash = ripple::sha512Half( 
+            ripple::HashPrefix::pseudoTxnNonce,
+            view.info().seq,
+            hookCtx.nonce_counter++,
+            hookCtx.account
+    );
+             
+    WRITE_WASM_MEMORY_AND_RETURN(
+        ptr_out, 32,
+        hash.data(), 32,
+        memory, memory_length);
+
+    return 32;
+}
+
+// simply return the total size of a sfPseudoDetails object, as would be written by get_pseudo_details
+int64_t hook_api::get_pseudo_details_size ( 
+        wasmer_instance_context_t * wasm_ctx )
+{
+   return 105; 
+}
+
+int64_t hook_api::set_emit_count (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t c )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.expected_emit_count > -1)
+        return ALREADY_SET;
+
+    if (c > 256) // RH TODO make this a configurable value
+        return TOO_BIG;
+
+    hookCtx.expected_emit_count = c;
+    return c;
+}
+
+
+int64_t hook_api::get_emit_burden ( 
+        wasmer_instance_context_t * wasm_ctx )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (hookCtx.expected_emit_count <= -1)
+        return PREREQUISITE_NOT_MET;
+
+    uint64_t last_burden = (uint64_t)hook_api::get_burden(wasm_ctx); // will always return a non-negative so cast is safe
+    
+    uint64_t burden = last_burden * hookCtx.expected_emit_count;
+    if (burden < last_burden) // this overflow will never happen but handle it anyway
+        return FEE_TOO_LARGE; 
+
+    return burden;
+}
+// hookCtx.applyCtx.app
+//
+//
+
+int64_t hook_api::get_fee_base ( 
+        wasmer_instance_context_t * wasm_ctx )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    {
+        auto const view = applyCtx.app.openLedger().current();
+        if (!view)
+           return INTERNAL_ERROR;
+        auto const metrics = applyCtx.app.getTxQ().getMetrics(*view);
+        auto const baseFee = view->fees().base; 
+
+        return std::max {   // for the best chance of inclusion in the ledger we pick the largest of these metrics
+            toDrops(metrics.medFeeLevel, baseFee).second.drops(),
+            toDrops(metrics.minProcessingFeeLevel, baseFee).second.drops(),
+            toDrops(metrics.openLedgerFeeLevel, baseFee).second.drops()
+        };
+    }
+
+}
+int64_t hook_api::get_emit_fee_base ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t emit_tx_byte_count )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (hookCtx.hookCtx.expected_emit_count <= -1)
+        return PREREQUISITE_NOT_MET;
+
+    uint64_t base_fee = (uint64_t)hook_api::get_fee_base(wasm_ctx); // will always return non-negative
+
+    int64_t burden = hook_api::get_emit_burden(wasm_ctx);
+    if (burden < 1)
+        return FEE_TOO_LARGE;
+
+    uint64_t fee = base_fee * burden;
+    if (fee < burden || fee & (3 << 62)) // a second under flow to handle
+        return FEE_TOO_LARGE; 
+
+    // RH TODO calculate some fee adjustment based on the emit_tx_byte_count
+
+    return fee;
+}
+
+int64_t hook_api::get_pseudo_details ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t ptr_out,
+        uint32_t out_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(ptr_out, out_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (out_len < hook_api::get_pseudo_details_size())
+        return TOO_SMALL;
+
+    if (hookCtx.expected_emit_count <= -1)
+        return PREREQUISITE_NOT_MET;
+
+    uint32_t generation = (uint32_t)(hook_api::get_generation(wasm_ctx)); // will always return non-negative so cast is safe
+    if (generation + 1 > generation) generation++; // this overflow will never happen in the life of the ledger but deal with it anyway
+
+    int64_t burden = hook_api::get_emit_burden(wasm_ctx);
+    if (burden < 1)
+        return FEE_TOO_LARGE;
+
+    unsigned char* out = memory + ptr_out;
+
+    *out++ = 0xECU; // begin sfPseudoDetails                            /* upto =   0 | size =  1 */
+    *out++ = 0x20U; // sfPseudoGeneration preamble                      /* upto =   1 | size =  6 */
+    *out++ = 0x2AU; // preamble cont                                    
+    *out++ = ( generation >> 24 ) & 0xFFU;
+    *out++ = ( generation >> 16 ) & 0xFFU;
+    *out++ = ( generation >>  8 ) & 0xFFU;
+    *out++ = ( generation >>  0 ) & 0xFFU;
+    *out++ = 0x3D; // sfPseudoBurden preamble                           /* upto =   7 | size =  9 */
+    *out++ = ( burden >> 56 ) & 0xFFU; 
+    *out++ = ( burden >> 48 ) & 0xFFU; 
+    *out++ = ( burden >> 40 ) & 0xFFU; 
+    *out++ = ( burden >> 32 ) & 0xFFU; 
+    *out++ = ( burden >> 24 ) & 0xFFU; 
+    *out++ = ( burden >> 16 ) & 0xFFU; 
+    *out++ = ( burden >>  8 ) & 0xFFU; 
+    *out++ = ( burden >>  0 ) & 0xFFU; 
+    *out++ = 0x5A; // sfPseudoParentTxnID preamble                      /* upto =  16 | size = 33 */
+    if (hook_api::get_txn_id(wasm_ctx, out - memory) != 32)
+        return INTERNAL_ERROR;
+    out += 32;
+    *out++ = 0x5B; // sfPseudoNonce                                     /* upto =  49 | size = 33 */
+    if (hook_api::get_nonce(wasm_ctx, out - memory) != 32)
+        return INTERNAL_ERROR;
+    out += 32;
+    *out++ = 0x89; // sfPseudoCallback preamble                         /* upto =  82 | size = 22 */
+    *out++ = 0x14; // preamble cont
+    if (hook_api::get_hook_account(wasm_ctx, out - memory) != 20)
+    *out++ = 0xE1U; // end object (sfPseudoDetails)                     /* upto = 104 | size =  1 */
+                                                                        /* upto = 105 | --------- */
+    return 105; 
 }

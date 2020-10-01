@@ -121,7 +121,9 @@ SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
 SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 SF_U32 const sfHookDataMaxSize(access, STI_UINT32, 42, "HookDataMaxSize");
 
-// 64-bit integers
+SF_U32 const sfPseudoGeneration(access, STI_UINT32, 43, "PseudoGeneration");
+
+// 64-bit integers (common)
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
 SF_U64 const sfIndexPrevious(access, STI_UINT64, 2, "IndexPrevious");
 SF_U64 const sfBookNode(access, STI_UINT64, 3, "BookNode");
@@ -134,10 +136,13 @@ SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
 
-SF_U64 const sfHookOn(access, STI_UINT64, 12, "HookOn");
+SF_U64 const sfPseudoBurden(access, STI_UINT64, 12, "PseudoBurden");
 
-SF_U64 const sfPseudoGeneration(access, STI_UINT64, 13, "PseudoGeneration");
-SF_U64 const sfPseudoBurden(access, STI_UINT64, 14, "PseudoBurden");
+// 14, 15 reserved
+
+// 64-bit integers (uncommon)
+SF_U64 const sfHookOn(access, STI_UINT64, 16, "HookOn");
+
 
 // 128-bit
 SF_U128 const sfEmailHash(access, STI_HASH128, 1, "EmailHash");
@@ -165,6 +170,9 @@ SF_U256 const
     sfRootIndex(access, STI_HASH256, 8, "RootIndex", SField::sMD_Always);
 SF_U256 const sfAccountTxnID(access, STI_HASH256, 9, "AccountTxnID");
 
+SF_U256 const sfPseudoParentTxnID(access, STI_HASH256, 10, "PseudoParentTxnID");
+SF_U256 const sfPseudoNonce(access, STI_HASH256, 11, "PseudoNonce");
+
 // 256-bit (uncommon)
 SF_U256 const sfBookDirectory(access, STI_HASH256, 16, "BookDirectory");
 SF_U256 const sfInvoiceID(access, STI_HASH256, 17, "InvoiceID");
@@ -177,8 +185,6 @@ SF_U256 const sfConsensusHash(access, STI_HASH256, 23, "ConsensusHash");
 SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
 
-SF_U256 const sfPseudoParentTxnID(access, STI_HASH256, 26, "PseudoParentTxnID");
-SF_U256 const sfPseudoNonce(access, STI_HASH256, 27, "PseudoNonce");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");
@@ -274,6 +280,8 @@ SField const sfNewFields(access, STI_OBJECT, 8, "NewFields");
 SField const sfTemplateEntry(access, STI_OBJECT, 9, "TemplateEntry");
 SField const sfMemo(access, STI_OBJECT, 10, "Memo");
 SField const sfSignerEntry(access, STI_OBJECT, 11, "SignerEntry");
+// if this is present on a transaction then the transaction was produced by a hook
+SField const sfPseudoDetails(access, STI_OBJECT, 12, "PseudoDetails");   
 
 // inner object (uncommon)
 SField const sfSigner(access, STI_OBJECT, 16, "Signer");
@@ -281,7 +289,6 @@ SField const sfSigner(access, STI_OBJECT, 16, "Signer");
 SField const sfMajority(access, STI_OBJECT, 18, "Majority");
 SField const sfNegativeUNLEntry(access, STI_OBJECT, 19, "DisabledValidator");
 
-SField const sfPseudoDetails(access, STI_OBJECT, 20, "PseudoDetails");   // if this is present on a transaction then the transaction was produced by a hook
 
 // array of objects
 // ARRAY/1 is reserved for end of array

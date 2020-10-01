@@ -1,16 +1,30 @@
 #include <stdint.h>
 #include "sfcodes.h"
-extern int64_t output_dbg  (unsigned char* buf, int32_t len );
-extern int64_t set_state   (unsigned char* key_ptr, unsigned char* data_ptr_in, uint32_t in_len );
-extern int64_t get_state   (unsigned char* key_ptr, unsigned char* data_ptr_out, uint32_t out_len );
-extern int64_t accept      (int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
-extern int64_t reject      (int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
-extern int64_t rollback    (int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
-extern int64_t get_tx_type ();
-extern int64_t get_tx_field    (uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
-extern int64_t get_obj_by_hash (unsigned char* hash );
-extern int64_t output_dbg_obj  (int32_t slot );
-extern int64_t get_hook_account(unsigned char* buf, int32_t len );
+
+extern int64_t accept                  ( int32_t error_code, unsigned char* buf_out, uint32_t buf_len );
+extern int64_t emit_txn                ( unsigned char* buf_out, uint32_t buf_len );
+extern int64_t get_burden              ( void );
+extern int64_t get_emit_burden         ( void );
+extern int64_t get_emit_fee_base       ( uint32_t tx_byte_count);
+extern int64_t get_fee_base            ( void );
+extern int64_t get_generation          ( void );
+extern int64_t get_hook_account        ( unsigned char* buf_in, uint32_t buf_len );
+extern int64_t get_ledger_seq          ( void );
+extern int64_t get_nonce               ( unsigned char* buf_in );
+extern int64_t get_obj_by_hash         ( unsigned char* buf_out );
+extern int64_t get_pseudo_details      ( unsigned char* buf_in, uint32_t buf_len );
+extern int64_t get_pseudo_details_size ( void );
+extern int64_t get_state               ( unsigned char* key_buf_out, uint32_t data_buf_in, uint32_t buf_in_len );
+extern int64_t get_txn_field           ( uint32_t field_id, uint32_t buf_in, uint32_t buf_len );
+extern int64_t get_txn_id              ( void );
+extern int64_t get_txn_type            ( void );
+extern int64_t output_dbg              ( uint32_t buf_out, uint32_t buf_len );
+extern int64_t output_dbg_obj          ( uint32_t slot );
+extern int64_t reject                  ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
+extern int64_t rollback                ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
+extern int64_t set_emit_count          ( uint32_t c );
+extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf_out, uint32_t buf_out_len );
+
 
 #define DPRINT(x)\
     {output_dbg((x), sizeof((x)));}
@@ -277,7 +291,6 @@ extern int64_t get_hook_account(unsigned char* buf, int32_t len );
  * 83140000000000000000000000000000000000000000 // 22 acount to
  */
 
-int get_ledger_seq() { return 0; } // RH TODO: implement this in rippled
 
 #define PREPARE_PAYMENT_SIMPLE_SIZE 126 
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount, drops_fee, to_address, dest_tag, src_tag)\

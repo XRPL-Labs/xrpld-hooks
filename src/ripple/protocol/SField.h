@@ -393,6 +393,7 @@ extern SF_U32 const sfSettleDelay;
 extern SF_U32 const sfHookStateCount;
 extern SF_U32 const sfHookReserveCount;
 extern SF_U32 const sfHookDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
+extern SF_U32 const sfPseudoGeneration; 
 
 // 64-bit integers
 extern SF_U64 const sfIndexNext;
@@ -407,7 +408,6 @@ extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
 extern SF_U64 const sfHookOn; 
-extern SF_U64 const sfPseudoGeneration; 
 extern SF_U64 const sfPseudoBurden; 
 
 // 128-bit

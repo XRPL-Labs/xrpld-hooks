@@ -16,14 +16,17 @@ namespace hook_api {
 #ifndef RIPPLE_HOOK_H_INCLUDED1
 #define RIPPLE_HOOK_H_INCLUDED1
     enum api_return_code {
-        SUCCESS = 0, // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
-        OUT_OF_BOUNDS = -1,         // could not read or write to a pointer to provided by hook because it would be out of bounds
-        INTERNAL_ERROR = -2,        // eg directory is corrupt
-        TOO_BIG = -3,               // something you tried to store was too big
-        TOO_SMALL = -4,             // something you tried to store or provide was too small
-        DOESNT_EXIST = -5,          // something you requested wasn't found
-        NO_FREE_SLOTS = -6,         // when trying to load an object there is a maximum of 255 slots
-        INVALID_ARGUMENT = -7
+        SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
+        OUT_OF_BOUNDS = -1,             // could not read or write to a pointer to provided by hook because it would be out of bounds
+        INTERNAL_ERROR = -2,            // eg directory is corrupt
+        TOO_BIG = -3,                   // something you tried to store was too big
+        TOO_SMALL = -4,                 // something you tried to store or provide was too small
+        DOESNT_EXIST = -5,              // something you requested wasn't found
+        NO_FREE_SLOTS = -6,             // when trying to load an object there is a maximum of 255 slots
+        INVALID_ARGUMENT = -7,          // self explanatory
+        ALREADY_SET = -8,               // returned when a one-time parameter was already set by the hook
+        PREREQUISITE_NOT_MET = -9,      // returned if a required param wasn't set, before calling
+        FEE_TOO_LARGE = -10             // returned if the attempted operation would result in an absurd fee
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
@@ -35,20 +38,35 @@ namespace hook_api {
 
     
 #endif
+
     // this is the api that wasm modules use to communicate with rippled
-    int64_t output_dbg      ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
-    int64_t set_state       ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t get_state       ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
-    int64_t accept          ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t reject          ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t rollback        ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t get_tx_type     ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_tx_field    ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
-    int64_t get_obj_by_hash ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
-    int64_t output_dbg_obj  ( wasmer_instance_context_t * wasm_ctx, uint32_t slot );
-    int64_t _exit           ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
-    int64_t emit_tx         ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_ptr, uint32_t len );
-    int64_t get_hook_account( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr, uint32_t out_len );
+    int64_t _exit                   ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
+    int64_t accept                  ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
+    int64_t emit_txn                ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_ptr, uint32_t len );
+    int64_t get_burden              ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_emit_burden         ( wasmer_instance_context_t * wasm_ctx);
+    int64_t get_emit_fee_base       ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_byte_count);
+    int64_t get_fee_base            ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_generation          ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_hook_account        ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr, uint32_t out_len );
+    int64_t get_ledger_seq          ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_nonce               ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
+    int64_t get_obj_by_hash         ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
+    int64_t get_pseudo_details      ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr_out, uint32_t out_len );
+    int64_t get_pseudo_details_size ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
+    int64_t get_txn_field           ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
+    int64_t get_txn_id              ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_txn_type            ( wasmer_instance_context_t * wasm_ctx );
+    int64_t output_dbg              ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
+    int64_t output_dbg_obj          ( wasmer_instance_context_t * wasm_ctx, uint32_t slot );
+    int64_t reject                  ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
+    int64_t rollback                ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
+    int64_t set_emit_count          ( wasmer_instance_context_t * wasm_ctx, uint32_t c );
+    int64_t set_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
+
+
+
 
     //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
 }
@@ -81,6 +99,8 @@ namespace hook {
         std::map<int, std::shared_ptr<ripple::Transaction>> slot;
         int slot_counter { 1 };
         std::queue<int> slot_free {};
+        int64_t expected_emit_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
+        int nonce_counter { 0 }; // incremented whenever get_nonce is called to ensure unique nonces
     };
 
     //todo: [RH] change this to a validator votable figure
@@ -106,23 +126,38 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 12;
+    const int imports_count = 23;
     wasmer_import_t imports[] = {
-        functionImport ( hook_api::output_dbg,         "output_dbg",       { WI32, WI32        } ),
-        functionImport ( hook_api::set_state,          "set_state",        { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::get_state,          "get_state",        { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::accept,             "accept",           { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::accept,                      "accept",                   { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::emit_txn,                    "emit_txn"                  { WI32, WI32        } ),
+        functionImport ( hook_api::get_burden,                  "get_burden",               {                   } ),
+        functionImport ( hook_api::get_emit_burden,             "get_emit_burden",          {                   } ),
+        functionImport ( hook_api::get_emit_fee_base,           "get_emit_fee_base",        { WI32              } ),
 
-        functionImport ( hook_api::reject,             "reject",           { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::rollback,           "rollback",         { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::get_tx_type,        "get_tx_type",      {                   } ),
-        functionImport ( hook_api::get_tx_field,       "get_tx_field",     { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::get_fee_base,                "get_fee_base",             {                   } ),
+        functionImport ( hook_api::get_generation,              "get_generation",           {                   } ),
+        functionImport ( hook_api::get_hook_account,            "get_hook_account",         { WI32, WI32        } ),
+        functionImport ( hook_api::get_ledger_seq,              "get_ledger_seq",           {                   } ),
+        functionImport ( hook_api::get_nonce,                   "get_nonce",                { WI32              } ),
 
-        functionImport ( hook_api::get_obj_by_hash,    "get_obj_by_hash",  { WI32              } ),
-        functionImport ( hook_api::output_dbg_obj,     "output_dbg_obj",   { WI32              } ),
-        functionImport ( hook_api::emit_tx,            "emit_tx",          { WI32, WI32        } ),
-        functionImport ( hook_api::get_hook_account,   "get_hook_account", { WI32, WI32        } )
+        functionImport ( hook_api::get_obj_by_hash,             "get_obj_by_hash",          { WI32              } ),
+        functionImport ( hook_api::get_pseudo_details,          "get_pseudo_details",       { WI32, WI32        } ),
+        functionImport ( hook_api::get_pseudo_details_size,     "get_pseudo_details_size",  {                   } ),
+        functionImport ( hook_api::get_state,                   "get_state",                { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::get_txn_field,               "get_txn_field",            { WI32, WI32, WI32  } ),
+        
+        functionImport ( hook_api::get_txn_id,                  "get_txn_id",               { WI32              } ),
+        functionImport ( hook_api::get_txn_type,                "get_txn_type",             {                   } ),
+        functionImport ( hook_api::output_dbg,                  "output_dbg",               { WI32, WI32        } ),
+        functionImport ( hook_api::output_dbg_obj,              "output_dbg_obj",           { WI32              } ),
+        functionImport ( hook_api::reject,                      "reject",                   { WI32, WI32, WI32  } ),
+        
+        functionImport ( hook_api::rollback,                    "rollback",                 { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::set_emit_count,              "set_emit_count",           { WI32              } ),
+        functionImport ( hook_api::set_state,                   "set_state",                { WI32, WI32, WI32  } )
     };
+
+    constexpr pseudo_details_size = 105;
 
 #define HOOK_SETUP()\
     hook::HookContext& hookCtx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\
