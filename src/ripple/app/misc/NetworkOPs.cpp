@@ -81,6 +81,7 @@ class NetworkOPsImp final : public NetworkOPs
         std::shared_ptr<Transaction> const transaction;
         bool const admin;
         bool const local;
+        bool const hook;
         FailHard const failType;
         bool applied = false;
         TER result;
@@ -89,8 +90,9 @@ class NetworkOPsImp final : public NetworkOPs
             std::shared_ptr<Transaction> t,
             bool a,
             bool l,
+            bool h,
             FailHard f)
-            : transaction(t), admin(a), local(l), failType(f)
+            : transaction(t), admin(a), local(l), hook(h), failType(f)
         {
             assert(local || failType == FailHard::no);
         }
@@ -288,6 +290,7 @@ public:
         std::shared_ptr<Transaction>& transaction,
         bool bUnlimited,
         bool bLocal,
+        bool bHook,
         FailHard failType) override;
 
     /**
@@ -1124,7 +1127,8 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
             app_.getHashRouter(),
             *trans,
             m_ledgerMaster.getValidatedRules(),
-            app_.config());
+            app_.config(),
+            false);
 
         if (validity != Validity::Valid)
         {
@@ -1146,7 +1150,7 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
 
     m_job_queue.addJob(jtTRANSACTION, "submitTxn", [this, tx](Job&) {
         auto t = tx;
-        processTransaction(t, false, false, FailHard::no);
+        processTransaction(t, false, false, false, FailHard::no);
     });
 }
 
@@ -1155,6 +1159,7 @@ NetworkOPsImp::processTransaction(
     std::shared_ptr<Transaction>& transaction,
     bool bUnlimited,
     bool bLocal,
+    bool bHook,
     FailHard failType)
 {
     auto ev = m_job_queue.makeLoadEvent(jtTXN_PROC, "ProcessTXN");
@@ -1176,7 +1181,8 @@ NetworkOPsImp::processTransaction(
         app_.getHashRouter(),
         *transaction->getSTransaction(),
         view->rules(),
-        app_.config());
+        app_.config(),
+        false);
     assert(validity == Validity::Valid);
 
     // Not concerned with local checks at this point.
@@ -1210,7 +1216,7 @@ NetworkOPsImp::doTransactionAsync(
         return;
 
     mTransactions.push_back(
-        TransactionStatus(transaction, bUnlimited, false, failType));
+        TransactionStatus(transaction, bUnlimited, false, false, failType));
     transaction->setApplying();
 
     if (mDispatchState == DispatchState::none)
@@ -1235,7 +1241,7 @@ NetworkOPsImp::doTransactionSync(
     if (!transaction->getApplying())
     {
         mTransactions.push_back(
-            TransactionStatus(transaction, bUnlimited, true, failType));
+            TransactionStatus(transaction, bUnlimited, true, false, failType));
         transaction->setApplying();
     }
 
@@ -1373,7 +1379,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                     std::string reason;
                     auto const trans = sterilize(*tx);
                     auto t = std::make_shared<Transaction>(trans, reason, app_);
-                    submit_held.emplace_back(t, false, false, FailHard::no);
+                    submit_held.emplace_back(t, false, false, false, FailHard::no);
                     t->setApplying();
                 }
             }

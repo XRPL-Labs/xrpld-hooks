@@ -600,7 +600,7 @@ transactionConstructImpl(
                     sttxNew->getTransactionID(),
                     Validity::SigGoodOnly);
             if (checkValidity(
-                    app.getHashRouter(), *sttxNew, rules, app.config())
+                    app.getHashRouter(), *sttxNew, rules, app.config(), false)
                     .first != Validity::Valid)
             {
                 ret.first = RPC::make_error(rpcINTERNAL, "Invalid signature.");
@@ -841,7 +841,7 @@ transactionSubmit(
     try
     {
         // FIXME: For performance, should use asynch interface
-        processTransaction(txn.second, isUnlimited(role), true, failType);
+        processTransaction(txn.second, isUnlimited(role), true, false, failType);
     }
     catch (std::exception&)
     {
@@ -1224,7 +1224,7 @@ transactionSubmitMultiSigned(
     try
     {
         // FIXME: For performance, should use asynch interface
-        processTransaction(txn.second, isUnlimited(role), true, failType);
+        processTransaction(txn.second, isUnlimited(role), true, false, failType);
     }
     catch (std::exception&)
     {

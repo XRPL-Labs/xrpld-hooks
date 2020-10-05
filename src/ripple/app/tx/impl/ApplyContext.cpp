@@ -35,7 +35,8 @@ ApplyContext::ApplyContext(
     TER preclaimResult_,
     FeeUnit64 baseFee_,
     ApplyFlags flags,
-    beast::Journal journal_)
+    beast::Journal journal_,
+    bool emittedByHook_)
     : app(app_)
     , tx(tx_)
     , preclaimResult(preclaimResult_)
@@ -43,6 +44,7 @@ ApplyContext::ApplyContext(
     , journal(journal_)
     , base_(base)
     , flags_(flags)
+    , emittedByHook(emittedByHook_)
 {
     view_.emplace(&base_, flags_);
 }

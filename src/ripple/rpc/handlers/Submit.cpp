@@ -107,7 +107,8 @@ doSubmit(RPC::JsonContext& context)
             context.app.getHashRouter(),
             *stpTrans,
             context.ledgerMaster.getCurrentLedger()->rules(),
-            context.app.config());
+            context.app.config(),
+            false);
         if (validity != Validity::Valid)
         {
             jvResult[jss::error] = "invalidTransaction";
@@ -132,7 +133,7 @@ doSubmit(RPC::JsonContext& context)
         auto const failType = getFailHard(context);
 
         context.netOps.processTransaction(
-            tpTrans, isUnlimited(context.role), true, failType);
+            tpTrans, isUnlimited(context.role), true, false, failType);
     }
     catch (std::exception& e)
     {
@@ -236,7 +237,8 @@ doSubmitGrpc(
             context.app.getHashRouter(),
             *stpTrans,
             context.ledgerMaster.getCurrentLedger()->rules(),
-            context.app.config());
+            context.app.config(), 
+            false);
         if (validity != Validity::Valid)
         {
             grpc::Status errorStatus{
@@ -262,7 +264,7 @@ doSubmitGrpc(
 
         // submit to network
         context.netOps.processTransaction(
-            tpTrans, isUnlimited(context.role), true, failType);
+            tpTrans, isUnlimited(context.role), true, false, failType);
     }
     catch (std::exception& e)
     {

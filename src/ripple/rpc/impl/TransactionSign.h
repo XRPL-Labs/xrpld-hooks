@@ -76,6 +76,7 @@ using ProcessTransactionFn = std::function<void(
     std::shared_ptr<Transaction>& transaction,
     bool bUnlimited,
     bool bLocal,
+    bool bHook,
     NetworkOPs::FailHard failType)>;
 
 inline ProcessTransactionFn
@@ -85,8 +86,9 @@ getProcessTxnFn(NetworkOPs& netOPs)
                std::shared_ptr<Transaction>& transaction,
                bool bUnlimited,
                bool bLocal,
+               bool bHook,
                NetworkOPs::FailHard failType) {
-        netOPs.processTransaction(transaction, bUnlimited, bLocal, failType);
+        netOPs.processTransaction(transaction, bUnlimited, bLocal, bHook, failType);
     };
 }
 

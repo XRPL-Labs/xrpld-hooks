@@ -42,13 +42,15 @@ public:
         TER preclaimResult,
         FeeUnit64 baseFee,
         ApplyFlags flags,
-        beast::Journal = beast::Journal{beast::Journal::getNullSink()});
+        beast::Journal = beast::Journal{beast::Journal::getNullSink()},
+        bool emittedByHook = false);
 
     Application& app;
     STTx const& tx;
     TER const preclaimResult;
     FeeUnit64 const baseFee;
     beast::Journal const journal;
+    const bool emittedByHook;
 
     ApplyView&
     view()

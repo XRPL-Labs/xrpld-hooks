@@ -2402,7 +2402,8 @@ PeerImp::checkTransaction(
                     app_.getHashRouter(),
                     *stx,
                     app_.getLedgerMaster().getValidatedRules(),
-                    app_.config());
+                    app_.config(),
+                    false);
                 valid != Validity::Valid)
             {
                 if (!validReason.empty())
@@ -2440,7 +2441,7 @@ PeerImp::checkTransaction(
 
         bool const trusted(flags & SF_TRUSTED);
         app_.getOPs().processTransaction(
-            tx, trusted, false, NetworkOPs::FailHard::no);
+            tx, trusted, false, false, NetworkOPs::FailHard::no);
     }
     catch (std::exception const&)
     {

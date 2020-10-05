@@ -107,8 +107,10 @@ PreflightContext::PreflightContext(
     STTx const& tx_,
     Rules const& rules_,
     ApplyFlags flags_,
-    beast::Journal j_)
-    : app(app_), tx(tx_), rules(rules_), flags(flags_), j(j_)
+    beast::Journal j_,
+    bool emittedByHook_)
+    : app(app_), tx(tx_), rules(rules_), flags(flags_), j(j_),
+    emittedByHook(emittedByHook_)
 {
 }
 
