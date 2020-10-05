@@ -48,7 +48,7 @@ namespace hook_api {
     int64_t get_emit_fee_base       ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_byte_count);
     int64_t get_fee_base            ( wasmer_instance_context_t * wasm_ctx );
     int64_t get_generation          ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_hook_account        ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr, uint32_t out_len );
+    int64_t get_hook_account        ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
     int64_t get_ledger_seq          ( wasmer_instance_context_t * wasm_ctx );
     int64_t get_nonce               ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
     int64_t get_obj_by_hash         ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
@@ -56,7 +56,7 @@ namespace hook_api {
     int64_t get_pseudo_details_size ( wasmer_instance_context_t * wasm_ctx );
     int64_t get_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
     int64_t get_txn_field           ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
-    int64_t get_txn_id              ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_txn_id              ( wasmer_instance_context_t * wasm_ctx, uint32_t data_ptr_out );
     int64_t get_txn_type            ( wasmer_instance_context_t * wasm_ctx );
     int64_t output_dbg              ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
     int64_t output_dbg_obj          ( wasmer_instance_context_t * wasm_ctx, uint32_t slot );
@@ -129,14 +129,14 @@ namespace hook {
     const int imports_count = 23;
     wasmer_import_t imports[] = {
         functionImport ( hook_api::accept,                      "accept",                   { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::emit_txn,                    "emit_txn"                  { WI32, WI32        } ),
+        functionImport ( hook_api::emit_txn,                    "emit_txn",                 { WI32, WI32        } ),
         functionImport ( hook_api::get_burden,                  "get_burden",               {                   } ),
         functionImport ( hook_api::get_emit_burden,             "get_emit_burden",          {                   } ),
         functionImport ( hook_api::get_emit_fee_base,           "get_emit_fee_base",        { WI32              } ),
 
         functionImport ( hook_api::get_fee_base,                "get_fee_base",             {                   } ),
         functionImport ( hook_api::get_generation,              "get_generation",           {                   } ),
-        functionImport ( hook_api::get_hook_account,            "get_hook_account",         { WI32, WI32        } ),
+        functionImport ( hook_api::get_hook_account,            "get_hook_account",         { WI32              } ),
         functionImport ( hook_api::get_ledger_seq,              "get_ledger_seq",           {                   } ),
         functionImport ( hook_api::get_nonce,                   "get_nonce",                { WI32              } ),
 
@@ -157,16 +157,16 @@ namespace hook {
         functionImport ( hook_api::set_state,                   "set_state",                { WI32, WI32, WI32  } )
     };
 
-    constexpr pseudo_details_size = 105;
+    const int pseudo_details_size = 105;
 
 #define HOOK_SETUP()\
     hook::HookContext& hookCtx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\
-    ApplyContext& applyCtx = hookCtx.applyCtx;\
-    auto& view = applyCtx.view();\
-    auto j = applyCtx.app.journal("View");\
+    [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
+    [[maybe_unused]] auto& view = applyCtx.view();\
+    [[maybe_unused]] auto j = applyCtx.app.journal("View");\
     const wasmer_memory_t* memory_ctx = wasmer_instance_context_memory( wasm_ctx, 0 );\
-    uint8_t* memory = wasmer_memory_data( memory_ctx );\
-    const uint64_t memory_length = wasmer_memory_data_length ( memory_ctx );    
+    [[maybe_unused]] uint8_t* memory = wasmer_memory_data( memory_ctx );\
+    [[maybe_unused]] const uint64_t memory_length = wasmer_memory_data_length ( memory_ctx );    
 
 
 #define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len, host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\

@@ -4,6 +4,9 @@
 #include <ripple/app/misc/Transaction.h>
 #include <ripple/protocol/ErrorCodes.h>
 #include <ripple/app/ledger/TransactionMaster.h>
+#include <ripple/app/ledger/LedgerMaster.h>
+#include <ripple/app/ledger/OpenLedger.h>
+#include <ripple/app/misc/TxQ.h>
 
 using namespace ripple;
 
@@ -377,7 +380,7 @@ int64_t hook_api::get_txn_id (
         return OUT_OF_BOUNDS;
 
     WRITE_WASM_MEMORY_AND_RETURN(
-        data_ptr_out, out_len,
+        data_ptr_out, txID.size(),
         txID.data(), txID.size(),
         memory, memory_length);
 }
@@ -421,7 +424,7 @@ int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx )
 
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfPseudoDetails).downcast<STObject>();
 
-    if (!pd.isFieldPresent(sfGeneration)) {
+    if (!pd.isFieldPresent(sfPseudoGeneration)) {
         JLOG(j.trace())
             << "Hook found sfPseudoDetails but sfPseudoGeneration was not in the object? ... ignoring";
         return 1;
@@ -546,16 +549,15 @@ int64_t hook_api::emit_txn (
 
 int64_t hook_api::get_hook_account (
         wasmer_instance_context_t * wasm_ctx,
-        uint32_t ptr_out,
-        uint32_t out_len )
+        uint32_t ptr_out )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    if (NOT_IN_BOUNDS(ptr_out, out_len, memory_length))
+    if (NOT_IN_BOUNDS(ptr_out, 20, memory_length))
         return OUT_OF_BOUNDS;
 
 
     WRITE_WASM_MEMORY_AND_RETURN(
-        ptr_out, out_len,
+        ptr_out, 20,
         hookCtx.account.data(), 20,
         memory, memory_length);
 }
@@ -638,11 +640,11 @@ int64_t hook_api::get_fee_base (
         auto const metrics = applyCtx.app.getTxQ().getMetrics(*view);
         auto const baseFee = view->fees().base; 
 
-        return std::max {   // for the best chance of inclusion in the ledger we pick the largest of these metrics
+        return std::max ({   // for the best chance of inclusion in the ledger we pick the largest of these metrics
             toDrops(metrics.medFeeLevel, baseFee).second.drops(),
             toDrops(metrics.minProcessingFeeLevel, baseFee).second.drops(),
             toDrops(metrics.openLedgerFeeLevel, baseFee).second.drops()
-        };
+            });
     }
 
 }
@@ -652,7 +654,7 @@ int64_t hook_api::get_emit_fee_base (
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (hookCtx.hookCtx.expected_emit_count <= -1)
+    if (hookCtx.expected_emit_count <= -1)
         return PREREQUISITE_NOT_MET;
 
     uint64_t base_fee = (uint64_t)hook_api::get_fee_base(wasm_ctx); // will always return non-negative
@@ -679,7 +681,7 @@ int64_t hook_api::get_pseudo_details (
     if (NOT_IN_BOUNDS(ptr_out, out_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (out_len < hook_api::get_pseudo_details_size())
+    if (out_len < hook_api::get_pseudo_details_size(wasm_ctx))
         return TOO_SMALL;
 
     if (hookCtx.expected_emit_count <= -1)
