@@ -24,6 +24,9 @@ int64_t hook(int64_t reserved ) {
     TO_HEX(output_buffer, tx, PREPARE_PAYMENT_SIMPLE_SIZE);
 
     output_dbg(output_buffer, PREPARE_PAYMENT_SIMPLE_SIZE*2);
+    
+    int x = PREPARE_PAYMENT_SIMPLE_SIZE;
+    emit_txn(output_buffer, x);
 
     accept( 0, 0, 0 );
     return 0;

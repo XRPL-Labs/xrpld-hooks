@@ -26,7 +26,8 @@ namespace hook_api {
         INVALID_ARGUMENT = -7,          // self explanatory
         ALREADY_SET = -8,               // returned when a one-time parameter was already set by the hook
         PREREQUISITE_NOT_MET = -9,      // returned if a required param wasn't set, before calling
-        FEE_TOO_LARGE = -10             // returned if the attempted operation would result in an absurd fee
+        FEE_TOO_LARGE = -10,            // returned if the attempted operation would result in an absurd fee
+        EMISSION_FAILURE = -11          // returned if an emitted tx was not accepted by rippled
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 

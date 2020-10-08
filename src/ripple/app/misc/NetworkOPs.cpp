@@ -320,6 +320,7 @@ public:
     doTransactionAsync(
         std::shared_ptr<Transaction> transaction,
         bool bUnlimited,
+        bool bHook,
         FailHard failtype);
 
     /**
@@ -1163,6 +1164,11 @@ NetworkOPsImp::processTransaction(
     FailHard failType)
 {
     auto ev = m_job_queue.makeLoadEvent(jtTXN_PROC, "ProcessTXN");
+    
+    // we bypass signature checking for hook-emitted transactions
+    if (bHook)
+        app_.getHashRouter().setFlags(transaction->getID(), SF_TRUSTED);
+
     auto const newFlags = app_.getHashRouter().getFlags(transaction->getID());
 
     if ((newFlags & SF_BAD) != 0)
@@ -1182,7 +1188,7 @@ NetworkOPsImp::processTransaction(
         *transaction->getSTransaction(),
         view->rules(),
         app_.config(),
-        false);
+        bHook);
     assert(validity == Validity::Valid);
 
     // Not concerned with local checks at this point.
@@ -1198,16 +1204,18 @@ NetworkOPsImp::processTransaction(
     // canonicalize can change our pointer
     app_.getMasterTransaction().canonicalize(&transaction);
 
+
     if (bLocal)
         doTransactionSync(transaction, bUnlimited, failType);
-    else
-        doTransactionAsync(transaction, bUnlimited, failType);
+    else 
+        doTransactionAsync(transaction, bUnlimited, bHook, failType);
 }
 
 void
 NetworkOPsImp::doTransactionAsync(
     std::shared_ptr<Transaction> transaction,
     bool bUnlimited,
+    bool bHook,
     FailHard failType)
 {
     std::lock_guard lock(mMutex);
@@ -1216,7 +1224,7 @@ NetworkOPsImp::doTransactionAsync(
         return;
 
     mTransactions.push_back(
-        TransactionStatus(transaction, bUnlimited, false, false, failType));
+        TransactionStatus(transaction, bUnlimited, false, bHook, failType));
     transaction->setApplying();
 
     if (mDispatchState == DispatchState::none)
@@ -1316,6 +1324,10 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
 
                     if (e.failType == FailHard::yes)
                         flags |= tapFAIL_HARD;
+
+                    // if the transaction was emitted by a hook we set this apply flag
+                    if (e.hook)
+                        flags |= tapEMIT;
 
                     auto const result = app_.getTxQ().apply(
                         app_, view, e.transaction->getSTransaction(), flags, j);

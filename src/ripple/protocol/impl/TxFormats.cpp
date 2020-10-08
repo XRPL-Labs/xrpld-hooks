@@ -40,7 +40,7 @@ TxFormats::TxFormats()
         {sfSigningPubKey, soeREQUIRED},
         {sfTxnSignature, soeOPTIONAL},
         {sfSigners, soeOPTIONAL},  // submit_multisigned
-        {sfPseudoDetails, soeOPTIONAL},
+        {sfEmitDetails, soeOPTIONAL},
     };
 
     add(jss::AccountSet,

@@ -393,7 +393,7 @@ extern SF_U32 const sfSettleDelay;
 extern SF_U32 const sfHookStateCount;
 extern SF_U32 const sfHookReserveCount;
 extern SF_U32 const sfHookDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
-extern SF_U32 const sfPseudoGeneration; 
+extern SF_U32 const sfEmitGeneration; 
 
 // 64-bit integers
 extern SF_U64 const sfIndexNext;
@@ -408,7 +408,7 @@ extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
 extern SF_U64 const sfHookOn; 
-extern SF_U64 const sfPseudoBurden; 
+extern SF_U64 const sfEmitBurden; 
 
 // 128-bit
 extern SF_U128 const sfEmailHash;
@@ -429,8 +429,8 @@ extern SF_U256 const sfLedgerIndex;
 extern SF_U256 const sfWalletLocator;
 extern SF_U256 const sfRootIndex;
 extern SF_U256 const sfAccountTxnID;
-extern SF_U256 const sfPseudoParentTxnID;
-extern SF_U256 const sfPseudoNonce;
+extern SF_U256 const sfEmitParentTxnID;
+extern SF_U256 const sfEmitNonce;
 
 // 256-bit (uncommon)
 extern SF_U256 const sfBookDirectory;
@@ -494,7 +494,7 @@ extern SF_Account const sfAuthorize;
 extern SF_Account const sfUnauthorize;
 extern SF_Account const sfTarget;
 extern SF_Account const sfRegularKey;
-extern SF_Account const sfPseudoCallback;
+extern SF_Account const sfEmitCallback;
 
 // path set
 extern SField const sfPaths;
@@ -532,7 +532,7 @@ extern SField const sfAffectedNodes;
 extern SField const sfMemos;
 extern SField const sfMajorities;
 extern SField const sfNegativeUNL;
-extern SField const sfPseudoDetails;
+extern SField const sfEmitDetails;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

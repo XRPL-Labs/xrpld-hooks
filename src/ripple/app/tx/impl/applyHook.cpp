@@ -7,6 +7,7 @@
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/OpenLedger.h>
 #include <ripple/app/misc/TxQ.h>
+#include <ripple/app/misc/NetworkOPs.h>
 
 using namespace ripple;
 
@@ -397,18 +398,18 @@ int64_t hook_api::get_burden ( wasmer_instance_context_t * wasm_ctx )
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     auto const& tx = applyCtx.tx;
-    if (!tx.isFieldPresent(sfPseudoDetails)) 
+    if (!tx.isFieldPresent(sfEmitDetails)) 
         return 1; // burden is always 1 if the tx wasn't a pseudo
 
-    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfPseudoDetails).downcast<STObject>();
+    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
-    if (!pd.isFieldPresent(sfPseudoBurden)) {
+    if (!pd.isFieldPresent(sfEmitBurden)) {
         JLOG(j.trace())
-            << "Hook found sfPseudoDetails but sfPseudoBurden was not in the object? ... ignoring";
+            << "Hook found sfEmitDetails but sfEmitBurden was not in the object? ... ignoring";
         return 1;
     }
 
-    uint64_t burden = pd.getFieldU64(sfPseudoBurden);
+    uint64_t burden = pd.getFieldU64(sfEmitBurden);
     burden &= ((1ULL << 63)-1); // wipe out the two high bits just in case somehow they are set
     return (int64_t)(burden);
 
@@ -419,18 +420,18 @@ int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx )
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     auto const& tx = applyCtx.tx;
-    if (!tx.isFieldPresent(sfPseudoDetails)) 
+    if (!tx.isFieldPresent(sfEmitDetails)) 
         return 1; // burden is always 1 if the tx wasn't a pseudo
 
-    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfPseudoDetails).downcast<STObject>();
+    auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
-    if (!pd.isFieldPresent(sfPseudoGeneration)) {
+    if (!pd.isFieldPresent(sfEmitGeneration)) {
         JLOG(j.trace())
-            << "Hook found sfPseudoDetails but sfPseudoGeneration was not in the object? ... ignoring";
+            << "Hook found sfEmitDetails but sfEmitGeneration was not in the object? ... ignoring";
         return 1;
     }
 
-    return pd.getFieldU32(sfPseudoGeneration);
+    return pd.getFieldU32(sfEmitGeneration);
 }
 
 
@@ -541,10 +542,41 @@ int64_t hook_api::emit_txn (
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(tx_ptr_in, in_len, memory_length))
         return OUT_OF_BOUNDS;
+    auto & app = hookCtx.applyCtx.app;
 
-    // RH TODO finish
+    auto & netOps = app.getOPs();
+    ripple::Blob blob{memory + tx_ptr_in, memory + tx_ptr_in + in_len};
 
-    return 0;
+    SerialIter sitTrans(makeSlice(blob));
+    std::shared_ptr<STTx const> stpTrans;
+    try
+    {
+        stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
+    }
+    catch (std::exception& e)
+    {
+        return EMISSION_FAILURE;
+    }
+
+    std::string reason;
+    auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
+    if (tpTrans->getStatus() != NEW)
+    {
+        return EMISSION_FAILURE;
+    }
+
+    try
+    {
+        // submit to network
+        netOps.processTransaction(
+            tpTrans, false, false, true, NetworkOPs::FailHard::yes);
+    }
+    catch (std::exception& e)
+    {
+        return EMISSION_FAILURE;
+    }    
+
+    return in_len;
 }
 
 int64_t hook_api::get_hook_account (
@@ -585,7 +617,7 @@ int64_t hook_api::get_nonce (
     return 32;
 }
 
-// simply return the total size of a sfPseudoDetails object, as would be written by get_pseudo_details
+// simply return the total size of a sfEmitDetails object, as would be written by get_pseudo_details
 int64_t hook_api::get_pseudo_details_size ( 
         wasmer_instance_context_t * wasm_ctx )
 {
@@ -696,14 +728,14 @@ int64_t hook_api::get_pseudo_details (
 
     unsigned char* out = memory + ptr_out;
 
-    *out++ = 0xECU; // begin sfPseudoDetails                            /* upto =   0 | size =  1 */
-    *out++ = 0x20U; // sfPseudoGeneration preamble                      /* upto =   1 | size =  6 */
+    *out++ = 0xECU; // begin sfEmitDetails                            /* upto =   0 | size =  1 */
+    *out++ = 0x20U; // sfEmitGeneration preamble                      /* upto =   1 | size =  6 */
     *out++ = 0x2AU; // preamble cont                                    
     *out++ = ( generation >> 24 ) & 0xFFU;
     *out++ = ( generation >> 16 ) & 0xFFU;
     *out++ = ( generation >>  8 ) & 0xFFU;
     *out++ = ( generation >>  0 ) & 0xFFU;
-    *out++ = 0x3D; // sfPseudoBurden preamble                           /* upto =   7 | size =  9 */
+    *out++ = 0x3D; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
     *out++ = ( burden >> 56 ) & 0xFFU; 
     *out++ = ( burden >> 48 ) & 0xFFU; 
     *out++ = ( burden >> 40 ) & 0xFFU; 
@@ -712,18 +744,18 @@ int64_t hook_api::get_pseudo_details (
     *out++ = ( burden >> 16 ) & 0xFFU; 
     *out++ = ( burden >>  8 ) & 0xFFU; 
     *out++ = ( burden >>  0 ) & 0xFFU; 
-    *out++ = 0x5A; // sfPseudoParentTxnID preamble                      /* upto =  16 | size = 33 */
+    *out++ = 0x5A; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
     if (hook_api::get_txn_id(wasm_ctx, out - memory) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++ = 0x5B; // sfPseudoNonce                                     /* upto =  49 | size = 33 */
+    *out++ = 0x5B; // sfEmitNonce                                     /* upto =  49 | size = 33 */
     if (hook_api::get_nonce(wasm_ctx, out - memory) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++ = 0x89; // sfPseudoCallback preamble                         /* upto =  82 | size = 22 */
+    *out++ = 0x89; // sfEmitCallback preamble                         /* upto =  82 | size = 22 */
     *out++ = 0x14; // preamble cont
     if (hook_api::get_hook_account(wasm_ctx, out - memory) != 20)
-    *out++ = 0xE1U; // end object (sfPseudoDetails)                     /* upto = 104 | size =  1 */
-                                                                        /* upto = 105 | --------- */
+    *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
+                                                                      /* upto = 105 | --------- */
     return 105; 
 }

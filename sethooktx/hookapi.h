@@ -8,7 +8,7 @@ extern int64_t get_emit_burden         ( void );
 extern int64_t get_emit_fee_base       ( uint32_t tx_byte_count);
 extern int64_t get_fee_base            ( void );
 extern int64_t get_generation          ( void );
-extern int64_t get_hook_account        ( unsigned char* buf_in, uint32_t buf_len );
+extern int64_t get_hook_account        ( unsigned char* buf_in );
 extern int64_t get_ledger_seq          ( void );
 extern int64_t get_nonce               ( unsigned char* buf_in );
 extern int64_t get_obj_by_hash         ( unsigned char* buf_out );
@@ -297,7 +297,7 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
     {\
         uint8_t* buf_out = buf_out_master;\
         uint8_t acc[20];\
-        get_hook_account(acc, 20);\
+        get_hook_account(acc);\
         _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size  3 */ \
         _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size  5 */ \
         _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size  5 */ \

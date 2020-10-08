@@ -121,7 +121,7 @@ SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
 SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 SF_U32 const sfHookDataMaxSize(access, STI_UINT32, 42, "HookDataMaxSize");
 
-SF_U32 const sfPseudoGeneration(access, STI_UINT32, 43, "PseudoGeneration");
+SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "PseudoGeneration");
 
 // 64-bit integers (common)
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
@@ -136,7 +136,7 @@ SF_U64 const sfDestinationNode(access, STI_UINT64, 9, "DestinationNode");
 SF_U64 const sfCookie(access, STI_UINT64, 10, "Cookie");
 SF_U64 const sfServerVersion(access, STI_UINT64, 11, "ServerVersion");
 
-SF_U64 const sfPseudoBurden(access, STI_UINT64, 12, "PseudoBurden");
+SF_U64 const sfEmitBurden(access, STI_UINT64, 12, "PseudoBurden");
 
 // 14, 15 reserved
 
@@ -170,8 +170,8 @@ SF_U256 const
     sfRootIndex(access, STI_HASH256, 8, "RootIndex", SField::sMD_Always);
 SF_U256 const sfAccountTxnID(access, STI_HASH256, 9, "AccountTxnID");
 
-SF_U256 const sfPseudoParentTxnID(access, STI_HASH256, 10, "PseudoParentTxnID");
-SF_U256 const sfPseudoNonce(access, STI_HASH256, 11, "PseudoNonce");
+SF_U256 const sfEmitParentTxnID(access, STI_HASH256, 10, "PseudoParentTxnID");
+SF_U256 const sfEmitNonce(access, STI_HASH256, 11, "PseudoNonce");
 
 // 256-bit (uncommon)
 SF_U256 const sfBookDirectory(access, STI_HASH256, 16, "BookDirectory");
@@ -256,7 +256,7 @@ SF_Account const sfUnauthorize(access, STI_ACCOUNT, 6, "Unauthorize");
 SF_Account const sfTarget(access, STI_ACCOUNT, 7, "Target");
 SF_Account const sfRegularKey(access, STI_ACCOUNT, 8, "RegularKey");
 
-SF_Account const sfPseudoCallback(access, STI_ACCOUNT, 9, "PseudoCallback"); //hook to callback when pseudo is included in a ledger 
+SF_Account const sfEmitCallback(access, STI_ACCOUNT, 9, "PseudoCallback"); //hook to callback when pseudo is included in a ledger 
 
 // path set
 SField const sfPaths(access, STI_PATHSET, 1, "Paths");
@@ -281,7 +281,7 @@ SField const sfTemplateEntry(access, STI_OBJECT, 9, "TemplateEntry");
 SField const sfMemo(access, STI_OBJECT, 10, "Memo");
 SField const sfSignerEntry(access, STI_OBJECT, 11, "SignerEntry");
 // if this is present on a transaction then the transaction was produced by a hook
-SField const sfPseudoDetails(access, STI_OBJECT, 12, "PseudoDetails");   
+SField const sfEmitDetails(access, STI_OBJECT, 12, "PseudoDetails");   
 
 // inner object (uncommon)
 SField const sfSigner(access, STI_OBJECT, 16, "Signer");

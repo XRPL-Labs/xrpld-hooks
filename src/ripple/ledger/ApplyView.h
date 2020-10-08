@@ -45,6 +45,9 @@ enum ApplyFlags : std::uint32_t {
 
     // Transaction came from a privileged source
     tapUNLIMITED = 0x400,
+
+    // Transaction was emitted by a hook
+    tapEMIT = 0x800,
 };
 
 constexpr ApplyFlags

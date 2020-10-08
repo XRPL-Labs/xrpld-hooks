@@ -527,9 +527,6 @@ isPseudoTx(STObject const& tx)
     if (!t)
         return false;
 
-    if (tx.isFieldPresent(sfPseudoDetails))
-        return true;
-
     auto tt = safe_cast<TxType>(*t);
     return tt == ttAMENDMENT || tt == ttFEE || tt == ttUNL_MODIFY;
 }
