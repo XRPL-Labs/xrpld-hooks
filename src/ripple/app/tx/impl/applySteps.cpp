@@ -105,6 +105,7 @@ template <class T>
 static TER
 invoke_preclaim(PreclaimContext const& ctx)
 {
+
     // If the transactor requires a valid account and the transaction doesn't
     // list one, preflight will have already a flagged a failure.
     auto const id = ctx.tx.getAccountID(sfAccount);

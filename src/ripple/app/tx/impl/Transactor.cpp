@@ -76,7 +76,9 @@ preflight1(PreflightContext const& ctx)
     }
 
     // if a hook emitted this transaction we bypass signature checks
-    if (ctx.flags & ApplyFlags::tapEMIT)
+    // there is a bar to circularing emitted transactions on the network
+    // in their prevalidated form so this is safe
+    if (ctx.flags & ApplyFlags::tapEMIT || ctx.tx.isFieldPresent(sfEmitDetails))
         return tesSUCCESS;
 
     auto const spk = ctx.tx.getSigningPubKey();
@@ -248,7 +250,10 @@ Transactor::checkSeq(PreclaimContext const& ctx)
 
     if (t_seq != a_seq)
     {
-        if (ctx.flags & ApplyFlags::tapEMIT && t_seq == 0)
+
+        // pass all emitted tx provided their seq is 0
+        if ( ctx.flags & ApplyFlags::tapEMIT ||
+             ctx.tx.isFieldPresent(sfEmitDetails))
             return tesSUCCESS;
 
         if (a_seq < t_seq)
@@ -337,7 +342,8 @@ NotTEC
 Transactor::checkSign(PreclaimContext const& ctx)
 {
     // hook emitted transactions do not have signatures
-    if (ctx.flags & ApplyFlags::tapEMIT)
+    if (ctx.flags & ApplyFlags::tapEMIT ||
+        ctx.tx.isFieldPresent(sfEmitDetails))
         return tesSUCCESS;
 
     // If the pk is empty, then we must be multi-signing.
@@ -667,6 +673,7 @@ Transactor::operator()()
         auto const& hookSending = ledger.read(keylet::hook(accountID));
         if (hookSending &&
             !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
+            !ctx_.tx.isFieldPresent(sfEmitDetails) &&
             hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
         {
             // execute the hook on the sending account
