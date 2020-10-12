@@ -601,6 +601,12 @@ TxQ::apply(
     ApplyFlags flags,
     beast::Journal j)
 {
+
+    std::cout << "TxQ.apply called\n";
+
+    std::cout << tx;
+    std::cout << "\n";
+
     auto const account = (*tx)[sfAccount];
     auto const transactionID = tx->getTransactionID();
     auto const tSeq = tx->getSequence();

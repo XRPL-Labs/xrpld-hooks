@@ -74,7 +74,7 @@ STArray::STArray(SerialIter& sit, SField const& f, int depth) : STBase(f)
         {
             JLOG(debugLog().error())
                 << "Unknown field: " << type << "/" << field;
-            Throw<std::runtime_error>("Unknown field");
+            Throw<std::runtime_error>("Unknown field - In Array");
         }
 
         if (fn.fieldType != STI_OBJECT)

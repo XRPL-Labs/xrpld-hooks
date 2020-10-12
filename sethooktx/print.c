@@ -14,7 +14,10 @@ int64_t hook(int64_t reserved ) {
     
     output_dbg(output_buffer, 49);              // <--- hook api
 
-  */ 
+  */
+
+    set_emit_count(1);
+
     unsigned char tx[PREPARE_PAYMENT_SIMPLE_SIZE];
 //#define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount, drops_fee, to_address, dest_tag, src_tag)\
 
@@ -22,11 +25,10 @@ int64_t hook(int64_t reserved ) {
     PREPARE_PAYMENT_SIMPLE(tx, 12345ULL, 678ULL,  to, 111, 22);
 
     TO_HEX(output_buffer, tx, PREPARE_PAYMENT_SIMPLE_SIZE);
-
     output_dbg(output_buffer, PREPARE_PAYMENT_SIMPLE_SIZE*2);
     
     int x = PREPARE_PAYMENT_SIMPLE_SIZE;
-    emit_txn(output_buffer, x);
+    emit_txn(tx, x);
 
     accept( 0, 0, 0 );
     return 0;

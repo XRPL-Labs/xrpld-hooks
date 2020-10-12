@@ -37,6 +37,7 @@ namespace hook_api {
         REJECT = 2,
     };
 
+    const int emit_details_size = 105;
     
 #endif
 
@@ -53,8 +54,7 @@ namespace hook_api {
     int64_t get_ledger_seq          ( wasmer_instance_context_t * wasm_ctx );
     int64_t get_nonce               ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
     int64_t get_obj_by_hash         ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
-    int64_t get_pseudo_details      ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr_out, uint32_t out_len );
-    int64_t get_pseudo_details_size ( wasmer_instance_context_t * wasm_ctx );
+    int64_t get_emit_details        ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr_out, uint32_t out_len );
     int64_t get_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
     int64_t get_txn_field           ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
     int64_t get_txn_id              ( wasmer_instance_context_t * wasm_ctx, uint32_t data_ptr_out );
@@ -127,7 +127,7 @@ namespace hook {
     (std::ceil( (double)state_count/(double)5.0 )) 
 #define WI32 (wasmer_value_tag::WASM_I32)
 #define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 23;
+    const int imports_count = 22;
     wasmer_import_t imports[] = {
         functionImport ( hook_api::accept,                      "accept",                   { WI32, WI32, WI32  } ),
         functionImport ( hook_api::emit_txn,                    "emit_txn",                 { WI32, WI32        } ),
@@ -142,8 +142,7 @@ namespace hook {
         functionImport ( hook_api::get_nonce,                   "get_nonce",                { WI32              } ),
 
         functionImport ( hook_api::get_obj_by_hash,             "get_obj_by_hash",          { WI32              } ),
-        functionImport ( hook_api::get_pseudo_details,          "get_pseudo_details",       { WI32, WI32        } ),
-        functionImport ( hook_api::get_pseudo_details_size,     "get_pseudo_details_size",  {                   } ),
+        functionImport ( hook_api::get_emit_details,            "get_emit_details",         { WI32, WI32        } ),
         functionImport ( hook_api::get_state,                   "get_state",                { WI32, WI32, WI32  } ),
         functionImport ( hook_api::get_txn_field,               "get_txn_field",            { WI32, WI32, WI32  } ),
         
@@ -158,7 +157,6 @@ namespace hook {
         functionImport ( hook_api::set_state,                   "set_state",                { WI32, WI32, WI32  } )
     };
 
-    const int pseudo_details_size = 105;
 
 #define HOOK_SETUP()\
     hook::HookContext& hookCtx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\

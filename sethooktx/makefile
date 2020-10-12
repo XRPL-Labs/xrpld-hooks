@@ -1,5 +1,8 @@
 all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF
 
+clean:
+	rm *.wasm generateSF
+
 hex2prefill : hex2prefill.c
 	gcc utils/hex2prefill.c -o utils/hex2prefill
 

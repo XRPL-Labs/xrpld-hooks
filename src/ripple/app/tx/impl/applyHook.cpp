@@ -285,7 +285,7 @@ void hook::commitChangesToLedger ( HookContext& hookCtx ) {
         }
     }
 
-    // next write all output pseudotx
+    // next write all output emittx
     // RH TODO ^
 }
 
@@ -399,7 +399,7 @@ int64_t hook_api::get_burden ( wasmer_instance_context_t * wasm_ctx )
 
     auto const& tx = applyCtx.tx;
     if (!tx.isFieldPresent(sfEmitDetails)) 
-        return 1; // burden is always 1 if the tx wasn't a pseudo
+        return 1; // burden is always 1 if the tx wasn't a emit
 
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
@@ -421,7 +421,7 @@ int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx )
 
     auto const& tx = applyCtx.tx;
     if (!tx.isFieldPresent(sfEmitDetails)) 
-        return 1; // burden is always 1 if the tx wasn't a pseudo
+        return 1; // burden is always 1 if the tx wasn't a emit
 
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
@@ -544,8 +544,23 @@ int64_t hook_api::emit_txn (
         return OUT_OF_BOUNDS;
     auto & app = hookCtx.applyCtx.app;
 
+
+
+    printf("received tx from hook:----\n");
+    for (int i = 0; i < in_len; ++i)
+        printf("%02X", *(memory + tx_ptr_in + i));
+    printf("------\n");
+
+
     auto & netOps = app.getOPs();
     ripple::Blob blob{memory + tx_ptr_in, memory + tx_ptr_in + in_len};
+
+    printf("emitting tx:-----\n");
+    for (unsigned char c: blob)
+    {
+        printf("%02X", c);
+    }
+    printf("\n--------\n");
 
     SerialIter sitTrans(makeSlice(blob));
     std::shared_ptr<STTx const> stpTrans;
@@ -555,6 +570,7 @@ int64_t hook_api::emit_txn (
     }
     catch (std::exception& e)
     {
+        std::cout << "EMISSION FAILURE 1 WHILE EMIT: " << e.what() << "\n";
         return EMISSION_FAILURE;
     }
 
@@ -562,6 +578,7 @@ int64_t hook_api::emit_txn (
     auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
     if (tpTrans->getStatus() != NEW)
     {
+        std::cout << "EMISSION FAILURE 2 WHILE EMIT: tpTrans->getStatus() != NEW\n";
         return EMISSION_FAILURE;
     }
 
@@ -573,6 +590,7 @@ int64_t hook_api::emit_txn (
     }
     catch (std::exception& e)
     {
+        std::cout << "EMISSION FAILURE 3 WHILE EMIT: " << e.what() << "\n";
         return EMISSION_FAILURE;
     }    
 
@@ -603,7 +621,7 @@ int64_t hook_api::get_nonce (
         return OUT_OF_BOUNDS;
 
     auto hash = ripple::sha512Half( 
-            ripple::HashPrefix::pseudoTxnNonce,
+            ripple::HashPrefix::emitTxnNonce,
             view.info().seq,
             hookCtx.nonce_counter++,
             hookCtx.account
@@ -615,13 +633,6 @@ int64_t hook_api::get_nonce (
         memory, memory_length);
 
     return 32;
-}
-
-// simply return the total size of a sfEmitDetails object, as would be written by get_pseudo_details
-int64_t hook_api::get_pseudo_details_size ( 
-        wasmer_instance_context_t * wasm_ctx )
-{
-   return 105; 
 }
 
 int64_t hook_api::set_emit_count (
@@ -704,7 +715,7 @@ int64_t hook_api::get_emit_fee_base (
     return fee;
 }
 
-int64_t hook_api::get_pseudo_details ( 
+int64_t hook_api::get_emit_details ( 
         wasmer_instance_context_t * wasm_ctx,
         uint32_t ptr_out,
         uint32_t out_len )
@@ -713,7 +724,7 @@ int64_t hook_api::get_pseudo_details (
     if (NOT_IN_BOUNDS(ptr_out, out_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (out_len < hook_api::get_pseudo_details_size(wasm_ctx))
+    if (out_len < hook_api::emit_details_size)
         return TOO_SMALL;
 
     if (hookCtx.expected_emit_count <= -1)
@@ -730,12 +741,12 @@ int64_t hook_api::get_pseudo_details (
 
     *out++ = 0xECU; // begin sfEmitDetails                            /* upto =   0 | size =  1 */
     *out++ = 0x20U; // sfEmitGeneration preamble                      /* upto =   1 | size =  6 */
-    *out++ = 0x2AU; // preamble cont                                    
+    *out++ = 0x2BU; // preamble cont                                    
     *out++ = ( generation >> 24 ) & 0xFFU;
     *out++ = ( generation >> 16 ) & 0xFFU;
     *out++ = ( generation >>  8 ) & 0xFFU;
     *out++ = ( generation >>  0 ) & 0xFFU;
-    *out++ = 0x3D; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
+    *out++ = 0x3C; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
     *out++ = ( burden >> 56 ) & 0xFFU; 
     *out++ = ( burden >> 48 ) & 0xFFU; 
     *out++ = ( burden >> 40 ) & 0xFFU; 
@@ -755,7 +766,10 @@ int64_t hook_api::get_pseudo_details (
     *out++ = 0x89; // sfEmitCallback preamble                         /* upto =  82 | size = 22 */
     *out++ = 0x14; // preamble cont
     if (hook_api::get_hook_account(wasm_ctx, out - memory) != 20)
+        return INTERNAL_ERROR;
+    out += 20;
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
                                                                       /* upto = 105 | --------- */
+    printf("emitdetails size = %d\n", (out - memory - ptr_out));
     return 105; 
 }
