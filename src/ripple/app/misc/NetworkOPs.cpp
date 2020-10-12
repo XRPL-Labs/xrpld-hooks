@@ -1128,8 +1128,7 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
             app_.getHashRouter(),
             *trans,
             m_ledgerMaster.getValidatedRules(),
-            app_.config(),
-            false);
+            app_.config());
 
         if (validity != Validity::Valid)
         {
@@ -1167,7 +1166,7 @@ NetworkOPsImp::processTransaction(
     
     // we bypass signature checking for hook-emitted transactions
     if (bHook)
-        app_.getHashRouter().setFlags(transaction->getID(), SF_TRUSTED);
+        app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
 
     auto const newFlags = app_.getHashRouter().getFlags(transaction->getID());
 
@@ -1187,8 +1186,7 @@ NetworkOPsImp::processTransaction(
         app_.getHashRouter(),
         *transaction->getSTransaction(),
         view->rules(),
-        app_.config(),
-        bHook);
+        app_.config());
     assert(validity == Validity::Valid);
 
     // Not concerned with local checks at this point.

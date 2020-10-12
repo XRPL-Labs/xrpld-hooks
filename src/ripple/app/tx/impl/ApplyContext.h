@@ -42,15 +42,13 @@ public:
         TER preclaimResult,
         FeeUnit64 baseFee,
         ApplyFlags flags,
-        beast::Journal = beast::Journal{beast::Journal::getNullSink()},
-        bool emittedByHook = false);
+        beast::Journal = beast::Journal{beast::Journal::getNullSink()});
 
     Application& app;
     STTx const& tx;
     TER const preclaimResult;
     FeeUnit64 const baseFee;
     beast::Journal const journal;
-    const bool emittedByHook;
 
     ApplyView&
     view()
@@ -111,6 +109,12 @@ public:
      */
     TER
     checkInvariants(TER const result, XRPAmount const fee);
+
+    bool
+    emitted()
+    {
+        return flags_ & ApplyFlags::tapEMIT;
+    }
 
 private:
     TER

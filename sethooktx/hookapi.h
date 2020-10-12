@@ -308,7 +308,7 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        get_emit_details(buf_out, 105);\                                                    /* emitdet | size 105 */ \
+        get_emit_details(buf_out, 105);                                                     /* emitdet | size 105 */ \
     }
 
 

@@ -2402,8 +2402,7 @@ PeerImp::checkTransaction(
                     app_.getHashRouter(),
                     *stx,
                     app_.getLedgerMaster().getValidatedRules(),
-                    app_.config(),
-                    false);
+                    app_.config());
                 valid != Validity::Valid)
             {
                 if (!validReason.empty())

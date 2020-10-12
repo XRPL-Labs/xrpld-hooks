@@ -107,8 +107,7 @@ doSubmit(RPC::JsonContext& context)
             context.app.getHashRouter(),
             *stpTrans,
             context.ledgerMaster.getCurrentLedger()->rules(),
-            context.app.config(),
-            false);
+            context.app.config());
         if (validity != Validity::Valid)
         {
             jvResult[jss::error] = "invalidTransaction";
@@ -237,8 +236,7 @@ doSubmitGrpc(
             context.app.getHashRouter(),
             *stpTrans,
             context.ledgerMaster.getCurrentLedger()->rules(),
-            context.app.config(), 
-            false);
+            context.app.config()); 
         if (validity != Validity::Valid)
         {
             grpc::Status errorStatus{

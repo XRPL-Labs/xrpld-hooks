@@ -37,15 +37,13 @@ public:
     Rules const rules;
     ApplyFlags flags;
     beast::Journal const j;
-    const bool emittedByHook;
 
     PreflightContext(
         Application& app_,
         STTx const& tx_,
         Rules const& rules_,
         ApplyFlags flags_,
-        beast::Journal j_,
-        bool emittedByHook_ = false);
+        beast::Journal j_);
 
     PreflightContext&
     operator=(PreflightContext const&) = delete;
@@ -61,7 +59,6 @@ public:
     STTx const& tx;
     ApplyFlags flags;
     beast::Journal const j;
-    const bool emittedByHook;
 
     PreclaimContext(
         Application& app_,
@@ -69,15 +66,13 @@ public:
         TER preflightResult_,
         STTx const& tx_,
         ApplyFlags flags_,
-        beast::Journal j_ = beast::Journal{beast::Journal::getNullSink()},
-        bool emittedByHook_ = false)
+        beast::Journal j_ = beast::Journal{beast::Journal::getNullSink()})
         : app(app_)
         , view(view_)
         , preflightResult(preflightResult_)
         , tx(tx_)
         , flags(flags_)
         , j(j_)
-        , emittedByHook(emittedByHook_)
     {
     }
 

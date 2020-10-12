@@ -75,6 +75,10 @@ preflight1(PreflightContext const& ctx)
         return temBAD_FEE;
     }
 
+    // if a hook emitted this transaction we bypass signature checks
+    if (ctx.flags & ApplyFlags::tapEMIT)
+        return tesSUCCESS;
+
     auto const spk = ctx.tx.getSigningPubKey();
 
     if (!spk.empty() && !publicKeyType(makeSlice(spk)))
@@ -107,10 +111,8 @@ PreflightContext::PreflightContext(
     STTx const& tx_,
     Rules const& rules_,
     ApplyFlags flags_,
-    beast::Journal j_,
-    bool emittedByHook_)
-    : app(app_), tx(tx_), rules(rules_), flags(flags_), j(j_),
-    emittedByHook(emittedByHook_)
+    beast::Journal j_)
+    : app(app_), tx(tx_), rules(rules_), flags(flags_), j(j_)
 {
 }
 
@@ -246,6 +248,9 @@ Transactor::checkSeq(PreclaimContext const& ctx)
 
     if (t_seq != a_seq)
     {
+        if (ctx.flags & ApplyFlags::tapEMIT && t_seq == 0)
+            return tesSUCCESS;
+
         if (a_seq < t_seq)
         {
             JLOG(ctx.j.trace())
@@ -331,6 +336,10 @@ Transactor::apply()
 NotTEC
 Transactor::checkSign(PreclaimContext const& ctx)
 {
+    // hook emitted transactions do not have signatures
+    if (ctx.flags & ApplyFlags::tapEMIT)
+        return tesSUCCESS;
+
     // If the pk is empty, then we must be multi-signing.
     if (ctx.tx.getSigningPubKey().empty())
         return checkMultiSign(ctx);
@@ -657,6 +666,7 @@ Transactor::operator()()
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
         auto const& hookSending = ledger.read(keylet::hook(accountID));
         if (hookSending &&
+            !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
             hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
         {
             // execute the hook on the sending account
