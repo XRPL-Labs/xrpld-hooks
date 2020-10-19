@@ -1,6 +1,8 @@
 #include <stdint.h>
 #include "hookapi.h"
 
+int64_t hook(int64_t reserved) __attribute__((used));
+
 int64_t hook(int64_t reserved ) {
 
     unsigned char output_buffer[PREPARE_PAYMENT_SIMPLE_SIZE*2];
@@ -18,9 +20,13 @@ int64_t hook(int64_t reserved ) {
         0x00, 0x00, 0x00, 0x00,
         0x00, 0x00, 0x00, 0x00
     }; //rKWLeCTRrocvXdgZEhP3uS8Q4keUJgoYG5
-    
 
-    PREPARE_PAYMENT_SIMPLE(tx, 1234500000ULL, 678ULL,  to, 111, 22);
+
+    int64_t fee_base = get_emit_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
+    DEC_TO_BUF(fee_base, output_buffer, 10);
+    output_dbg(output_buffer, 10);
+
+    PREPARE_PAYMENT_SIMPLE(tx, 1234500000ULL, fee_base,  to, 111, 22);
 
     TO_HEX(output_buffer, tx, PREPARE_PAYMENT_SIMPLE_SIZE);
     output_dbg(output_buffer, PREPARE_PAYMENT_SIMPLE_SIZE*2);
@@ -28,7 +34,7 @@ int64_t hook(int64_t reserved ) {
     int x = PREPARE_PAYMENT_SIMPLE_SIZE;
     emit_txn(tx, x);
 
-    accept( 0, 0, 0 );
+    accept(0,0,0); 
     return 0;
 
 }

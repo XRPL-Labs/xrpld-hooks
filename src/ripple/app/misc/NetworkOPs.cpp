@@ -1110,6 +1110,14 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
         return;
     }
 
+    if (iTrans->isFieldPresent(sfEmitDetails))
+    {
+        JLOG(m_journal.warn())
+            << "Submitted transaction invalid [contained sfEmitDetails]";
+        return;
+    }
+
+
     // this is an asynchronous interface
     auto const trans = sterilize(*iTrans);
 
@@ -1163,11 +1171,38 @@ NetworkOPsImp::processTransaction(
     FailHard failType)
 {
     auto ev = m_job_queue.makeLoadEvent(jtTXN_PROC, "ProcessTXN");
-    
-    // we bypass signature checking for hook-emitted transactions
-    if (bHook)
-        app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
+   
+    // we bypass signature checking for valid hook-emitted transactions
 
+    /* Truth table for processing hook tx:
+     * +-----------------+------------+------------+
+     * |                 | !bHook     | bHook      |
+     * +-----------------+------------+------------+
+     * | !sfEmitDetails  | 1. normal  | 2. invalid |
+     * +-----------------+------------+------------+
+     * |  sfEmitDetails  | 3. invalid | 4. valid   |
+     * +-----------------+------------+------------+
+     */
+
+    bool hasEmitDetails = transaction->getSTransaction()->isFieldPresent(sfEmitDetails);
+
+    if (bHook && hasEmitDetails) // 4
+        app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
+    else if (hasEmitDetails || bHook) // 2, 3
+    {
+        // if we receive a transaction without sfEmitDetails from a hook
+        // we ignore it
+        // if we receive a transaction with sfEmitDetails
+        // other than from a hook we ignore it...
+        //   however we won't set it to bad in the hash router's cache
+        //   because this opens an attack vector whereby a malicious actor
+        //   could precompute emitted tx and send them to validators
+        //   and thereby cause hooks' legitimate emitted tx not to be processed 
+        return;
+    } else // 1
+    {
+        // not a hook related tx, continue as normal
+    }
     auto const newFlags = app_.getHashRouter().getFlags(transaction->getID());
 
     if ((newFlags & SF_BAD) != 0)
@@ -1217,6 +1252,15 @@ NetworkOPsImp::doTransactionAsync(
     FailHard failType)
 {
     std::lock_guard lock(mMutex);
+    
+    // RH this check might not be needed? but we don't want any route by which 
+    // sfEmitDetails can be queued other than by valid emission from a hook
+    if (!bHook && transaction->getSTransaction()->isFieldPresent(sfEmitDetails))
+    {   
+        JLOG(m_journal.warn())
+            << "doTransactionAsync transaction invalid [contained sfEmitDetails]";
+        return;
+    }
 
     if (transaction->getApplying())
         return;
@@ -1243,6 +1287,16 @@ NetworkOPsImp::doTransactionSync(
     FailHard failType)
 {
     std::unique_lock<std::mutex> lock(mMutex);
+
+    // RH this check might not be needed? but we don't want any route by which 
+    // sfEmitDetails can be queued other than by valid emission from a hook
+    if (transaction->getSTransaction()->isFieldPresent(sfEmitDetails))
+    {   
+        JLOG(m_journal.warn())
+            << "doTransactionSync transaction invalid [contained sfEmitDetails]";
+        return;
+    }
+
 
     if (!transaction->getApplying())
     {

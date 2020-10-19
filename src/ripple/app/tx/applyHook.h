@@ -27,7 +27,8 @@ namespace hook_api {
         ALREADY_SET = -8,               // returned when a one-time parameter was already set by the hook
         PREREQUISITE_NOT_MET = -9,      // returned if a required param wasn't set, before calling
         FEE_TOO_LARGE = -10,            // returned if the attempted operation would result in an absurd fee
-        EMISSION_FAILURE = -11          // returned if an emitted tx was not accepted by rippled
+        EMISSION_FAILURE = -11,         // returned if an emitted tx was not accepted by rippled
+        TOO_MANY_NONCES = 12            // a hook has a maximum of 256 nonces
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
@@ -38,7 +39,8 @@ namespace hook_api {
     };
 
     const int emit_details_size = 105;
-    
+   
+    const int drops_per_byte = 31250; //RH TODO make this a votable config option 
 #endif
 
     // this is the api that wasm modules use to communicate with rippled
@@ -102,6 +104,10 @@ namespace hook {
         std::queue<int> slot_free {};
         int64_t expected_emit_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
         int nonce_counter { 0 }; // incremented whenever get_nonce is called to ensure unique nonces
+        std::map<ripple::uint256, bool> nonce_used;
+        uint32_t generation = 0; // used for caching, only generated when get_generation is called
+        int64_t burden = 0; // used for caching, only generated when get_burden is called
+        int64_t fee_base = 0;
     };
 
     //todo: [RH] change this to a validator votable figure

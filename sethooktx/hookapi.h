@@ -1,3 +1,12 @@
+/**
+ * Hook API include for Webassembly XRPLD Hooks
+ *
+ * Note to the reader:
+ * This include defines two types of things: external functions and macros
+ * No internal functions are declared because a non-inlining compiler may produce
+ * undesirable output.
+ */
+
 #include <stdint.h>
 #include "sfcodes.h"
 
@@ -28,8 +37,10 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
 #define DPRINT(x)\
     {output_dbg((x), sizeof((x)));}
 
-#define BUF_TO_DEC(buf, len, numout)\
+#define BUF_TO_DEC(buf_in, len_in, numout)\
     {\
+        unsigned char* buf = (buf_in);\
+        int len = (len_in);\
         int i = 0;\
         numout = 0;\
         for (; i < len && (buf)[i] != 0; ++i) {\
@@ -42,8 +53,11 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
         }\
     }
 
-#define DEC_TO_BUF(numin, buf, len)\
+#define DEC_TO_BUF(numin_raw, buf_in, len_in)\
     {\
+        int numin = (numin_raw);\
+        unsigned char* buf = (buf_in);\
+        int len = (len_in);\
         int digit_count = 0;\
         int numin2 = numin;\
         int numin3 = numin;\
@@ -292,10 +306,14 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
 
 
 #define PREPARE_PAYMENT_SIMPLE_SIZE 231 
-#define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount, drops_fee, to_address, dest_tag, src_tag)\
+#define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount_raw, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
         uint8_t acc[20];\
+        uint64_t drops_amount = (drops_amount_raw);\
+        uint64_t drops_fee = (drops_fee_raw);\
+        uint32_t dest_tag = (dest_tag_raw);\
+        uint32_t src_tag = (src_tag_raw);\
         get_hook_account(acc);\
         _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
         _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \

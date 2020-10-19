@@ -396,6 +396,8 @@ int64_t hook_api::get_txn_type ( wasmer_instance_context_t * wasm_ctx )
 int64_t hook_api::get_burden ( wasmer_instance_context_t * wasm_ctx ) 
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.burden)
+        return hookCtx.burden;
 
     auto const& tx = applyCtx.tx;
     if (!tx.isFieldPresent(sfEmitDetails)) 
@@ -411,17 +413,21 @@ int64_t hook_api::get_burden ( wasmer_instance_context_t * wasm_ctx )
 
     uint64_t burden = pd.getFieldU64(sfEmitBurden);
     burden &= ((1ULL << 63)-1); // wipe out the two high bits just in case somehow they are set
+    hookCtx.burden = burden;
     return (int64_t)(burden);
-
 }
 
 int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx ) 
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    // cache the result as it will not change for this hook execution
+    if (hookCtx.generation)
+        return hookCtx.generation;
+
     auto const& tx = applyCtx.tx;
     if (!tx.isFieldPresent(sfEmitDetails)) 
-        return 1; // burden is always 1 if the tx wasn't a emit
+        return 1; // generation is always 1 if the tx wasn't a emit
 
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
@@ -431,7 +437,12 @@ int64_t hook_api::get_generation ( wasmer_instance_context_t * wasm_ctx )
         return 1;
     }
 
-    return pd.getFieldU32(sfEmitGeneration);
+    hookCtx.generation = pd.getFieldU32(sfEmitGeneration);
+    // this overflow will never happen in the life of the ledger but deal with it anyway
+    if (hookCtx.generation + 1 > hookCtx.generation)
+        hookCtx.generation++; 
+
+    return hookCtx.generation;
 }
 
 
@@ -544,14 +555,6 @@ int64_t hook_api::emit_txn (
         return OUT_OF_BOUNDS;
     auto & app = hookCtx.applyCtx.app;
 
-
-
-    printf("received tx from hook:----\n");
-    for (int i = 0; i < in_len; ++i)
-        printf("%02X", *(memory + tx_ptr_in + i));
-    printf("------\n");
-
-
     auto & netOps = app.getOPs();
     ripple::Blob blob{memory + tx_ptr_in, memory + tx_ptr_in + in_len};
 
@@ -574,6 +577,158 @@ int64_t hook_api::emit_txn (
         return EMISSION_FAILURE;
     }
 
+    // check the emitted txn is valid
+    /* Emitted TXN rules
+     * 1. Sequence: 0
+     * 2. PubSigningKey: 000000000000000
+     * 3. sfEmitDetails present and valid
+     * 4. No sfSignature
+     * 5. LastLedgerSeq > current ledger, > firstledgerseq
+     * 6. FirstLedgerSeq > current ledger, if present
+     * 7. Fee must be correctly high
+     */
+
+    // rule 1: sfSequence must be present and 0
+    if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
+    {
+        std::cout << "EMISSION FAILURE, sfSequence missing or non-zero.\n";
+        return EMISSION_FAILURE;
+    }
+
+    // rule 2: sfSigningPubKey must be present and 00...00
+    if (!stpTrans->isFieldPresent(sfSigningPubKey)) 
+    {
+        std::cout << "EMISSION FAILURE, sfSigningPubKey missing.\n";
+        return EMISSION_FAILURE;
+    }
+
+    auto const pk = stpTrans->getSigningPubKey();
+    if (pk.size() != 33)
+    {
+        std::cout << "EMISSION FAILURE, sfSigningPubKey present but wrong size, expecting 33 bytes.\n";
+        return EMISSION_FAILURE;
+    }
+
+    for (int i = 0; i < 33; ++i)
+        if (pk[i] != 0)
+        {
+            std::cout << "EMISSION FAILURE, sfSigningPubKey present but non-zero.\n";
+            return EMISSION_FAILURE;
+        }
+
+    // rule 3: sfEmitDetails must be present and valid
+    if (!stpTrans->isFieldPresent(sfEmitDetails))
+    {
+        std::cout << "EMISSION FAILURE, sfEmitDetails missing.\n";
+        return EMISSION_FAILURE;
+    }
+    
+    auto const& emitDetails =
+        const_cast<ripple::STTx&>(*stpTrans).getField(sfEmitDetails).downcast<STObject>();
+
+    if (!emitDetails.isFieldPresent(sfEmitGeneration) ||
+        !emitDetails.isFieldPresent(sfEmitBurden) ||
+        !emitDetails.isFieldPresent(sfEmitParentTxnID) ||
+        !emitDetails.isFieldPresent(sfEmitNonce) ||
+        !emitDetails.isFieldPresent(sfEmitCallback))
+    {
+        std::cout<< "EMISSION FAILURE, sfEmitDetails malformed.\n";
+        return EMISSION_FAILURE;
+    }
+
+    uint32_t gen = emitDetails.getFieldU32(sfEmitGeneration);
+    uint64_t bur = emitDetails.getFieldU64(sfEmitBurden);
+    ripple::uint256 pTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
+    ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
+    auto callback = emitDetails.getAccountID(sfEmitCallback);
+
+    uint32_t gen_proper = get_generation(wasm_ctx);
+
+    if (gen != gen_proper)
+    {
+        std::cout << "EMISSION FAILURE, Generation provided in EmitDetails was not correct: " << gen
+            << " should be " << gen_proper << "\n";
+        return EMISSION_FAILURE;
+    }
+
+    if (bur != get_burden(wasm_ctx))
+    {
+        std::cout << "EMISSION FAILURE, Burden provided in EmitDetails was not correct\n";
+        return EMISSION_FAILURE;
+    }
+
+    if (pTxnID != applyCtx.tx.getTransactionID())
+    {
+        std::cout << "EMISSION FAILURE, ParentTxnID provided in EmitDetails was not correct\n";
+        return EMISSION_FAILURE;
+    }
+
+    if (hookCtx.nonce_used.find(nonce) == hookCtx.nonce_used.end())
+    {
+        std::cout << "EMISSION FAILURE, Nonce provided in EmitDetails was not generated by get_nonce\n";
+        return EMISSION_FAILURE;
+    }
+
+    if (callback != hookCtx.account)
+    {
+        std::cout << "EMISSION FAILURE, Callback account must be the account of the emitting hook\n";
+        return EMISSION_FAILURE;
+    }
+
+    // rule 4: sfSignature must be absent
+    if (stpTrans->isFieldPresent(sfSignature))
+    {
+        std::cout << "EMISSION FAILURE, sfSignature is present but should not be.\n";
+        return EMISSION_FAILURE;
+    }
+
+    // rule 5: LastLedgerSeq must be present and after current ledger
+    // RH TODO: limit lastledgerseq, is this needed?
+    
+    uint32_t tx_lls = stpTrans->getFieldU32(sfLastLedgerSequence);
+    uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
+    if (!stpTrans->isFieldPresent(sfLastLedgerSequence) || tx_lls < ledgerSeq + 1)
+    {
+        std::cout << "EMISSION FAILURE, sfLastLedgerSequence missing or invalid\n";
+        return EMISSION_FAILURE;
+    }
+
+    // rule 6
+    if (stpTrans->isFieldPresent(sfFirstLedgerSequence) && 
+            stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
+    {
+        std::cout << "EMISSION FAILURE FirstLedgerSequence > LastLedgerSequence\n";
+        return EMISSION_FAILURE;
+    }
+
+
+    // rule 7 check the emitted txn pays the appropriate fee
+
+    if (hookCtx.fee_base == 0)
+        hookCtx.fee_base = get_emit_fee_base(wasm_ctx, in_len);
+
+    int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * in_len; 
+    if (minfee < 0 || hookCtx.fee_base < 0)
+    {
+        std::cout << "EMISSION FAILURE fee could not be calculated\n";
+        return EMISSION_FAILURE;
+    }
+
+    if (!stpTrans->isFieldPresent(sfFee))
+    {
+        std::cout << "EMISSION FAILURE Fee missing from emitted tx\n";
+        return EMISSION_FAILURE;
+    }
+
+    int64_t fee = stpTrans->getFieldAmount(sfFee).xrp().drops();
+    if (fee < minfee)
+    {
+        std::cout << "EMISSION FAILURE Fee on emitted txn is less than the minimum required fee\n";
+        return EMISSION_FAILURE;
+    }
+
+
+
     std::string reason;
     auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
     if (tpTrans->getStatus() != NEW)
@@ -581,7 +736,6 @@ int64_t hook_api::emit_txn (
         std::cout << "EMISSION FAILURE 2 WHILE EMIT: tpTrans->getStatus() != NEW\n";
         return EMISSION_FAILURE;
     }
-
     try
     {
         // submit to network
@@ -620,12 +774,17 @@ int64_t hook_api::get_nonce (
     if (NOT_IN_BOUNDS(ptr_out, 32, memory_length))
         return OUT_OF_BOUNDS;
 
+    if (hookCtx.nonce_counter > 256)
+        return TOO_MANY_NONCES;
+
     auto hash = ripple::sha512Half( 
             ripple::HashPrefix::emitTxnNonce,
             view.info().seq,
             hookCtx.nonce_counter++,
             hookCtx.account
     );
+
+    hookCtx.nonce_used[hash] = true;
              
     WRITE_WASM_MEMORY_AND_RETURN(
         ptr_out, 32,
@@ -676,20 +835,7 @@ int64_t hook_api::get_fee_base (
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    {
-        auto const view = applyCtx.app.openLedger().current();
-        if (!view)
-           return INTERNAL_ERROR;
-        auto const metrics = applyCtx.app.getTxQ().getMetrics(*view);
-        auto const baseFee = view->fees().base; 
-
-        return std::max ({   // for the best chance of inclusion in the ledger we pick the largest of these metrics
-            toDrops(metrics.medFeeLevel, baseFee).second.drops(),
-            toDrops(metrics.minProcessingFeeLevel, baseFee).second.drops(),
-            toDrops(metrics.openLedgerFeeLevel, baseFee).second.drops()
-            });
-    }
-
+    return view.fees().base.drops() * 1.1; 
 }
 int64_t hook_api::get_emit_fee_base ( 
         wasmer_instance_context_t * wasm_ctx,
@@ -710,9 +856,9 @@ int64_t hook_api::get_emit_fee_base (
     if (fee < burden || fee & (3 << 62)) // a second under flow to handle
         return FEE_TOO_LARGE; 
 
-    // RH TODO calculate some fee adjustment based on the emit_tx_byte_count
+    hookCtx.fee_base = fee;
 
-    return fee;
+    return fee * hook_api::drops_per_byte * emit_tx_byte_count;
 }
 
 int64_t hook_api::get_emit_details ( 
@@ -731,7 +877,6 @@ int64_t hook_api::get_emit_details (
         return PREREQUISITE_NOT_MET;
 
     uint32_t generation = (uint32_t)(hook_api::get_generation(wasm_ctx)); // will always return non-negative so cast is safe
-    if (generation + 1 > generation) generation++; // this overflow will never happen in the life of the ledger but deal with it anyway
 
     int64_t burden = hook_api::get_emit_burden(wasm_ctx);
     if (burden < 1)

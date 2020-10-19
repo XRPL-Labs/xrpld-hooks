@@ -53,7 +53,13 @@ OpenLedger::current() const
     return current_;
 }
 
-bool
+std::shared_ptr<OpenView const>
+OpenLedger::current_unsafe() const
+{
+    return current_;
+}
+
+    bool
 OpenLedger::modify(modify_type const& f)
 {
     std::lock_guard lock1(modify_mutex_);

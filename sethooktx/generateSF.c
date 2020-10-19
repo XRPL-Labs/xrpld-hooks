@@ -242,7 +242,6 @@ printf("#define sfSigner 0x%04x\n", field_code( STI_OBJECT, 16, "Signer"));
 //                                                                                 17 has not been used yet...
 printf("#define sfMajority 0x%04x\n", field_code( STI_OBJECT, 18, "Majority"));
 printf("#define sfNegativeUNLEntry 0x%04x\n", field_code( STI_OBJECT, 19, "DisabledValidator"));
-printf("#define sfEmitDetails 0x%04x\n", field_code( STI_OBJECT, 20, "EmitDetails"));
 
 // array of objects
 // ARRAY/1 is reserved for end of array
