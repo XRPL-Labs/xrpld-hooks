@@ -133,7 +133,7 @@ detail::supportedAmendments()
         "HardenedValidations",
         "fixAmendmentMajorityCalc",
         //"NegativeUNL"      // Commented out to prevent automatic enablement
-        //"Hooks"
+        "Hooks"
     };
     return supported;
 }

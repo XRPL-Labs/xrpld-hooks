@@ -664,8 +664,10 @@ Transactor::operator()()
 #endif
 
     auto result = ctx_.preclaimResult;
-
-    if (result == tesSUCCESS) {
+    
+    if (ctx_.view().rules().enabled(featureHooks) &&
+        result == tesSUCCESS)
+    {
 
         // check if hooking is required
         auto const& ledger = ctx_.view();
@@ -723,11 +725,11 @@ Transactor::operator()()
                 assert(false);
             }
         }
-
-        // fall through allows normal apply
-        if (result == tesSUCCESS)
-            result = apply();
     }
+
+    // fall through allows normal apply
+    if (result == tesSUCCESS)
+        result = apply();
 
     // No transaction can return temUNKNOWN from apply,
     // and it can't be passed in from a preclaim.

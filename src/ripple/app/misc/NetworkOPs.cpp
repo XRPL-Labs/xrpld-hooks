@@ -1171,37 +1171,45 @@ NetworkOPsImp::processTransaction(
     FailHard failType)
 {
     auto ev = m_job_queue.makeLoadEvent(jtTXN_PROC, "ProcessTXN");
-   
-    // we bypass signature checking for valid hook-emitted transactions
+  
+    auto const view = m_ledgerMaster.getCurrentLedger();
+    if (view->rules().enabled(featureHooks)) 
+    { 
+        // we bypass signature checking for valid hook-emitted transactions
 
-    /* Truth table for processing hook tx:
-     * +-----------------+------------+------------+
-     * |                 | !bHook     | bHook      |
-     * +-----------------+------------+------------+
-     * | !sfEmitDetails  | 1. normal  | 2. invalid |
-     * +-----------------+------------+------------+
-     * |  sfEmitDetails  | 3. invalid | 4. valid   |
-     * +-----------------+------------+------------+
-     */
+        /* Truth table for processing hook tx:
+         * +-----------------+------------+------------+
+         * |                 | !bHook     | bHook      |
+         * +-----------------+------------+------------+
+         * | !sfEmitDetails  | 1. normal  | 2. invalid |
+         * +-----------------+------------+------------+
+         * |  sfEmitDetails  | 3. invalid | 4. valid   |
+         * +-----------------+------------+------------+
+         */
 
-    bool hasEmitDetails = transaction->getSTransaction()->isFieldPresent(sfEmitDetails);
+        bool hasEmitDetails = transaction->getSTransaction()->isFieldPresent(sfEmitDetails);
 
-    if (bHook && hasEmitDetails) // 4
-        app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
-    else if (hasEmitDetails || bHook) // 2, 3
+        if (bHook && hasEmitDetails) // 4
+            app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
+        else if (hasEmitDetails || bHook) // 2, 3
+        {
+            // if we receive a transaction without sfEmitDetails from a hook
+            // we ignore it
+            // if we receive a transaction with sfEmitDetails
+            // other than from a hook we ignore it...
+            //   however we won't set it to bad in the hash router's cache
+            //   because this opens an attack vector whereby a malicious actor
+            //   could precompute emitted tx and send them to validators
+            //   and thereby cause hooks' legitimate emitted tx not to be processed 
+            return;
+        } else // 1
+        {
+            // not a hook related tx, continue as normal
+        }
+    } else if (bHook)
     {
-        // if we receive a transaction without sfEmitDetails from a hook
-        // we ignore it
-        // if we receive a transaction with sfEmitDetails
-        // other than from a hook we ignore it...
-        //   however we won't set it to bad in the hash router's cache
-        //   because this opens an attack vector whereby a malicious actor
-        //   could precompute emitted tx and send them to validators
-        //   and thereby cause hooks' legitimate emitted tx not to be processed 
-        return;
-    } else // 1
-    {
-        // not a hook related tx, continue as normal
+        JLOG(m_journal.info()) << "Hook-emitted txn detected but hooks not enabled\n";
+        // RH TODO this should probably be fatal...
     }
     auto const newFlags = app_.getHashRouter().getFlags(transaction->getID());
 
@@ -1216,7 +1224,6 @@ NetworkOPsImp::processTransaction(
     // NOTE eahennis - I think this check is redundant,
     // but I'm not 100% sure yet.
     // If so, only cost is looking up HashRouter flags.
-    auto const view = m_ledgerMaster.getCurrentLedger();
     auto const [validity, reason] = checkValidity(
         app_.getHashRouter(),
         *transaction->getSTransaction(),
@@ -1253,6 +1260,14 @@ NetworkOPsImp::doTransactionAsync(
 {
     std::lock_guard lock(mMutex);
     
+    auto const view = m_ledgerMaster.getCurrentLedger();
+    if (!view->rules().enabled(featureHooks) && bHook)
+    {
+        JLOG(m_journal.warn())
+            << "doTransactionAsync transaction submitted with bHook=true but Hooks amendment not enabled\n";
+        return;
+    }
+
     // RH this check might not be needed? but we don't want any route by which 
     // sfEmitDetails can be queued other than by valid emission from a hook
     if (!bHook && transaction->getSTransaction()->isFieldPresent(sfEmitDetails))

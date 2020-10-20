@@ -113,7 +113,9 @@ class FeatureCollections
                     // payment check
         "HardenedValidations",
         "fixAmendmentMajorityCalc",  // Fix Amendment majority calculation
-        "NegativeUNL"};
+        "NegativeUNL",
+        "Hooks"
+    };
     std::vector<uint256> features;
     boost::container::flat_map<uint256, std::size_t> featureToIndex;
     boost::container::flat_map<std::string, uint256> nameToFeature;

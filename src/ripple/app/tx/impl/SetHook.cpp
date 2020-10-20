@@ -59,6 +59,12 @@ inline int parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* e
 NotTEC
 SetHook::preflight(PreflightContext const& ctx)
 {
+    if (!ctx.rules.enabled(featureHooks))
+    {
+        JLOG(ctx.j.warn()) << "Hooks not enabled";
+        return temDISABLED;
+    }
+
     auto const ret = preflight1(ctx);
     if (!isTesSuccess(ret))
         return ret;
