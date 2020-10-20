@@ -33,7 +33,7 @@
 #include <cstdint>
 #include <stdio.h>
 #include <vector>
-#include "wasmer.hh"
+#include <ripple/app/tx/applyHook.h>
 namespace ripple {
 
 // web assembly contains a lot of run length encoding in LEB128 format
@@ -45,6 +45,7 @@ inline int parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* e
     {
         int b = (int)(buf[i]);
         val += (b & 0x7F) << shift;
+        ++i;
         if (b & 0x80)
         {
             shift += 7;
@@ -87,35 +88,55 @@ SetHook::preflight(PreflightContext const& ctx)
             return temMALFORMED;
         }
 
+        unsigned char header[8] = { 0x00U, 0x61U, 0x73U, 0x6DU, 0x01U, 0x00U, 0x00U, 0x00U };
+
+        // check header, magic number
+        // RH TODO clean up debug output
+        bool bad_header = false;
         {
             printf("Hook start: `");
             for (int i = 0; i < 8; ++i)
-                printf("%02X", hook[i]);
+            {
+                bool match = hook[i] == header[i];
+                printf("%02X - %s, ", hook[i], (match ? "t" : "f"));
+                if (!match) bad_header = true;
+            }
             printf("`\n");
         }
-        // check for magic number, version etc.
-        if (!(  hook[0] == 0x00 && hook[1] == 0x61 && hook[2] == 0x73 && hook[3] == 0x6D &&
-                hook[4] == 0x10 && hook[5] == 0x00 && hook[6] == 0x00 && hook[7] == 0x00 ))
+        if (bad_header)
         {
             JLOG(ctx.j.trace())
                 << "Malformed transaction: Hook was not valid webassembly binary. missing magic number or version.";
             return temMALFORMED;
         }
 
-        for (int i = 8; i < hook.size();)
+        for (int i = 8, j = 0; i < hook.size();)
         {
-            int section_type = hook[i];
-            int section_start = 0;
-            int section_length = parseLeb128(hook, i + 1, &section_start);
 
-            if (section_type != 0x70)
+            if (j == i)
             {
-                i = section_start + section_length;
+                // if the loop iterates twice with the same value for i then
+                // it's an infinite loop edge case
+                JLOG(ctx.j.trace())
+                    << "Malformed transaction: Hook is invalid WASM binary.";
+                return temMALFORMED;                
+            }
+            
+            j = i;
+
+            int section_type = hook[i++];
+            int section_length = parseLeb128(hook, i, &i);
+            int section_start = i;
+
+
+            printf("WASM binary analysis -- upto %d: section %d with length %d\n", i, section_type, section_length);
+            if (section_type != 7)
+            {
+                i += section_length;
                 continue;
             }
 
             // execution to here means we are inside the export section
-            i = section_start;
             int export_count = parseLeb128(hook, i, &i);
             if (export_count <= 0)
             {
@@ -159,12 +180,14 @@ SetHook::preflight(PreflightContext const& ctx)
 
         // check if wasmer can run it
         wasmer_instance_t *instance = NULL;
-        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != wasmer_result_t::WASMER_OK) {
+        if (wasmer_instantiate(
+            &instance, hook.data(), hook.size(), hook::imports, hook::imports_count) 
+                != wasmer_result_t::WASMER_OK) {
+            hook::printWasmerError();
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
             return temMALFORMED;
-        }
-        printf("preflight sethook 4\n");
-
+        }        
+        
         wasmer_instance_destroy(instance);
 
     }
