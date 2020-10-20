@@ -5,6 +5,9 @@ int64_t hook(int64_t reserved) __attribute__((used));
 
 int64_t cbak(int64_t reserved) 
 {
+    char hello[] = "callback called!";
+    output_dbg(hello, sizeof(hello));
+    accept(0,0,0);
     return 0;
 }
 int64_t hook(int64_t reserved ) {

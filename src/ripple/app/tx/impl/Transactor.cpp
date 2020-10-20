@@ -678,12 +678,13 @@ Transactor::operator()()
         {
             // execute the hook on the sending account
             auto hookResult = hook::apply(
-                    hookSending->getFieldVL(sfCreateCode), ctx_, accountID);
+                    hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
             if (hookResult != tesSUCCESS) 
                 result = tecHOOK_REJECTED;
         }
 
-        if (ctx_.tx.isFieldPresent(sfDestination)) {
+        if (ctx_.tx.isFieldPresent(sfDestination))
+        {
             auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
             auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
             if (hookReceiving &&
@@ -691,9 +692,35 @@ Transactor::operator()()
             {
                 // execute the hook on the receiving account
                 auto hookResult = hook::apply(
-                        hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID);
+                        hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
                 if (hookResult != tesSUCCESS)
                     result = tecHOOK_REJECTED;
+            }
+        }
+
+        // check if there is a callback
+        if (ctx_.tx.isFieldPresent(sfEmitDetails))
+        {
+            try {
+                auto const& emitDetails =
+                    const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>(); 
+                if (!emitDetails.isFieldPresent(sfEmitCallback))
+                    throw 0;
+                
+                AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+
+                auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
+                auto hookResult = hook::apply(
+                        hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
+
+                // callback is unable to affect the application of an already Emitted Tx to the ledger
+                // so we're done
+                
+            } catch ( ... )
+            {
+                if (auto stream = j_.fatal())
+                    stream << "invalid emitDetails block in applied transaction";
+                assert(false);
             }
         }
 

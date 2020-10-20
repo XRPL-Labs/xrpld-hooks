@@ -149,7 +149,7 @@ void hook::printWasmerError()
     free(error_str);
 }
 
-TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
+TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account, bool callback = false) {
 
     wasmer_instance_t *instance = NULL;
 
@@ -182,7 +182,7 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account) {
 
     wasmer_instance_call(
         instance,
-        "hook",
+        (!callback ? "hook" : "cbak"),
         arguments,
         1,
         results,
@@ -270,7 +270,6 @@ int64_t hook_api::set_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
 
 void hook::commitChangesToLedger ( HookContext& hookCtx ) {
 
-
     // first write all changes to state
 
     for (const auto& cacheEntry : *(hookCtx.changedState)) {
@@ -285,8 +284,24 @@ void hook::commitChangesToLedger ( HookContext& hookCtx ) {
         }
     }
 
-    // next write all output emittx
-    // RH TODO ^
+    printf("emitted txn count: %d\n", hookCtx.emitted_txn.size());
+
+    auto & netOps = hookCtx.applyCtx.app.getOPs();
+    for (; hookCtx.emitted_txn.size() > 0; hookCtx.emitted_txn.pop())
+    {
+        auto& tpTrans = hookCtx.emitted_txn.front();
+        std::cout << "submitting emitted tx: " << tpTrans << "\n";
+        try
+        {
+            netOps.processTransaction(
+                tpTrans, false, false, true, NetworkOPs::FailHard::yes);
+        }
+        catch (std::exception& e)
+        {
+            std::cout << "EMITTED TX FAILED TO PROCESS: " << e.what() << "\n";
+        }
+    }    
+
 }
 
 
@@ -333,17 +348,27 @@ int64_t hook_api::get_state ( wasmer_instance_context_t * wasm_ctx, uint32_t key
 
 
 
-int64_t hook_api::accept     ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+int64_t hook_api::accept
+(wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len)
+{
     return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::ACCEPT);
 }
-int64_t hook_api::reject     ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+
+    int64_t hook_api::reject
+(wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len)
+{
     return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::REJECT);
 }
-int64_t hook_api::rollback   ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len ) {
+
+    int64_t hook_api::rollback
+(wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len)
+{
     return hook_api::_exit(wasm_ctx, error_code, data_ptr_in, in_len, hook_api::ExitType::ROLLBACK);
 }
 
-int64_t hook_api::_exit ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, hook_api::ExitType exitType ) {
+int64_t hook_api::_exit 
+(wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, hook_api::ExitType exitType) 
+{
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -553,12 +578,18 @@ int64_t hook_api::emit_txn (
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(tx_ptr_in, in_len, memory_length))
         return OUT_OF_BOUNDS;
-    auto & app = hookCtx.applyCtx.app;
 
-    auto & netOps = app.getOPs();
+    auto& app = hookCtx.applyCtx.app;
+
+    if (hookCtx.expected_emit_count < 0)
+        return PREREQUISITE_NOT_MET;
+
+    if (hookCtx.emitted_txn.size() >= hookCtx.expected_emit_count)
+        return TOO_MANY_EMITTED_TXN;
+
     ripple::Blob blob{memory + tx_ptr_in, memory + tx_ptr_in + in_len};
 
-    printf("emitting tx:-----\n");
+    printf("hook is emitting tx:-----\n");
     for (unsigned char c: blob)
     {
         printf("%02X", c);
@@ -736,17 +767,8 @@ int64_t hook_api::emit_txn (
         std::cout << "EMISSION FAILURE 2 WHILE EMIT: tpTrans->getStatus() != NEW\n";
         return EMISSION_FAILURE;
     }
-    try
-    {
-        // submit to network
-        netOps.processTransaction(
-            tpTrans, false, false, true, NetworkOPs::FailHard::yes);
-    }
-    catch (std::exception& e)
-    {
-        std::cout << "EMISSION FAILURE 3 WHILE EMIT: " << e.what() << "\n";
-        return EMISSION_FAILURE;
-    }    
+
+    hookCtx.emitted_txn.push(tpTrans);
 
     return in_len;
 }

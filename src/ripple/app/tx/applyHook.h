@@ -28,7 +28,8 @@ namespace hook_api {
         PREREQUISITE_NOT_MET = -9,      // returned if a required param wasn't set, before calling
         FEE_TOO_LARGE = -10,            // returned if the attempted operation would result in an absurd fee
         EMISSION_FAILURE = -11,         // returned if an emitted tx was not accepted by rippled
-        TOO_MANY_NONCES = 12            // a hook has a maximum of 256 nonces
+        TOO_MANY_NONCES = 12,           // a hook has a maximum of 256 nonces
+        TOO_MANY_EMITTED_TXN = 13       // a hook has emitted more than its stated number of emitted txn
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
@@ -80,7 +81,7 @@ namespace hook {
 
     void printWasmerError();
 
-    ripple::TER apply(ripple::Blob, ripple::ApplyContext&, const ripple::AccountID&);
+    ripple::TER apply(ripple::Blob, ripple::ApplyContext&, const ripple::AccountID&, bool callback);
 
     struct HookContext;
 
@@ -99,10 +100,13 @@ namespace hook {
         hook_api::ExitType exitType;
         std::string exitReason {""};
         int64_t exitCode {-1};
-        std::map<int, std::shared_ptr<ripple::Transaction>> slot;
+        std::map<int, std::shared_ptr<ripple::Transaction>> slot; // slots are used up by requesting objs
         int slot_counter { 1 };
         std::queue<int> slot_free {};
+
         int64_t expected_emit_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
+        std::queue<std::shared_ptr<ripple::Transaction>> emitted_txn; // etx stored here until accept/re/rollback
+        
         int nonce_counter { 0 }; // incremented whenever get_nonce is called to ensure unique nonces
         std::map<ripple::uint256, bool> nonce_used;
         uint32_t generation = 0; // used for caching, only generated when get_generation is called
