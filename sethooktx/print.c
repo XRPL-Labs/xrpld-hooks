@@ -3,6 +3,10 @@
 
 int64_t hook(int64_t reserved) __attribute__((used));
 
+int64_t cbak(int64_t reserved) 
+{
+    return 0;
+}
 int64_t hook(int64_t reserved ) {
 
     unsigned char output_buffer[PREPARE_PAYMENT_SIMPLE_SIZE*2];

@@ -32,7 +32,28 @@
 #include <algorithm>
 #include <cstdint>
 #include <stdio.h>
+#include <vector>
+#include "wasmer.hh"
 namespace ripple {
+
+// web assembly contains a lot of run length encoding in LEB128 format
+inline int parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
+{
+    int val = 0, shift = 0, i = start_offset;
+
+    while (i < buf.size())
+    {
+        int b = (int)(buf[i]);
+        val += (b & 0x7F) << shift;
+        if (b & 0x80)
+        {
+            shift += 7;
+            continue;
+        }
+        *end_offset = i;
+        return val;
+    }
+}
 
 NotTEC
 SetHook::preflight(PreflightContext const& ctx)
@@ -43,9 +64,9 @@ SetHook::preflight(PreflightContext const& ctx)
 
     printf("preflight sethook 1\n");
 
-    if (     !ctx.tx.isFieldPresent(sfCreateCode) ||
-             !ctx.tx.isFieldPresent(sfHookOn)  
-    ) {   
+    if (!ctx.tx.isFieldPresent(sfCreateCode) ||
+        !ctx.tx.isFieldPresent(sfHookOn))
+    {   
         JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid SetHook format.";
         return temMALFORMED;
@@ -53,28 +74,103 @@ SetHook::preflight(PreflightContext const& ctx)
     
     printf("preflight sethook 2\n");
 
-    return preflight2(ctx);
-
-    /*
     Blob hook = ctx.tx.getFieldVL(sfCreateCode);      
 
-    if (!hook.empty()) { // if the hook is empty it's a delete request
+    // if the hook is empty it's a delete request
+    if (!hook.empty()) { 
         printf("preflight sethook 3\n");
 
-        //todo: [RH] check wasm guest's function table to ensure only api functions are present        
+        if (hook.size() < 10)
+        {
+            JLOG(ctx.j.trace())
+                << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
+            return temMALFORMED;
+        }
+
+        {
+            printf("Hook start: `");
+            for (int i = 0; i < 8; ++i)
+                printf("%02X", hook[i]);
+            printf("`\n");
+        }
+        // check for magic number, version etc.
+        if (!(  hook[0] == 0x00 && hook[1] == 0x61 && hook[2] == 0x73 && hook[3] == 0x6D &&
+                hook[4] == 0x10 && hook[5] == 0x00 && hook[6] == 0x00 && hook[7] == 0x00 ))
+        {
+            JLOG(ctx.j.trace())
+                << "Malformed transaction: Hook was not valid webassembly binary. missing magic number or version.";
+            return temMALFORMED;
+        }
+
+        for (int i = 8; i < hook.size();)
+        {
+            int section_type = hook[i];
+            int section_start = 0;
+            int section_length = parseLeb128(hook, i + 1, &section_start);
+
+            if (section_type != 0x70)
+            {
+                i = section_start + section_length;
+                continue;
+            }
+
+            // execution to here means we are inside the export section
+            i = section_start;
+            int export_count = parseLeb128(hook, i, &i);
+            if (export_count <= 0)
+            {
+                JLOG(ctx.j.trace())
+                    << "Malformed transaction: Hook did not export any functions... "
+                    "required hook(int64_t), callback(int64_t).";
+                return temMALFORMED;
+            }
+
+            bool found_hook_export = false;
+            bool found_cbak_export = false;
+            for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
+            {
+                int name_len = parseLeb128(hook, i, &i);
+                if (name_len == 4) 
+                {
+
+                    if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
+                        found_hook_export = true;
+                    else
+                    if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
+                        found_cbak_export = true;
+                }
+
+                i += name_len + 1;
+                parseLeb128(hook, i, &i);
+
+            }
+
+            // execution to here means export section was parsed
+            if (!(found_hook_export && found_cbak_export))
+            {
+                JLOG(ctx.j.trace())
+                    << "Malformed transaction: Hook did not export: " <<
+                    ( !found_hook_export ? "hook(int64_t); " : "" ) <<
+                    ( !found_cbak_export ? "cbak(int64_t);"  : "" );
+                return temMALFORMED;
+            }
+            break;
+        }
+
+        // check if wasmer can run it
         wasmer_instance_t *instance = NULL;
-        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != WASMER_OK) {
+        if (wasmer_instantiate(&instance, hook.data(), hook.size(), {}, 0) != wasmer_result_t::WASMER_OK) {
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
             return temMALFORMED;
         }
         printf("preflight sethook 4\n");
 
         wasmer_instance_destroy(instance);
-   }
 
-        printf("preflight sethook 5\n");
+    }
 
-    */
+    return preflight2(ctx);
+
 }
 
 TER
