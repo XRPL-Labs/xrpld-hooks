@@ -21,8 +21,6 @@
 
 #include <ripple/app/ledger/Ledger.h>
 #include <ripple/basics/Log.h>
-#include <ripple/app/tx/applyHook.h>
-
 #include <ripple/ledger/ApplyView.h>
 #include <ripple/protocol/Feature.h>
 #include <ripple/protocol/Indexes.h>

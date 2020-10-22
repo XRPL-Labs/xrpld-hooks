@@ -1,4 +1,4 @@
-all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF
+all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF carbon.wasm
 
 clean:
 	rm *.wasm generateSF
@@ -29,3 +29,6 @@ print.wasm: print.c sfcodes.h hookapi.h
 
 print2.wasm: print2.c sfcodes.h hookapi.h
 	wasmcc print2.c -o print2.wasm -Wl,--allow-undefined 
+
+carbon.wasm: carbon.c sfcodes.h hookapi.h
+	wasmcc carbon.c -o carbon.wasm -Wl,--allow-undefined 

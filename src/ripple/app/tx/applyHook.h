@@ -16,8 +16,8 @@ namespace hook_api {
 #ifndef RIPPLE_HOOK_H_INCLUDED1
 #define RIPPLE_HOOK_H_INCLUDED1
     enum api_return_code {
-        SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success" with bytes read/written
-        OUT_OF_BOUNDS = -1,             // could not read or write to a pointer to provided by hook because it would be out of bounds
+        SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success" 
+        OUT_OF_BOUNDS = -1,             // could not read or write to a pointer to provided by hook
         INTERNAL_ERROR = -2,            // eg directory is corrupt
         TOO_BIG = -3,                   // something you tried to store was too big
         TOO_SMALL = -4,                 // something you tried to store or provide was too small
@@ -28,8 +28,10 @@ namespace hook_api {
         PREREQUISITE_NOT_MET = -9,      // returned if a required param wasn't set, before calling
         FEE_TOO_LARGE = -10,            // returned if the attempted operation would result in an absurd fee
         EMISSION_FAILURE = -11,         // returned if an emitted tx was not accepted by rippled
-        TOO_MANY_NONCES = 12,           // a hook has a maximum of 256 nonces
-        TOO_MANY_EMITTED_TXN = 13       // a hook has emitted more than its stated number of emitted txn
+        TOO_MANY_NONCES = -12,          // a hook has a maximum of 256 nonces
+        TOO_MANY_EMITTED_TXN = -13,     // a hook has emitted more than its stated number of emitted txn
+        NOT_IMPLEMENTED = -14,          // an api was called that is reserved for a future version
+        INVALID_ACCOUNT = -15           // an api expected an account id but got something else
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
@@ -39,40 +41,83 @@ namespace hook_api {
         REJECT = 2,
     };
 
-    const int emit_details_size = 105;
-   
+    const int etxn_details_size = 105;
+    const int max_slots = 255; 
+    const int max_nonce = 255;
+    const int max_emit = 255;
     const int drops_per_byte = 31250; //RH TODO make this a votable config option 
+    const double fee_base_multiplier = 1.1f; 
 #endif
 
-    // this is the api that wasm modules use to communicate with rippled
-    int64_t _exit                   ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len, ExitType exitType );
-    int64_t accept                  ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t emit_txn                ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_ptr, uint32_t len );
-    int64_t get_burden              ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_emit_burden         ( wasmer_instance_context_t * wasm_ctx);
-    int64_t get_emit_fee_base       ( wasmer_instance_context_t * wasm_ctx, uint32_t tx_byte_count);
-    int64_t get_fee_base            ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_generation          ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_hook_account        ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
-    int64_t get_ledger_seq          ( wasmer_instance_context_t * wasm_ctx );
-    int64_t get_nonce               ( wasmer_instance_context_t * wasm_ctx, uint32_t out_ptr );
-    int64_t get_obj_by_hash         ( wasmer_instance_context_t * wasm_ctx, uint32_t hash_ptr );
-    int64_t get_emit_details        ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr_out, uint32_t out_len );
-    int64_t get_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_out, uint32_t out_len );
-    int64_t get_txn_field           ( wasmer_instance_context_t * wasm_ctx, uint32_t field_id, uint32_t data_ptr_out, uint32_t out_len );
-    int64_t get_txn_id              ( wasmer_instance_context_t * wasm_ctx, uint32_t data_ptr_out );
-    int64_t get_txn_type            ( wasmer_instance_context_t * wasm_ctx );
-    int64_t output_dbg              ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr, uint32_t len );
-    int64_t output_dbg_obj          ( wasmer_instance_context_t * wasm_ctx, uint32_t slot );
-    int64_t reject                  ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t rollback                ( wasmer_instance_context_t * wasm_ctx, int32_t error_code, uint32_t data_ptr_in, uint32_t in_len );
-    int64_t set_emit_count          ( wasmer_instance_context_t * wasm_ctx, uint32_t c );
-    int64_t set_state               ( wasmer_instance_context_t * wasm_ctx, uint32_t key_ptr, uint32_t data_ptr_in, uint32_t in_len );
+    using wic_t = wasmer_instance_context_t;
 
+    // the "special" _() api allows every other api to be invoked by a number (crc32 of name) 
+    // instead of function name 
+    int64_t _special            ( wic_t* w, uint32_t api_no,
+                                            uint32_t a, uint32_t b, uint32_t c,
+                                            uint32_t d, uint32_t e, uint32_t f );
 
+    // not a real API, called by accept, reject and rollback
+    int64_t _exit               ( wic_t* w, uint32_t in_ptr, uint32_t in_len, 
+                                            int32_t error_code, ExitType exitType );
 
+    // real apis start here ---
+    int64_t accept              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
+    int64_t reject              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
+    int64_t rollback            ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
+   
+    int64_t util_raddr          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t in_ptr, uint32_t in_len );
+    int64_t util_accid          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t in_ptr, uint32_t in_len );
+    int64_t util_verify         ( wic_t* w, uint32_t sin_ptr, uint32_t sin_len,
+                                            uint32_t kin_ptr, uint32_t kin_len );
+    int64_t util_sha512h        ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t in_ptr,  uint32_t in_len );
+    int64_t etxn_burden         ( wic_t* w );                                               
+    int64_t etxn_details        ( wic_t* w, uint32_t out_ptr, uint32_t out_len );          
+    int64_t etxn_fee_base       ( wic_t* w, uint32_t tx_byte_count);                       
+    int64_t etxn_reserve        ( wic_t* w, uint32_t count );                                  
+    int64_t etxn_generation     ( wic_t* w );
+    int64_t emit                ( wic_t* w, uint32_t in_ptr, uint32_t in_len );               
+    
+    int64_t hook_account        ( wic_t* w, uint32_t out_ptr, uint32_t out_len );                            
+    int64_t hook_hash           ( wic_t* w, uint32_t out_ptr, uint32_t out_len );                            
+    
+    int64_t fee_base            ( wic_t* w );                                              
+    int64_t ledger_seq          ( wic_t* w );                                              
+    int64_t nonce               ( wic_t* w, uint32_t out_ptr, uint32_t out_len );
+    
+    int64_t slot_clear          ( wic_t* w, uint32_t slot );                           
+    int64_t slot_set            ( wic_t* w, uint32_t in_ptr, uint32_t in_len,
+                                            uint32_t slot_type, int32_t slot );                          
+    
+    int64_t slot_field_txt      ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t field_id, uint32_t slot );
+    int64_t slot_field          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t field_id, uint32_t slot );
+    int64_t slot_id             ( wic_t* w, uint32_t slot );                       
+    int64_t slot_type           ( wic_t* w, uint32_t slot );                                              
 
-    //   int64_t get_current_ledger_id ( wasmer_instance_context_t * wasm_ctx, uint32_t ptr );
+    int64_t state_set           ( wic_t* w, uint32_t in_ptr,  uint32_t in_len,
+                                            uint32_t kin_ptr, uint32_t kin_len );
+    int64_t state               ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t kin_ptr, uint32_t kin_len );
+    int64_t state_foreign       ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+                                            uint32_t kin_ptr, uint32_t kin_len,
+                                            uint32_t ain_ptr, uint32_t ain_len );
+   
+    int64_t trace_slot          ( wic_t* w, uint32_t slot );                               
+    int64_t trace               ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t as_hex );
+
+    int64_t otxn_burden         ( wic_t* w );                                              
+    int64_t otxn_field_txt      ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t field_id );
+    int64_t otxn_field          ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t field_id );
+    int64_t otxn_generation     ( wic_t* w );
+    int64_t otxn_id             ( wic_t* w, uint32_t out_ptr, uint32_t out_len );
+    int64_t otxn_type           ( wic_t* w );
+    
+
 }
 
 namespace hook {
@@ -100,17 +145,17 @@ namespace hook {
         hook_api::ExitType exitType;
         std::string exitReason {""};
         int64_t exitCode {-1};
-        std::map<int, std::shared_ptr<ripple::Transaction>> slot; // slots are used up by requesting objs
+        std::map<int, std::shared_ptr<ripple::STObject>> slot; // slots are used up by requesting objs
         int slot_counter { 1 };
         std::queue<int> slot_free {};
 
-        int64_t expected_emit_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
+        int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
         std::queue<std::shared_ptr<ripple::Transaction>> emitted_txn; // etx stored here until accept/re/rollback
         
-        int nonce_counter { 0 }; // incremented whenever get_nonce is called to ensure unique nonces
+        int nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
         std::map<ripple::uint256, bool> nonce_used;
-        uint32_t generation = 0; // used for caching, only generated when get_generation is called
-        int64_t burden = 0; // used for caching, only generated when get_burden is called
+        uint32_t generation = 0; // used for caching, only generated when txn_generation is called
+        int64_t burden = 0; // used for caching, only generated when txn_burden is called
         int64_t fee_base = 0;
     };
 
@@ -129,42 +174,67 @@ namespace hook {
     // finalize the changes the hook made to the ledger
     void commitChangesToLedger( HookContext& hookCtx );
 
+
     template <typename F>
     wasmer_import_t functionImport ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params );
 
 
-#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
-    (std::ceil( (double)state_count/(double)5.0 )) 
-#define WI32 (wasmer_value_tag::WASM_I32)
-#define WI64 (wasmer_value_tag::WASM_I64)
-    const int imports_count = 22;
+    #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
+        (std::ceil( (double)state_count/(double)5.0 )) 
+    #define WI32 (wasmer_value_tag::WASM_I32)
+    #define WI64 (wasmer_value_tag::WASM_I64)
+
+    const int imports_count = 36;
     wasmer_import_t imports[] = {
-        functionImport ( hook_api::accept,                      "accept",                   { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::emit_txn,                    "emit_txn",                 { WI32, WI32        } ),
-        functionImport ( hook_api::get_burden,                  "get_burden",               {                   } ),
-        functionImport ( hook_api::get_emit_burden,             "get_emit_burden",          {                   } ),
-        functionImport ( hook_api::get_emit_fee_base,           "get_emit_fee_base",        { WI32              } ),
 
-        functionImport ( hook_api::get_fee_base,                "get_fee_base",             {                   } ),
-        functionImport ( hook_api::get_generation,              "get_generation",           {                   } ),
-        functionImport ( hook_api::get_hook_account,            "get_hook_account",         { WI32              } ),
-        functionImport ( hook_api::get_ledger_seq,              "get_ledger_seq",           {                   } ),
-        functionImport ( hook_api::get_nonce,                   "get_nonce",                { WI32              } ),
+        
+        functionImport ( hook_api::_special,        "_",                { WI32, WI32, WI32, WI32, 
+                                                                          WI32, WI32                }),  
+        functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
+        functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32          }),
+        functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
+        
+        functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
+        
+        functionImport ( hook_api::emit,            "emit",             { WI32, WI32                }),
+        functionImport ( hook_api::etxn_burden,     "etxn_burden",      {                           }),
+        functionImport ( hook_api::etxn_fee_base,   "etxn_fee_base",    { WI32                      }),
+        functionImport ( hook_api::etxn_details,    "etxn_details",     { WI32, WI32                }),
+        functionImport ( hook_api::etxn_reserve,    "etxn_reserve",     { WI32                      }),
+        functionImport ( hook_api::etxn_generation, "etxn_generation",  {                           }),
+        
+        functionImport ( hook_api::otxn_burden,     "otxn_burden",      {                           }),
+        functionImport ( hook_api::otxn_generation, "otxn_generation",  {                           }),
+        functionImport ( hook_api::otxn_field_txt,  "otxn_field_txt",   { WI32, WI32, WI32          }),
+        functionImport ( hook_api::otxn_field,      "otxn_field",       { WI32, WI32, WI32          }),
+        functionImport ( hook_api::otxn_id,         "otxn_id",          { WI32, WI32                }),
+        functionImport ( hook_api::otxn_type,       "otxn_type",        {                           }),
+        
+        functionImport ( hook_api::hook_account,    "hook_account",     { WI32, WI32                }),
+        functionImport ( hook_api::hook_hash,       "hook_hash",        { WI32, WI32                }),
+        
+        functionImport ( hook_api::fee_base,        "fee_base",         {                           }),
+        functionImport ( hook_api::ledger_seq,      "ledger_seq",       {                           }),
+        functionImport ( hook_api::nonce,           "nonce",            { WI32                      }),
+        
+        functionImport ( hook_api::state,           "state",            { WI32, WI32, WI32, WI32    }),
 
-        functionImport ( hook_api::get_obj_by_hash,             "get_obj_by_hash",          { WI32              } ),
-        functionImport ( hook_api::get_emit_details,            "get_emit_details",         { WI32, WI32        } ),
-        functionImport ( hook_api::get_state,                   "get_state",                { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::get_txn_field,               "get_txn_field",            { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::state,           "state_foreign",    { WI32, WI32, WI32, WI32,
+                                                                          WI32, WI32                }),
+        functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }),
         
-        functionImport ( hook_api::get_txn_id,                  "get_txn_id",               { WI32              } ),
-        functionImport ( hook_api::get_txn_type,                "get_txn_type",             {                   } ),
-        functionImport ( hook_api::output_dbg,                  "output_dbg",               { WI32, WI32        } ),
-        functionImport ( hook_api::output_dbg_obj,              "output_dbg_obj",           { WI32              } ),
-        functionImport ( hook_api::reject,                      "reject",                   { WI32, WI32, WI32  } ),
+        functionImport ( hook_api::slot_set,        "slot_set",         { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::slot_clear,      "slot_clear",       { WI32                      }),
+        functionImport ( hook_api::slot_field_txt,  "slot_field_txt",   { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::slot_field,      "slot_field",       { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::slot_id,         "slot_id",          { WI32                      }),
+        functionImport ( hook_api::slot_type,       "slot_type",        { WI32                      }),
         
-        functionImport ( hook_api::rollback,                    "rollback",                 { WI32, WI32, WI32  } ),
-        functionImport ( hook_api::set_emit_count,              "set_emit_count",           { WI32              } ),
-        functionImport ( hook_api::set_state,                   "set_state",                { WI32, WI32, WI32  } )
+        functionImport ( hook_api::trace,           "trace",            { WI32, WI32                }),
+        functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      })
     };
 
 
@@ -178,11 +248,13 @@ namespace hook {
     [[maybe_unused]] const uint64_t memory_length = wasmer_memory_data_length ( memory_ctx );    
 
 
-#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len, host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
+        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
     {int bytes_to_write = std::min(static_cast<int>(host_src_len), static_cast<int>(guest_dst_len));\
     if (guest_dst_ptr + bytes_to_write > guest_memory_length) {\
         JLOG(j.trace())\
-            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len << " bytes past end of wasm memory";\
+            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len <<\
+        " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
     }\
     ::memcpy(host_memory_ptr + guest_dst_ptr, host_src_ptr, bytes_to_write);\
@@ -190,7 +262,8 @@ namespace hook {
 
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\
-    (ptr > memory_length || static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
+    (ptr > memory_length || \
+     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
 
 
 #endif
@@ -202,7 +275,9 @@ namespace hook {
 #define RIPPLE_HOOK_H_TEMPLATES
 // templates must be defined in the same file they are declared in, otherwise this would go in impl/Hook.cpp
 template <typename F>
-wasmer_import_t hook::functionImport ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params ) {
+wasmer_import_t hook::functionImport (
+        F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params)
+{
     return
     {   .module_name = { .bytes = (const uint8_t *) "env", .bytes_len = 3 },
         .import_name = { .bytes = (const uint8_t *) call_name.data(), .bytes_len = call_name.size() },

@@ -10,32 +10,40 @@
 #include <stdint.h>
 #include "sfcodes.h"
 
-extern int64_t accept                  ( int32_t error_code, unsigned char* buf_out, uint32_t buf_len );
-extern int64_t emit_txn                ( unsigned char* buf_out, uint32_t buf_len );
-extern int64_t get_burden              ( void );
-extern int64_t get_emit_burden         ( void );
-extern int64_t get_emit_fee_base       ( uint32_t tx_byte_count);
-extern int64_t get_fee_base            ( void );
-extern int64_t get_generation          ( void );
-extern int64_t get_hook_account        ( unsigned char* buf_in );
-extern int64_t get_ledger_seq          ( void );
-extern int64_t get_nonce               ( unsigned char* buf_in );
-extern int64_t get_obj_by_hash         ( unsigned char* buf_out );
-extern int64_t get_emit_details        ( unsigned char* buf_in, uint32_t buf_len );
-extern int64_t get_state               ( unsigned char* key_buf_out, uint32_t data_buf_in, uint32_t buf_in_len );
-extern int64_t get_txn_field           ( uint32_t field_id, uint32_t buf_in, uint32_t buf_len );
-extern int64_t get_txn_id              ( void );
-extern int64_t get_txn_type            ( void );
-extern int64_t output_dbg              ( uint32_t buf_out, uint32_t buf_len );
-extern int64_t output_dbg_obj          ( uint32_t slot );
-extern int64_t reject                  ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
-extern int64_t rollback                ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
-extern int64_t set_emit_count          ( uint32_t c );
-extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf_out, uint32_t buf_out_len );
 
+extern int64_t accept               ( int32_t error_code, unsigned char* buf_out, uint32_t buf_len );
+extern int64_t reject               ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
+extern int64_t rollback             ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
+
+extern int64_t emit_burden          ( void );
+extern int64_t emit_details         ( unsigned char* buf_in, uint32_t buf_len );
+extern int64_t emit_fee_base        ( uint32_t tx_byte_count);
+extern int64_t emit_reserve         ( uint32_t c );
+extern int64_t emit                 ( unsigned char* buf_out, uint32_t buf_len );
+
+extern int64_t fee_base             ( void );
+extern int64_t hook_account         ( unsigned char* buf_in );
+extern int64_t ledger_seq           ( void );
+extern int64_t nonce                ( unsigned char* buf_in );
+
+extern int64_t slot_set             ( unsigned char* buf_out, uint32_t buf_len, uint32_t slot_type, int32_t slot_id );
+extern int64_t slot_clear           ( uint32_t slot_id );
+
+extern int64_t state_set            ( uint32_t key_buf_out, uint32_t data_buf_out, uint32_t buf_out_len );
+extern int64_t state                ( unsigned char* key_buf_out, uint32_t data_buf_in, uint32_t buf_in_len );
+
+extern int64_t trace_slot           ( uint32_t slot );
+extern int64_t trace                ( uint32_t buf_out, uint32_t buf_len );
+
+extern int64_t txn_burden           ( void );
+extern int64_t txn_field_txt        ( uint32_t buf_in, uint32_t buf_len, unit32_t field_id );
+extern int64_t txn_field            ( uint32_t buf_in, uint32_t buf_len, unit32_t field_id );
+extern int64_t txn_generation       ( void );
+extern int64_t txn_id               ( void );
+extern int64_t txn_type             ( void );
 
 #define DPRINT(x)\
-    {output_dbg((x), sizeof((x)));}
+    {trace((x), sizeof((x)));}
 
 #define BUF_TO_DEC(buf_in, len_in, numout)\
     {\
@@ -291,20 +299,6 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
     ENCODE_SIGNING_PUBKEY_NULL(buf_out );
     
 
-
-// example simple payment
-/*
- * 120000                                       // 3 tt = payment
- * 2280000000                                   // 5 flags = tfCanonical 
- * 2400000000                                   // 5 sequence = 2
- * 201B00000000                                 // 6 last ledger sequence
- * 614000000000000000                           // 9 amount of XRP = 1601.297166
- * 68400000000000000C                           // 9 amount of fee = 12 drops
- * 81140000000000000000000000000000000000000000 // 22 account from
- * 83140000000000000000000000000000000000000000 // 22 acount to
- */
-
-
 #define PREPARE_PAYMENT_SIMPLE_SIZE 231 
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount_raw, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
@@ -314,19 +308,19 @@ extern int64_t set_state               ( uint32_t key_buf_out, uint32_t data_buf
         uint64_t drops_fee = (drops_fee_raw);\
         uint32_t dest_tag = (dest_tag_raw);\
         uint32_t src_tag = (src_tag_raw);\
-        get_hook_account(acc);\
+        hook_account(acc);\
         _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
         _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \
         _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size   5 */ \
         _02_04_ENCODE_SEQUENCE             (buf_out, 0                              );      /* uint32  | size   5 */ \
         _02_14_ENCODE_TAG_DST              (buf_out, dest_tag                       );      /* uint32  | size   5 */ \
-        _02_27_ENCODE_LLS                  (buf_out, get_ledger_seq() + 5           );      /* uint32  | size   6 */ \
+        _02_27_ENCODE_LLS                  (buf_out, ledger_seq() + 5           );      /* uint32  | size   6 */ \
         _06_01_ENCODE_DROPS_AMOUNT         (buf_out, drops_amount                   );      /* amount  | size   9 */ \
         _06_08_ENCODE_DROPS_FEE            (buf_out, drops_fee                      );      /* amount  | size   9 */ \
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        get_emit_details(buf_out, 105);                                                     /* emitdet | size 105 */ \
+        emit_details(buf_out, 105);                                                     /* emitdet | size 105 */ \
     }
 
 
