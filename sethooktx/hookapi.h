@@ -11,36 +11,69 @@
 #include "sfcodes.h"
 
 
-extern int64_t accept               ( int32_t error_code, unsigned char* buf_out, uint32_t buf_len );
-extern int64_t reject               ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
-extern int64_t rollback             ( int32_t error_code, uint32_t buf_out, uint32_t out_len );
+extern int64_t accept              (uint32_t out_ptr,   uint32_t out_len,   int32_t error_code);                    
+extern int64_t reject              (uint32_t out_ptr,   uint32_t out_len,   int32_t error_code);                    
+extern int64_t rollback            (uint32_t out_ptr,   uint32_t out_len,   int32_t error_code);                    
+                                                                                                                         
+extern int64_t util_raddr          (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t out_ptr,   uint32_t out_len);
 
-extern int64_t emit_burden          ( void );
-extern int64_t emit_details         ( unsigned char* buf_in, uint32_t buf_len );
-extern int64_t emit_fee_base        ( uint32_t tx_byte_count);
-extern int64_t emit_reserve         ( uint32_t c );
-extern int64_t emit                 ( unsigned char* buf_out, uint32_t buf_len );
+extern int64_t util_accid          (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t out_ptr,   uint32_t out_len);                                        
 
-extern int64_t fee_base             ( void );
-extern int64_t hook_account         ( unsigned char* buf_in );
-extern int64_t ledger_seq           ( void );
-extern int64_t nonce                ( unsigned char* buf_in );
+extern int64_t util_verify         (uint32_t sout_ptr,  uint32_t sout_len,                                        
+                                    uint32_t kout_ptr,  uint32_t kout_len);                                      
 
-extern int64_t slot_set             ( unsigned char* buf_out, uint32_t buf_len, uint32_t slot_type, int32_t slot_id );
-extern int64_t slot_clear           ( uint32_t slot_id );
+extern int64_t util_sha512h        (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t out_ptr,   uint32_t out_len);                                       
 
-extern int64_t state_set            ( uint32_t key_buf_out, uint32_t data_buf_out, uint32_t buf_out_len );
-extern int64_t state                ( unsigned char* key_buf_out, uint32_t data_buf_in, uint32_t buf_in_len );
+extern int64_t etxn_burden         (void );                                                                          
+extern int64_t etxn_details        (uint32_t in_ptr,    uint32_t in_len);                                      
+extern int64_t etxn_fee_base       (uint32_t tx_byte_count);                                                   
+extern int64_t etxn_reserve        (uint32_t count);                                                          
+extern int64_t etxn_generation     (void);                                                                          
+extern int64_t emit                (uint32_t out_ptr,   uint32_t out_len);                                        
+                                                                                                                         
+extern int64_t hook_account        (uint32_t in_ptr,    uint32_t in_len);                                      
+extern int64_t hook_hash           (uint32_t in_ptr,    uint32_t in_len);                                      
+                                                                                                                         
+extern int64_t fee_base            (void);                                                                          
+extern int64_t ledger_seq          (void);                                                                          
+extern int64_t nonce               (uint32_t in_ptr,    uint32_t in_len);                                      
+                                                                                                                         
+extern int64_t slot_clear          (uint32_t slot);                                                           
+extern int64_t slot_set            (uint32_t out_ptr,   uint32_t out_len,                                          
+                                    uint32_t slot_type, int32_t  slot);                                        
+                                                                                                                         
+extern int64_t slot_field_txt      (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t field_id,  uint32_t slot);
 
-extern int64_t trace_slot           ( uint32_t slot );
-extern int64_t trace                ( uint32_t buf_out, uint32_t buf_len );
+extern int64_t slot_field          (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t field_id,  uint32_t slot);                                        
 
-extern int64_t txn_burden           ( void );
-extern int64_t txn_field_txt        ( uint32_t buf_in, uint32_t buf_len, unit32_t field_id );
-extern int64_t txn_field            ( uint32_t buf_in, uint32_t buf_len, unit32_t field_id );
-extern int64_t txn_generation       ( void );
-extern int64_t txn_id               ( void );
-extern int64_t txn_type             ( void );
+extern int64_t slot_id             (uint32_t slot);                                                           
+extern int64_t slot_type           (uint32_t slot);                                                           
+                                                                                                                         
+extern int64_t state_set           (uint32_t out_ptr,   uint32_t out_len,                                         
+                                    uint32_t kout_ptr,  uint32_t kout_len);
+
+extern int64_t state               (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t kout_ptr,  uint32_t kout_len); 
+
+extern int64_t state_foreign       (uint32_t in_ptr,    uint32_t in_len,                                        
+                                    uint32_t kout_ptr,  uint32_t kout_len,                                        
+                                    uint32_t aout_ptr,  uint32_t aout_len);                                      
+                                                                                                                         
+extern int64_t trace_slot          (uint32_t slot);                                                           
+extern int64_t trace               (uint32_t in_ptr,    uint32_t in_len,    uint32_t as_hex);                     
+                                                                                                                         
+extern int64_t otxn_burden         (void);                                                                          
+extern int64_t otxn_field_txt      (uint32_t in_ptr,    uint32_t in_len,    uint32_t field_id);                   
+extern int64_t otxn_field          (uint32_t in_ptr,    uint32_t in_len,    uint32_t field_id);                   
+extern int64_t otxn_generation     (void);                                                                          
+extern int64_t otxn_id             (uint32_t in_ptr,    uint32_t in_len);                                      
+extern int64_t otxn_type           (void);    
+
 
 #define DPRINT(x)\
     {trace((x), sizeof((x)));}

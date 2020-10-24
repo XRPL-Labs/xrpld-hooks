@@ -1049,8 +1049,29 @@ int64_t hook_api::util_raddr (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t out_ptr, uint32_t out_len,                                        
         uint32_t in_ptr, uint32_t in_len )
-{    
-    return NOT_IMPLEMENTED; // RH TODO
+{   
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(out_ptr, out_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (NOT_IN_BOUNDS(in_ptr, in_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (in_len != 20)
+        return INVALID_ARGUMENT;
+
+
+    std::string raddr = base58EncodeToken(TokenType::AccountID, memory + in_ptr, in_len);           
+
+    if (out_len < raddr.size())
+        return TOO_SMALL;
+    
+    WRITE_WASM_MEMORY_AND_RETURN(                                                                              
+        out_ptr, out_len,                                                                                      
+        raddr.c_str(), raddr.size(),                                    
+        memory, memory_length); 
+
+
 }
 
 int64_t hook_api::util_accid (
@@ -1058,8 +1079,27 @@ int64_t hook_api::util_accid (
         uint32_t out_ptr, uint32_t out_len,                                        
         uint32_t in_ptr, uint32_t in_len )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    if (NOT_IN_BOUNDS(out_ptr, out_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (NOT_IN_BOUNDS(in_ptr, in_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (out_len < 20)
+        return TOO_SMALL;
+
+    auto const result = ripple::decodeBase58Token( std::string( memory + in_ptr, in_len ), TokenType::AccountID );
+    if (result.empty() || result.size() != 20)
+        return INVALID_ARGUMENT;
+
+    
+    WRITE_WASM_MEMORY_AND_RETURN(                                                                              
+        out_ptr, out_len,                                                                                      
+        result.data(), result.size(),                                    
+        memory, memory_length); 
+    
 }
 
 int64_t hook_api::util_verify (

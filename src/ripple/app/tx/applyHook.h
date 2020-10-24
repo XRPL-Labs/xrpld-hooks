@@ -222,7 +222,7 @@ namespace hook {
         
         functionImport ( hook_api::state,           "state",            { WI32, WI32, WI32, WI32    }),
 
-        functionImport ( hook_api::state,           "state_foreign",    { WI32, WI32, WI32, WI32,
+        functionImport ( hook_api::state_foreign,   "state_foreign",    { WI32, WI32, WI32, WI32,
                                                                           WI32, WI32                }),
         functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }),
         
