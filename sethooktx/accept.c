@@ -1,28 +1,20 @@
-#include <stdint.h>
-
-extern int64_t output_dbg(unsigned char* buf, int32_t len);
-extern int64_t set_state    ( unsigned char* key_ptr, unsigned char* data_ptr_in, uint32_t in_len );
-extern int64_t get_state    ( unsigned char* key_ptr, unsigned char* data_ptr_out, uint32_t out_len );
-extern    int64_t accept      ( int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
-extern    int64_t reject      ( int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
-extern    int64_t rollback    ( int32_t error_code, unsigned char* data_ptr_in, uint32_t in_len );
+#include "hookapi.h"
+int64_t cbak(int64_t reserved) { return 0; }
 
 int64_t hook(int64_t reserved ) {
-//    return output_dbg("hello world", 11);
-
-    char* key =  "this right here is a 32 byte key";
-    char* data = "some test data blah blah blah";
+   
+    GUARD(1);
     
-    char buffer[129];
-    buffer[0] = '\0';
-    get_state(key, buffer, 128);
-    output_dbg(buffer, 128);
-    set_state(key, data, 29);
-
-
-    char return_string[] = "good!";
-    accept( 0, return_string, 5 );
-
+    for (int i = 0; GUARD(10), i < 10; ++i)
+    {
+        for (uint32_t j = 0; GUARD(200), j < 20; ++j)
+        {
+            trace(&j, 4, 1);
+        }
+    }
+  
+    accept (0,0,0); 
+    
     // unreachable
 
     return 0;

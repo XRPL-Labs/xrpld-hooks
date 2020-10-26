@@ -31,13 +31,17 @@
 #include <cstdint>
 #include <stdio.h>
 #include <vector>
+#include <stack>
+#include <string>
 #include <ripple/app/tx/applyHook.h>
 namespace ripple {
 
+// RH TODO deal with overflow on leb128
 // web assembly contains a lot of run length encoding in LEB128 format
-inline int parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
+inline uint64_t
+parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
 {
-    int val = 0, shift = 0, i = start_offset;
+    uint64_t val = 0, shift = 0, i = start_offset;
 
     while (i < buf.size())
     {
@@ -54,9 +58,271 @@ inline int parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* e
     }
 }
 
+// this macro will return temMALFORMED if i ever exceeds the end of the hook
+#define CHECK_SHORT_HOOK()\
+{\
+    if (i >= hook.size())\
+    {\
+        JLOG(ctx.j.trace())\
+           << "Malformed transaction: Hook truncated or otherwise invalid\n";\
+        return temMALFORMED;\
+    }\
+}
+
+
+NotTEC
+check_guard(
+        PreflightContext const& ctx, ripple::Blob& hook, int codesec,
+        int start_offset, int end_offset, int guard_func_idx)
+{
+    if (end_offset <= 0) end_offset = hook.size();
+    int block_depth = 0;
+    int mode = 0; // controls the state machine for searching for guards
+                  // 0 = looking for guard from a trigger point (loop or function start)
+                  // 1 = looking for a new trigger point (loop)
+
+    std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
+    std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
+    std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
+
+    for (int i = start_offset; i < end_offset; )
+    {
+        int instr = hook[i++]; CHECK_SHORT_HOOK();
+
+        if (instr == 0x10) // call instr
+        {
+            int callee_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            if (callee_idx == guard_func_idx)
+            {
+                // found!
+                if (mode == 0)
+                {
+
+                    if (stack.size() < 2)
+                    {
+                        JLOG(ctx.j.trace()) << "Hook set: guard called but could not detect constant parameters"
+                            << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                        return temMALFORMED;
+                    }
+
+                    uint64_t a = stack.top();
+                    stack.pop();
+                    uint64_t b = stack.top();
+                    stack.pop();
+                    printf("FOUND: GUARD(%llu, %llu), codesec: %d offset %d\n", a, b, codesec, i);
+
+                    // clear stack and maps
+                    while (stack.size() > 0)
+                        stack.pop();
+                    local_map.clear();
+                    global_map.clear();
+                    mode = 1;
+                }
+            }
+            continue;
+        }
+
+        if (instr == 0x11) // call indirect [ we don't allow guard to be called this way ]
+        {
+            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            ++i; CHECK_SHORT_HOOK();
+            continue;
+        }
+
+        // unreachable and nop instructions
+        if (instr == 0x00 || instr == 0x01)
+            continue;
+
+        // branch loop block instructions
+        if ((instr >= 0x02 && instr <= 0x0F) || instr == 0x11)
+        {
+            if (mode == 0)
+            {
+                JLOG(ctx.j.trace()) << "Hook set: guard did not occur at start of function or loop statement"
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                return temMALFORMED;
+            }
+
+            // execution to here means we are in 'search mode' for loop instructions
+
+            // block instruction
+            if (instr == 0x02)
+            {
+                ++i; CHECK_SHORT_HOOK();
+                block_depth++;
+                continue;
+            }
+
+            // loop instruction
+            if (instr == 0x03)
+            {
+                ++i; CHECK_SHORT_HOOK();
+                mode = 0; // we now search for a guard()
+                block_depth++;
+                continue;
+            }
+
+            // if instr
+            if (instr == 0x04)
+            {
+                ++i; CHECK_SHORT_HOOK();
+                block_depth++;
+                continue;
+            }
+
+            // else instr
+            if (instr == 0x05)
+            {
+                continue;
+            }
+
+            // branch instruction
+            if (instr == 0x0C || instr == 0x0D)
+            {
+                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                continue;
+            }
+
+            // branch table instr
+            if (instr == 0x0E)
+            {
+                int vec_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                for (int v = 0; v < vec_count; ++v)
+                {
+                    parseLeb128(hook, i, &i);
+                    CHECK_SHORT_HOOK();
+                }
+                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                continue;
+            }
+        }
+
+
+        // parametric instructions | no operands
+        if (instr == 0x1A || instr == 0x1B)
+            continue;
+
+        // variable instructions
+        if (instr >= 0x20 && instr <= 0x24)
+        {
+            int idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+
+            if (mode == 1)
+                continue;
+
+            // we need to do stack and map manipualtion to track any possible constants before guard call
+            if (instr == 0x20 || instr == 0x23) // local.get idx or global.get idx
+            {
+                auto& map = ( instr == 0x20 ? local_map : global_map );
+                if (map.find(idx) == map.end())
+                    stack.push(0); // we always put a 0 in place of a local or global we don't know the value of
+                else
+                    stack.push(map[idx]);
+                continue;
+            }
+
+            if (instr == 0x21 || instr == 0x22 || instr == 0x24) // local.set idx or global.set idx
+            {
+                auto& map = ( instr == 0x21 || instr == 0x22 ? local_map : global_map );
+
+                uint64_t to_store = (stack.size() == 0 ? 0 : stack.top());
+                map[idx] = to_store;
+                if (instr != 0x22)
+                    stack.pop();
+
+                continue;
+            }
+        }
+
+        // RH TODO support guard consts being passed through memory functions (maybe)
+
+        //memory instructions
+        if (instr >= 0x28 && instr <= 0x3E)
+        {
+            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            continue;
+        }
+
+        // more memory instructions
+        if (instr == 0x3F || instr == 0x40)
+        {
+            ++i; CHECK_SHORT_HOOK();
+            if (instr == 0x40) // disallow memory.grow
+            {
+                JLOG(ctx.j.trace()) << "Hook set: memory.grow instruction not allowed at "
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                return temMALFORMED;
+            }
+            continue;
+        }
+
+        // int const instrs
+        // numeric instructions with immediates
+        if (instr == 0x41 || instr == 0x42)
+        {
+            uint64_t immediate = parseLeb128(hook, i, &i);
+            CHECK_SHORT_HOOK(); // RH TODO enforce i32 i64 size limit
+
+            // in mode 0 we should be stacking our constants and tracking their movement in
+            // and out of locals and globals
+            stack.push(immediate);
+            continue;
+        }
+
+        // const instr
+        // more numerics with immediates
+        if (instr == 0x43 || instr <= 0x44)
+        {
+            i += ( instr == 0x43 ? 4 : 8 );
+            CHECK_SHORT_HOOK();
+            continue;
+        }
+
+        // numerics no immediates
+        if (instr >= 0x45 && instr <= 0xC4)
+            continue;
+
+        // truncation instructions
+        if (instr == 0xFC)
+        {
+            i++; CHECK_SHORT_HOOK();
+            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            continue;
+        }
+
+        if (instr == 0x0B)
+        {
+            // end of expression
+            if (block_depth == 0)
+            break;
+
+            block_depth--;
+
+            if (block_depth < 0)
+            {
+                JLOG(ctx.j.trace()) << "Hook set: unexpected 0x0B instruction, malformed"
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                return temMALFORMED;
+            }
+        }
+    }
+
+    // if we reach the end of the code looking for another trigger the guards are installed correctly
+    if (mode == 1)
+        return tesSUCCESS;
+
+    JLOG(ctx.j.trace()) << "Hook set: guard did not occur before end of loop / function "
+        << "codesec: " << codesec << "\n";
+    return temMALFORMED;
+
+
+}
+
 NotTEC
 SetHook::preflight(PreflightContext const& ctx)
 {
+
     if (!ctx.rules.enabled(featureHooks))
     {
         JLOG(ctx.j.warn()) << "Hooks not enabled";
@@ -71,18 +337,18 @@ SetHook::preflight(PreflightContext const& ctx)
 
     if (!ctx.tx.isFieldPresent(sfCreateCode) ||
         !ctx.tx.isFieldPresent(sfHookOn))
-    {   
+    {
         JLOG(ctx.j.trace())
             << "Malformed transaction: Invalid SetHook format.";
         return temMALFORMED;
     }
-    
+
     printf("preflight sethook 2\n");
 
-    Blob hook = ctx.tx.getFieldVL(sfCreateCode);      
+    Blob hook = ctx.tx.getFieldVL(sfCreateCode);
 
     // if the hook is empty it's a delete request
-    if (!hook.empty()) { 
+    if (!hook.empty()) {
         printf("preflight sethook 3\n");
 
         if (hook.size() < 10)
@@ -114,6 +380,7 @@ SetHook::preflight(PreflightContext const& ctx)
             return temMALFORMED;
         }
 
+        int guard_import_number = -1;
         for (int i = 8, j = 0; i < hook.size();)
         {
 
@@ -123,75 +390,229 @@ SetHook::preflight(PreflightContext const& ctx)
                 // it's an infinite loop edge case
                 JLOG(ctx.j.trace())
                     << "Malformed transaction: Hook is invalid WASM binary.";
-                return temMALFORMED;                
+                return temMALFORMED;
             }
-            
+
             j = i;
 
             int section_type = hook[i++];
-            int section_length = parseLeb128(hook, i, &i);
+            int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             int section_start = i;
 
 
             printf("WASM binary analysis -- upto %d: section %d with length %d\n", i, section_type, section_length);
-            if (section_type != 7)
-            {
-                i += section_length;
-                continue;
-            }
+            int next_section = i + section_length;
 
-            // execution to here means we are inside the export section
-            int export_count = parseLeb128(hook, i, &i);
-            if (export_count <= 0)
+            if (section_type == 2) // import section
             {
-                JLOG(ctx.j.trace())
-                    << "Malformed transaction: Hook did not export any functions... "
-                    "required hook(int64_t), callback(int64_t).";
-                return temMALFORMED;
-            }
-
-            bool found_hook_export = false;
-            bool found_cbak_export = false;
-            for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
-            {
-                int name_len = parseLeb128(hook, i, &i);
-                if (name_len == 4) 
+                int import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (import_count <= 0)
                 {
-
-                    if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
-                        found_hook_export = true;
-                    else
-                    if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
-                        found_cbak_export = true;
+                    JLOG(ctx.j.trace())
+                        << "Malformed transaction: Hook did not import any functions... "
+                        "required at least guard(uint32_t, uint32_t) and accept, reject or rollback\n";
+                    return temMALFORMED;
                 }
 
-                i += name_len + 1;
-                parseLeb128(hook, i, &i);
+                // process each import one by one
+                int func_upto = 0; // not all imports are functions so we need an indep counter for these
+                for (int j = 0; j < import_count; ++j)
+                {
+                    // first check module name
+                    int mod_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    if (mod_length < 1)
+                    {
+                        JLOG(ctx.j.trace())
+                            << "Malformed transaction: Hook attempted to specify nil import module\n";
+                        return temMALFORMED;
+                    }
 
-            }
+                    if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
+                    {
+                        JLOG(ctx.j.trace())
+                            << "Malformed transaction: Hook attempted to specify import module other than 'env'\n";
+                        return temMALFORMED;
+                    }
 
-            // execution to here means export section was parsed
-            if (!(found_hook_export && found_cbak_export))
+                    i += mod_length; CHECK_SHORT_HOOK();
+
+                    // next get import name
+                    int name_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    if (name_length < 1)
+                    {
+                        JLOG(ctx.j.trace())
+                            << "Malformed transaction: Hook attempted to specify nil import name\n";
+                        return temMALFORMED;
+                    }
+
+                    std::string_view import_name { (const char*)(hook.data() + i), (size_t)name_length };
+
+                    i += name_length; CHECK_SHORT_HOOK();
+
+                    // next get import type
+                    if (hook[i] > 0x00)
+                    {
+                        // not a function import
+                        // RH TODO check these other imports for weird stuff
+                        i++; CHECK_SHORT_HOOK();
+                        parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                        continue;
+                    }
+
+                    // execution to here means it's a function import
+                    i++; CHECK_SHORT_HOOK();
+                    int type_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+
+
+                    // RH TODO: validate that the parameters of the imported functions are correct
+                    if (import_name == "_g")
+                        guard_import_number = func_upto;
+                    else
+                    {
+                        bool found_import = false;
+                        for (int k = 0; k < hook::imports_count; ++k)
+                        {
+                            std::string_view next_import_name {
+                                (const char*)(hook::imports[k].import_name.bytes),
+                                (size_t)(hook::imports[k].import_name.bytes_len)    };
+
+                            if (import_name == next_import_name)
+                            {
+                                found_import = true;
+                                break;
+                            }
+                        }
+                        if (!found_import)
+                        {
+                            JLOG(ctx.j.trace())
+                                << "Malformed transaction: Hook attempted to import a function that does not"
+                                    " appear in the hook_api function set: `" << import_name << "`\n";
+                            return temMALFORMED;
+                        }
+                    }
+                    func_upto++;
+                }
+
+                if (guard_import_number == -1)
+                {
+                    JLOG(ctx.j.trace())
+                        << "Malformed transaction: Hook did not import _g (guard) function\n";
+                    return temMALFORMED;
+                }
+
+                // we have an imported guard function, so now we need to enforce the guard rules
+                // which are:
+                // 1. all functions must start with a guard call before any branching
+                // 2. all loops must start with a guard call before any branching
+                // to enforce these rules we must do a second pass of the wasm in case the function
+                // section was placed in this wasm binary before the import section
+
+            } else
+            if (section_type == 7) // export section
             {
-                JLOG(ctx.j.trace())
-                    << "Malformed transaction: Hook did not export: " <<
-                    ( !found_hook_export ? "hook(int64_t); " : "" ) <<
-                    ( !found_cbak_export ? "cbak(int64_t);"  : "" );
-                return temMALFORMED;
+                int export_count = parseLeb128(hook, i, &i);
+                if (export_count <= 0)
+                {
+                    JLOG(ctx.j.trace())
+                        << "Malformed transaction: Hook did not export any functions... "
+                        "required hook(int64_t), callback(int64_t).";
+                    return temMALFORMED;
+                }
+
+                bool found_hook_export = false;
+                bool found_cbak_export = false;
+                for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
+                {
+                    int name_len = parseLeb128(hook, i, &i);
+                    if (name_len == 4)
+                    {
+
+                        if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
+                            found_hook_export = true;
+                        else
+                        if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
+                            found_cbak_export = true;
+                    }
+
+                    i += name_len + 1;
+                    parseLeb128(hook, i, &i);
+
+                }
+
+                // execution to here means export section was parsed
+                if (!(found_hook_export && found_cbak_export))
+                {
+                    JLOG(ctx.j.trace())
+                        << "Malformed transaction: Hook did not export: " <<
+                        ( !found_hook_export ? "hook(int64_t); " : "" ) <<
+                        ( !found_cbak_export ? "cbak(int64_t);"  : "" );
+                    return temMALFORMED;
+                }
             }
-            break;
+
+            i = next_section;
+            continue;
         }
+
+
+        // second pass, where we check all the guard function calls follow the guard rules
+        // minimal other validation in this pass because first pass caught most of it
+        for (int i = 8, j = 0; i < hook.size();)
+        {
+
+            int section_type = hook[i++];
+            int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            int section_start = i;
+            int next_section = i + section_length;
+
+            // RH TODO: parse anywhere else an expr is allowed in wasm and enforce rules there too
+            if (section_type == 10) // code section
+            {
+                // these are the functions
+                int func_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+
+                for (int j = 0; j < func_count; ++j)
+                {
+                    int code_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    int code_end = i + code_size; // RH TODO check if this is right
+                    int local_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    for (int k = 0; k < local_count; ++k)
+                    {
+                        int array_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                        if (!(hook[i] >= 0x7C && hook[i] <= 0x7C))
+                        {
+                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k << "\n";
+                            return temMALFORMED;
+                        }
+                        i++; CHECK_SHORT_HOOK();
+                    }
+
+                    if (i == code_end)
+                        continue; // allow empty functions
+
+                    // execution to here means we are up to the actual expr for the codesec/function
+
+                    auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number);
+                    if (result != tesSUCCESS)
+                        return result;
+
+                }
+            }
+            i = next_section;
+        }
+
+        // execution to here means guards are installed correctly
 
         // check if wasmer can run it
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(
-            &instance, hook.data(), hook.size(), hook::imports, hook::imports_count) 
+            &instance, hook.data(), hook.size(), hook::imports, hook::imports_count)
                 != wasmer_result_t::WASMER_OK) {
             hook::printWasmerError();
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
             return temMALFORMED;
-        }        
-        
+        }
+
         wasmer_instance_destroy(instance);
 
     }
@@ -232,7 +653,7 @@ SetHook::destroyEntireHookState(
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
     uint256 dirEntry{beast::zero};
-    
+
     if (dirIsEmpty(view, ownerDirKeylet))
         return tesSUCCESS;
 
@@ -292,7 +713,7 @@ TER
 SetHook::setHook()
 {
 
-    const int blobMax = hook::maxHookDataSize(); 
+    const int blobMax = hook::maxHookDataSize();
 
 
     auto const accountKeylet = keylet::account(account_);
@@ -304,24 +725,24 @@ SetHook::setHook()
     // checking the reserve.
 
     auto const oldHook = view().peek(hookKeylet);
-    
+
     // get the current state count, if any
     uint32_t stateCount = ( oldHook ? oldHook->getFieldU32(sfHookStateCount) : 0 );
-   
-    // get the previously reserved amount, if any 
+
+    // get the previously reserved amount, if any
     int64_t previousReserveUnits = ( oldHook ? oldHook->getFieldU32(sfHookReserveCount) : 0 );
 
     // get the new cost to store, if any
-    int64_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)blobMax) ); 
+    int64_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)blobMax) );
 
-    
+
     printf("hook empty? %s\n", ( hook_.empty() ? "yes" : "no" ));
     printf("old hook present? %s\n", ( oldHook ? "yes" : "no" ));
     printf("tx sfCreateCode empty?? %s\n", ( (oldHook) && oldHook->getFieldVL(sfCreateCode).empty() ? "yes" : "no" ));
 
     if (hook_.empty() && !oldHook) {
         // this is a special case for destroying the existing state data of a previously removed contract
-        if (TER const ter = 
+        if (TER const ter =
                 destroyEntireHookState(ctx_.app, view(), account_, accountKeylet, ownerDirKeylet, hookKeylet))
             return ter;
         return tesSUCCESS;
@@ -354,7 +775,7 @@ SetHook::setHook()
 
     if (mPriorBalance < newReserve)
         return tecINSUFFICIENT_RESERVE;
-    
+
     auto viewJ = ctx_.app.journal("View");
 
     if (!hook_.empty()) {
@@ -365,8 +786,8 @@ SetHook::setHook()
         hook->setFieldVL(sfCreateCode, hook_);
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
-        hook->setFieldU32(sfHookDataMaxSize, blobMax); 
-        hook->setFieldU64(sfHookOn, hookOn_); 
+        hook->setFieldU32(sfHookDataMaxSize, blobMax);
+        hook->setFieldU64(sfHookOn, hookOn_);
 
         // Add the hook to the account's directory.
         auto const page = dirAdd(

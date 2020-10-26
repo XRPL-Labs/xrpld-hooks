@@ -10,6 +10,10 @@
 #include <stdint.h>
 #include "sfcodes.h"
 
+#define GUARD(maxiter) _g(__LINE__, maxiter)
+
+
+extern int32_t _g                  (uint32_t id, uint32_t maxiter);
 
 extern int64_t accept              (uint32_t out_ptr,   uint32_t out_len,   int32_t error_code);                    
 extern int64_t reject              (uint32_t out_ptr,   uint32_t out_len,   int32_t error_code);                    
@@ -78,7 +82,7 @@ extern int64_t otxn_type           (void);
 #define DPRINT(x)\
     {trace((x), sizeof((x)));}
 
-#define BUF_TO_DEC(buf_in, len_in, numout)\
+#define B2DEC(buf_in, len_in, numout)\
     {\
         unsigned char* buf = (buf_in);\
         int len = (len_in);\
@@ -94,7 +98,7 @@ extern int64_t otxn_type           (void);
         }\
     }
 
-#define DEC_TO_BUF(numin_raw, buf_in, len_in)\
+#define DEC2B(buf_in, len_in, numin_raw)\
     {\
         int numin = (numin_raw);\
         unsigned char* buf = (buf_in);\

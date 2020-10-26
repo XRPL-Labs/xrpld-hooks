@@ -682,8 +682,8 @@ int64_t hook_api::slot_set (
         uint32_t in_ptr, uint32_t in_len,
         uint32_t slot_type, int32_t slot_into ) 
 {
-    return NOT_IMPLEMENTED; // RH TODO
-
+    
+    return NOT_IMPLEMENTED;
     /*
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(in_ptr, in_len, memory_length)) 
@@ -693,10 +693,13 @@ int64_t hook_api::slot_set (
     if (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0)
         return NO_FREE_SLOTS;
 
-    // find the object
+    if (slot_type != 0)
+        return INVALID_ARGUMENT; // RH TODO, add more slot types, slot type 0 means "load by hash"
     
+    // find the object
     uint256 hash;
-    if (!hash.SetHexExact((const char*)(memory + hash_ptr)))   // RH NOTE: if ever changed to allow whitespace do a bounds check
+    if (!hash.SetHexExact((const char*)(memory + in_ptr)))      // RH NOTE: if ever changed to allow whitespace do
+                                                                // a bounds check
         return INVALID_ARGUMENT;
 
     std::cout << "looking for hash: " << hash << "\n";
@@ -719,13 +722,36 @@ int64_t hook_api::slot_set (
     std::cout << "assigned to slot: " << slot << "\n";
     return slot;
     */
+    
 }
 
+int32_t hook_api::_g (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t id, uint32_t maxitr )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.guard_map.find(id) == hookCtx.guard_map.end())
+        hookCtx.guard_map[id] = 1;
+    else
+        hookCtx.guard_map[id]++;
+
+
+    if (hookCtx.guard_map[id] > maxitr)
+    {
+        fprintf(stderr, "GUARD VIOLATION id(line)=%d, iterations=%d\n", id, hookCtx.guard_map[id]);
+        rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
+    }
+
+    return 1;
+}
 
 int64_t hook_api::trace_slot (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t slot )
 {
+    
+    return NOT_IMPLEMENTED;
+    /*
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot) == hookCtx.slot.end())
@@ -735,6 +761,7 @@ int64_t hook_api::trace_slot (
     std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
     
     return slot;
+    */
 } 
 
 int64_t hook_api::emit (
@@ -1070,8 +1097,6 @@ int64_t hook_api::util_raddr (
         out_ptr, out_len,                                                                                      
         raddr.c_str(), raddr.size(),                                    
         memory, memory_length); 
-
-
 }
 
 int64_t hook_api::util_accid (
@@ -1090,7 +1115,8 @@ int64_t hook_api::util_accid (
     if (out_len < 20)
         return TOO_SMALL;
 
-    auto const result = ripple::decodeBase58Token( std::string( memory + in_ptr, in_len ), TokenType::AccountID );
+    auto const result = ripple::decodeBase58Token( std::string( (const char*)(memory + in_ptr), 
+                (size_t)(in_len) ), TokenType::AccountID );
     if (result.empty() || result.size() != 20)
         return INVALID_ARGUMENT;
 
@@ -1099,7 +1125,6 @@ int64_t hook_api::util_accid (
         out_ptr, out_len,                                                                                      
         result.data(), result.size(),                                    
         memory, memory_length); 
-    
 }
 
 int64_t hook_api::util_verify (

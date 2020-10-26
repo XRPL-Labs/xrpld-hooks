@@ -6,7 +6,7 @@
 #include <ripple/app/misc/Transaction.h>
 #include <queue>
 #include "wasmer.hh"
-
+#include <any>
 
 namespace hook_api {
 
@@ -31,7 +31,8 @@ namespace hook_api {
         TOO_MANY_NONCES = -12,          // a hook has a maximum of 256 nonces
         TOO_MANY_EMITTED_TXN = -13,     // a hook has emitted more than its stated number of emitted txn
         NOT_IMPLEMENTED = -14,          // an api was called that is reserved for a future version
-        INVALID_ACCOUNT = -15           // an api expected an account id but got something else
+        INVALID_ACCOUNT = -15,          // an api expected an account id but got something else
+        GUARD_VIOLATION = -16           // a guarded loop or function iterated over its maximum
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
@@ -62,6 +63,8 @@ namespace hook_api {
                                             int32_t error_code, ExitType exitType );
 
     // real apis start here ---
+    int32_t _g                  ( wic_t* w, uint32_t guard_id, uint32_t maxiter );
+
     int64_t accept              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
     int64_t reject              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
     int64_t rollback            ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
@@ -145,7 +148,10 @@ namespace hook {
         hook_api::ExitType exitType;
         std::string exitReason {""};
         int64_t exitCode {-1};
-        std::map<int, std::shared_ptr<ripple::STObject>> slot; // slots are used up by requesting objs
+        // slots are used up by requesting objects from inside the hook
+        // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
+        // keep the underlying object alive for the duration of the hook's execution
+        std::map<int, std::pair<std::string_view, std::any>> slot;
         int slot_counter { 1 };
         std::queue<int> slot_free {};
 
@@ -155,8 +161,9 @@ namespace hook {
         int nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
         std::map<ripple::uint256, bool> nonce_used;
         uint32_t generation = 0; // used for caching, only generated when txn_generation is called
-        int64_t burden = 0; // used for caching, only generated when txn_burden is called
+        int64_t burden = 0;      // used for caching, only generated when txn_burden is called
         int64_t fee_base = 0;
+        std::map<uint32_t, uint32_t> guard_map; // iteration guard map <id -> upto_iteration>
     };
 
     //todo: [RH] change this to a validator votable figure
@@ -176,7 +183,7 @@ namespace hook {
 
 
     template <typename F>
-    wasmer_import_t functionImport ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params );
+    wasmer_import_t functionImport ( F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params, int ret_type = 2);
 
 
     #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
@@ -189,7 +196,10 @@ namespace hook {
 
         
         functionImport ( hook_api::_special,        "_",                { WI32, WI32, WI32, WI32, 
-                                                                          WI32, WI32                }),  
+                WI32, WI32                }), 
+
+        functionImport ( hook_api::_g,             "_g",               { WI32, WI32 }, 1 ),
+
         functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
@@ -233,7 +243,7 @@ namespace hook {
         functionImport ( hook_api::slot_id,         "slot_id",          { WI32                      }),
         functionImport ( hook_api::slot_type,       "slot_type",        { WI32                      }),
         
-        functionImport ( hook_api::trace,           "trace",            { WI32, WI32                }),
+        functionImport ( hook_api::trace,           "trace",            { WI32, WI32, WI32          }),
         functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      })
     };
 
@@ -276,7 +286,7 @@ namespace hook {
 // templates must be defined in the same file they are declared in, otherwise this would go in impl/Hook.cpp
 template <typename F>
 wasmer_import_t hook::functionImport (
-        F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params)
+        F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params, int ret_type )
 {
     return
     {   .module_name = { .bytes = (const uint8_t *) "env", .bytes_len = 3 },
@@ -287,8 +297,8 @@ wasmer_import_t hook::functionImport (
                 reinterpret_cast<void (*)(void*)>(func),
                 std::begin( func_params ),
                 func_params.size(),
-                std::begin( { WI64 } ),
-                1
+                (ret_type == 0 ? NULL : ( ret_type == 1 ? std::begin ( { WI32 } ) : std::begin( { WI64 } ))),
+                (ret_type == 0 ? 0 : 1)
             )
         }
     };
