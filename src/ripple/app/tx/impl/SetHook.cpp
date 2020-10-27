@@ -69,7 +69,8 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     }\
 }
 
-
+// checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
+// start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
 NotTEC
 check_guard(
         PreflightContext const& ctx, ripple::Blob& hook, int codesec,
@@ -77,7 +78,7 @@ check_guard(
 {
     if (end_offset <= 0) end_offset = hook.size();
     int block_depth = 0;
-    int mode = 0; // controls the state machine for searching for guards
+    int mode = 1; // controls the state machine for searching for guards
                   // 0 = looking for guard from a trigger point (loop or function start)
                   // 1 = looking for a new trigger point (loop)
 
@@ -110,6 +111,15 @@ check_guard(
                     uint64_t b = stack.top();
                     stack.pop();
                     printf("FOUND: GUARD(%llu, %llu), codesec: %d offset %d\n", a, b, codesec, i);
+
+                    if (b <= 0)
+                    {
+                        // 0 has a special meaning, generally it's not a constant value
+                        // < 0 is a constant but negative, either way this is a reject condition
+                        JLOG(ctx.j.trace()) << "Hook set: guard called but could not detect constant parameters"
+                            << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                        return temMALFORMED;
+                    }
 
                     // clear stack and maps
                     while (stack.size() > 0)
@@ -579,9 +589,10 @@ SetHook::preflight(PreflightContext const& ctx)
                     for (int k = 0; k < local_count; ++k)
                     {
                         int array_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                        if (!(hook[i] >= 0x7C && hook[i] <= 0x7C))
+                        if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                         {
-                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k << "\n";
+                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k << 
+                                " Offset: " << i << "\n";
                             return temMALFORMED;
                         }
                         i++; CHECK_SHORT_HOOK();
@@ -593,8 +604,10 @@ SetHook::preflight(PreflightContext const& ctx)
                     // execution to here means we are up to the actual expr for the codesec/function
 
                     auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number);
-                    if (result != tesSUCCESS)
+                    if (result != tesSUCCESS)    
                         return result;
+
+                    i = code_end;
 
                 }
             }
