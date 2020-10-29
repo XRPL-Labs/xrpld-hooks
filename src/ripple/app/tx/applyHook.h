@@ -60,65 +60,66 @@ namespace hook_api {
                                             uint32_t d, uint32_t e, uint32_t f );
 
     // not a real API, called by accept, reject and rollback
-    int64_t _exit               ( wic_t* w, uint32_t in_ptr, uint32_t in_len, 
+    int64_t _exit               ( wic_t* w, uint32_t read_ptr, uint32_t read_len, 
                                             int32_t error_code, ExitType exitType );
 
     // real apis start here ---
     int32_t _g                  ( wic_t* w, uint32_t guard_id, uint32_t maxiter );
 
-    int64_t accept              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
-    int64_t reject              ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
-    int64_t rollback            ( wic_t* w, uint32_t in_ptr, uint32_t in_len, int32_t error_code );
+    int64_t accept              ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    int64_t reject              ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    int64_t rollback            ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
    
-    int64_t util_raddr          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
-                                            uint32_t in_ptr, uint32_t in_len );
-    int64_t util_accid          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
-                                            uint32_t in_ptr, uint32_t in_len );
-    int64_t util_verify         ( wic_t* w, uint32_t sin_ptr, uint32_t sin_len,
-                                            uint32_t kin_ptr, uint32_t kin_len );
-    int64_t util_sha512h        ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
-                                            uint32_t in_ptr,  uint32_t in_len );
+    int64_t util_raddr          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
+                                            uint32_t read_ptr, uint32_t read_len );
+    int64_t util_accid          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
+                                            uint32_t read_ptr, uint32_t read_len );
+    int64_t util_verify         ( wic_t* w, uint32_t sread_ptr, uint32_t sread_len,
+                                            uint32_t kread_ptr, uint32_t kread_len );
+    int64_t util_sha512h        ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
+                                            uint32_t read_ptr,  uint32_t read_len );
     int64_t etxn_burden         ( wic_t* w );                                               
-    int64_t etxn_details        ( wic_t* w, uint32_t out_ptr, uint32_t out_len );          
+    int64_t etxn_details        ( wic_t* w, uint32_t write_ptr, uint32_t write_len );          
     int64_t etxn_fee_base       ( wic_t* w, uint32_t tx_byte_count);                       
     int64_t etxn_reserve        ( wic_t* w, uint32_t count );                                  
     int64_t etxn_generation     ( wic_t* w );
-    int64_t emit                ( wic_t* w, uint32_t in_ptr, uint32_t in_len );               
+    int64_t emit                ( wic_t* w, uint32_t read_ptr, uint32_t read_len );               
     
-    int64_t hook_account        ( wic_t* w, uint32_t out_ptr, uint32_t out_len );                            
-    int64_t hook_hash           ( wic_t* w, uint32_t out_ptr, uint32_t out_len );                            
+    int64_t hook_account        ( wic_t* w, uint32_t write_ptr, uint32_t write_len );                            
+    int64_t hook_hash           ( wic_t* w, uint32_t write_ptr, uint32_t write_len );                            
     
     int64_t fee_base            ( wic_t* w );                                              
     int64_t ledger_seq          ( wic_t* w );                                              
-    int64_t nonce               ( wic_t* w, uint32_t out_ptr, uint32_t out_len );
+    int64_t nonce               ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
     
     int64_t slot_clear          ( wic_t* w, uint32_t slot );                           
-    int64_t slot_set            ( wic_t* w, uint32_t in_ptr, uint32_t in_len,
+    int64_t slot_set            ( wic_t* w, uint32_t read_ptr, uint32_t read_len,
                                             uint32_t slot_type, int32_t slot );                          
     
-    int64_t slot_field_txt      ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+    int64_t slot_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t field_id, uint32_t slot );
-    int64_t slot_field          ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
+    int64_t slot_field          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t field_id, uint32_t slot );
     int64_t slot_id             ( wic_t* w, uint32_t slot );                       
     int64_t slot_type           ( wic_t* w, uint32_t slot );                                              
 
-    int64_t state_set           ( wic_t* w, uint32_t in_ptr,  uint32_t in_len,
-                                            uint32_t kin_ptr, uint32_t kin_len );
-    int64_t state               ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
-                                            uint32_t kin_ptr, uint32_t kin_len );
-    int64_t state_foreign       ( wic_t* w, uint32_t out_ptr, uint32_t out_len,
-                                            uint32_t kin_ptr, uint32_t kin_len,
-                                            uint32_t ain_ptr, uint32_t ain_len );
+    int64_t state_set           ( wic_t* w, uint32_t read_ptr,  uint32_t read_len,
+                                            uint32_t kread_ptr, uint32_t kread_len );
+    int64_t state               ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
+                                            uint32_t kread_ptr, uint32_t kread_len );
+    int64_t state_foreign       ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
+                                            uint32_t kread_ptr, uint32_t kread_len,
+                                            uint32_t aread_ptr, uint32_t aread_len );
    
     int64_t trace_slot          ( wic_t* w, uint32_t slot );                               
-    int64_t trace               ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t as_hex );
+    int64_t trace               ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
+    int64_t trace_num           ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int64_t number );
 
     int64_t otxn_burden         ( wic_t* w );                                              
-    int64_t otxn_field_txt      ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t field_id );
-    int64_t otxn_field          ( wic_t* w, uint32_t out_ptr, uint32_t out_len, uint32_t field_id );
+    int64_t otxn_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    int64_t otxn_field          ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
     int64_t otxn_generation     ( wic_t* w );
-    int64_t otxn_id             ( wic_t* w, uint32_t out_ptr, uint32_t out_len );
+    int64_t otxn_id             ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
     int64_t otxn_type           ( wic_t* w );
     
 
@@ -192,7 +193,7 @@ namespace hook {
     #define WI32 (wasmer_value_tag::WASM_I32)
     #define WI64 (wasmer_value_tag::WASM_I64)
 
-    const int imports_count = 36;
+    const int imports_count = 38;
     wasmer_import_t imports[] = {
 
         
@@ -204,48 +205,47 @@ namespace hook {
         functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
-        
+// 5        
         functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
-        
         functionImport ( hook_api::emit,            "emit",             { WI32, WI32                }),
+//10
         functionImport ( hook_api::etxn_burden,     "etxn_burden",      {                           }),
         functionImport ( hook_api::etxn_fee_base,   "etxn_fee_base",    { WI32                      }),
         functionImport ( hook_api::etxn_details,    "etxn_details",     { WI32, WI32                }),
         functionImport ( hook_api::etxn_reserve,    "etxn_reserve",     { WI32                      }),
         functionImport ( hook_api::etxn_generation, "etxn_generation",  {                           }),
-        
+//15        
         functionImport ( hook_api::otxn_burden,     "otxn_burden",      {                           }),
         functionImport ( hook_api::otxn_generation, "otxn_generation",  {                           }),
         functionImport ( hook_api::otxn_field_txt,  "otxn_field_txt",   { WI32, WI32, WI32          }),
         functionImport ( hook_api::otxn_field,      "otxn_field",       { WI32, WI32, WI32          }),
         functionImport ( hook_api::otxn_id,         "otxn_id",          { WI32, WI32                }),
+//20
         functionImport ( hook_api::otxn_type,       "otxn_type",        {                           }),
-        
         functionImport ( hook_api::hook_account,    "hook_account",     { WI32, WI32                }),
-        functionImport ( hook_api::hook_hash,       "hook_hash",        { WI32, WI32                }),
-        
+        functionImport ( hook_api::hook_hash,       "hook_hash",        { WI32, WI32                }),    
         functionImport ( hook_api::fee_base,        "fee_base",         {                           }),
         functionImport ( hook_api::ledger_seq,      "ledger_seq",       {                           }),
-        functionImport ( hook_api::nonce,           "nonce",            { WI32                      }),
-        
+//25    
+        functionImport ( hook_api::nonce,           "nonce",            { WI32                      }),    
         functionImport ( hook_api::state,           "state",            { WI32, WI32, WI32, WI32    }),
-
         functionImport ( hook_api::state_foreign,   "state_foreign",    { WI32, WI32, WI32, WI32,
                                                                           WI32, WI32                }),
-        functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }),
-        
+        functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }), 
         functionImport ( hook_api::slot_set,        "slot_set",         { WI32, WI32, WI32, WI32    }),
+//30        
         functionImport ( hook_api::slot_clear,      "slot_clear",       { WI32                      }),
         functionImport ( hook_api::slot_field_txt,  "slot_field_txt",   { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::slot_field,      "slot_field",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::slot_id,         "slot_id",          { WI32                      }),
         functionImport ( hook_api::slot_type,       "slot_type",        { WI32                      }),
-        
+//35        
         functionImport ( hook_api::trace,           "trace",            { WI32, WI32, WI32          }),
-        functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      })
+        functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      }),
+        functionImport ( hook_api::trace_num,       "trace_num",        { WI32, WI32, WI64          })
     };
 
 

@@ -69,6 +69,8 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     }\
 }
 
+#define DEBUG_GUARD_CHECK 0
+
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
 NotTEC
@@ -89,18 +91,31 @@ check_guard(
                   // 1 = looking for a new trigger point (loop); 
                   // currently always starts at 1 no-top-of-func check, see above block comment
 
-
     std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
     std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
     std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
 
+    if (DEBUG_GUARD_CHECK)
+        printf("\n\n\n\start of guard analysis for codesec %d\n", codesec);
+
     for (int i = start_offset; i < end_offset; )
     {
+
+        if (DEBUG_GUARD_CHECK)
+        {
+            printf("->");
+            for (int z = i; z < 16 + i && z < end_offset; ++z)
+                printf("%02X", hook[z]);
+            printf("\n");
+        }
+        
         int instr = hook[i++]; CHECK_SHORT_HOOK();
 
         if (instr == 0x10) // call instr
         {
             int callee_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - call instruction at %d -- call funcid: %d\n", mode, i, callee_idx);
             if (callee_idx == guard_func_idx)
             {
                 // found!
@@ -142,14 +157,20 @@ check_guard(
 
         if (instr == 0x11) // call indirect [ we don't allow guard to be called this way ]
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - call_indirect instruction at %d\n", mode, i);
             parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-            ++i; CHECK_SHORT_HOOK();
+            ++i; CHECK_SHORT_HOOK(); //absorb 0x00 trailing
             continue;
         }
 
         // unreachable and nop instructions
         if (instr == 0x00 || instr == 0x01)
+        {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - unreachable/nop instruction at %d\n", mode, i);
             continue;
+        }
 
         // branch loop block instructions
         if ((instr >= 0x02 && instr <= 0x0F) || instr == 0x11)
@@ -166,6 +187,9 @@ check_guard(
             // block instruction
             if (instr == 0x02)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - block instruction at %d\n", mode, i);
+
                 ++i; CHECK_SHORT_HOOK();
                 block_depth++;
                 continue;
@@ -174,6 +198,9 @@ check_guard(
             // loop instruction
             if (instr == 0x03)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - loop instruction at %d\n", mode, i);
+
                 ++i; CHECK_SHORT_HOOK();
                 mode = 0; // we now search for a guard()
                 block_depth++;
@@ -183,6 +210,8 @@ check_guard(
             // if instr
             if (instr == 0x04)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - if instruction at %d\n", mode, i);
                 ++i; CHECK_SHORT_HOOK();
                 block_depth++;
                 continue;
@@ -191,12 +220,16 @@ check_guard(
             // else instr
             if (instr == 0x05)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - else instruction at %d\n", mode, i);
                 continue;
             }
 
             // branch instruction
             if (instr == 0x0C || instr == 0x0D)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - br instruction at %d\n", mode, i);
                 parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 continue;
             }
@@ -204,6 +237,8 @@ check_guard(
             // branch table instr
             if (instr == 0x0E)
             {
+                if (DEBUG_GUARD_CHECK)
+                    printf("%d - br_table instruction at %d\n", mode, i);
                 int vec_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 for (int v = 0; v < vec_count; ++v)
                 {
@@ -218,11 +253,18 @@ check_guard(
 
         // parametric instructions | no operands
         if (instr == 0x1A || instr == 0x1B)
+        {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - parametric  instruction at %d\n", mode, i);
             continue;
+        }
 
         // variable instructions
         if (instr >= 0x20 && instr <= 0x24)
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - variable local/global instruction at %d\n", mode, i);
+
             int idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
 
             if (mode == 1)
@@ -257,6 +299,9 @@ check_guard(
         //memory instructions
         if (instr >= 0x28 && instr <= 0x3E)
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - variable memory instruction at %d\n", mode, i);
+
             parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             continue;
@@ -265,6 +310,9 @@ check_guard(
         // more memory instructions
         if (instr == 0x3F || instr == 0x40)
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - memory instruction at %d\n", mode, i);
+
             ++i; CHECK_SHORT_HOOK();
             if (instr == 0x40) // disallow memory.grow
             {
@@ -279,6 +327,10 @@ check_guard(
         // numeric instructions with immediates
         if (instr == 0x41 || instr == 0x42)
         {
+            
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - const instruction at %d\n", mode, i);
+
             uint64_t immediate = parseLeb128(hook, i, &i);
             CHECK_SHORT_HOOK(); // RH TODO enforce i32 i64 size limit
 
@@ -290,8 +342,12 @@ check_guard(
 
         // const instr
         // more numerics with immediates
-        if (instr == 0x43 || instr <= 0x44)
+        if (instr == 0x43 || instr == 0x44)
         {
+            
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - const float instruction at %d\n", mode, i);
+            
             i += ( instr == 0x43 ? 4 : 8 );
             CHECK_SHORT_HOOK();
             continue;
@@ -299,11 +355,17 @@ check_guard(
 
         // numerics no immediates
         if (instr >= 0x45 && instr <= 0xC4)
+        {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - numeric instruction at %d\n", mode, i);
             continue;
+        }
 
         // truncation instructions
         if (instr == 0xFC)
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - truncation instruction at %d\n", mode, i);
             i++; CHECK_SHORT_HOOK();
             parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             continue;
@@ -311,6 +373,9 @@ check_guard(
 
         if (instr == 0x0B)
         {
+            if (DEBUG_GUARD_CHECK)
+                printf("%d - block end instruction at %d\n", mode, i);
+
             // end of expression
             if (block_depth == 0)
             break;
@@ -591,6 +656,7 @@ SetHook::preflight(PreflightContext const& ctx)
 
                 for (int j = 0; j < func_count; ++j)
                 {
+                    // parse locals
                     int code_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                     int code_end = i + code_size; // RH TODO check if this is right
                     int local_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
