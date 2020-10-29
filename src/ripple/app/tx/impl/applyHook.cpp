@@ -605,10 +605,10 @@ int64_t hook_api::otxn_field_txt (
     SField const& fieldType = ripple::SField::getField( field_id );
 
     if (fieldType == sfInvalid)
-        return -1;
+        return INVALID_FIELD;
 
     if (tx.getFieldIndex(fieldType) == -1)
-        return -2;
+        return DOESNT_EXIST;
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
     

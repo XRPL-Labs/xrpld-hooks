@@ -1,7 +1,9 @@
-all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF carbon.wasm
+all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF carbon.wasm recursiveloop.wasm
 
 clean:
 	rm *.wasm generateSF
+
+
 
 hex2prefill : hex2prefill.c
 	gcc utils/hex2prefill.c -o utils/hex2prefill
@@ -32,3 +34,7 @@ print2.wasm: print2.c sfcodes.h hookapi.h
 
 carbon.wasm: carbon.c sfcodes.h hookapi.h
 	wasmcc carbon.c -o carbon.wasm -Wl,--allow-undefined 
+
+recursiveloop.wasm: recursiveloop.c
+	wasmcc recursiveloop.c -o recursiveloop.wasm  -Wl,--allow-undefined 
+

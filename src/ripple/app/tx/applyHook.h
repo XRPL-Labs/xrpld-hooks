@@ -32,7 +32,8 @@ namespace hook_api {
         TOO_MANY_EMITTED_TXN = -13,     // a hook has emitted more than its stated number of emitted txn
         NOT_IMPLEMENTED = -14,          // an api was called that is reserved for a future version
         INVALID_ACCOUNT = -15,          // an api expected an account id but got something else
-        GUARD_VIOLATION = -16           // a guarded loop or function iterated over its maximum
+        GUARD_VIOLATION = -16,          // a guarded loop or function iterated over its maximum
+        INVALID_FIELD = -17             // the field requested is returning sfInvalid
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 

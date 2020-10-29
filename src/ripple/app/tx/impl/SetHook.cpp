@@ -76,11 +76,19 @@ check_guard(
         PreflightContext const& ctx, ripple::Blob& hook, int codesec,
         int start_offset, int end_offset, int guard_func_idx)
 {
+    // RH TODO: Guard() should be at the top of functions however better tools need to be created to
+    // help hook developers prune unused functions provided by unwanted compiler-included runtimes
+    // so for now we rely on the fact that recursion can only go so deep before it overflows the stack
+    // causing the hook to return OUT_OF_BOUNDS and rollback(). This is a temporary situtation to be
+    // corrected before production release.
+
     if (end_offset <= 0) end_offset = hook.size();
     int block_depth = 0;
     int mode = 1; // controls the state machine for searching for guards
                   // 0 = looking for guard from a trigger point (loop or function start)
-                  // 1 = looking for a new trigger point (loop)
+                  // 1 = looking for a new trigger point (loop); 
+                  // currently always starts at 1 no-top-of-func check, see above block comment
+
 
     std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
     std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
