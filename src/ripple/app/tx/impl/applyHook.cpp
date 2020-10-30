@@ -8,6 +8,8 @@
 #include <ripple/app/ledger/OpenLedger.h>
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/NetworkOPs.h>
+#include <optional>
+#include <string>
 
 using namespace ripple;
 
@@ -257,6 +259,34 @@ int64_t hook_api::trace (
 
 }
 
+
+std::optional<ripple::uint256>
+inline
+make_state_key(
+        std::string_view source)
+{   
+
+    size_t source_len = source.size();
+
+    if (source_len > 32 || source_len < 1)
+        return std::nullopt;
+
+    unsigned char key_buffer[32];
+    int i = 0;
+    int pad = 32 - source_len;
+
+    // zero pad on the left
+    for (; i < pad; ++i)
+        key_buffer[i] = 0;
+
+    const char* data = source.data();
+
+    for (; i < 32; ++i)
+        key_buffer[i] = data[i - pad];
+    
+    return ripple::uint256::fromVoid(key_buffer);
+}
+
 int64_t hook_api::state_set (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -271,6 +301,12 @@ int64_t hook_api::state_set (
         return OUT_OF_BOUNDS;
     }
 
+    if (kread_len > 32)
+        return TOO_BIG;
+
+    if (kread_len < 1)
+        return TOO_SMALL;
+
     if (read_len == 0)
         return TOO_SMALL;
 
@@ -281,10 +317,12 @@ int64_t hook_api::state_set (
     uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize);
     if (read_len > maxSize)
         return TOO_BIG;
+    
+    auto const key = 
+        make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
-    ripple::uint256 key = ripple::uint256::fromVoid(memory + kread_ptr);
 
-    (*hookCtx.changedState)[key] =
+    (*hookCtx.changedState)[*key] =
         std::pair<bool, ripple::Blob> (true,
                 {memory + read_ptr,  memory + read_ptr + read_len});
 
@@ -376,17 +414,17 @@ int64_t hook_api::state_foreign (
     if (aread_len != 20)
         return INVALID_ACCOUNT;
 
-    unsigned char key_padded[32];
-    for (int i = 0; i < 32; ++i)
-        key_padded[i] = ( i < kread_len ? *(memory + i + kread_ptr) : 0 );
 
-    ripple::uint256 key = ripple::uint256::fromVoid(key_padded);
+    auto const key = 
+        make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
+    if (!key)
+        return INVALID_ARGUMENT;
 
     // first check if the requested state was previously cached this session
     if (!is_foreign) // we only cache local
     {
-        const auto& cacheEntry = hookCtx.changedState->find(key);
+        const auto& cacheEntry = hookCtx.changedState->find(*key);
         if (cacheEntry != hookCtx.changedState->end())
         {
             if (cacheEntry->second.second.size() > write_len)
@@ -405,7 +443,7 @@ int64_t hook_api::state_foreign (
         return INTERNAL_ERROR;
 
     auto hsSLE = view.peek(keylet::hook_state(
-                (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.account), key));
+                (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.account), *key));
     if (!hsSLE)
         return DOESNT_EXIST;
 
@@ -414,7 +452,7 @@ int64_t hook_api::state_foreign (
     // it exists add it to cache and return it
 
     if (!is_foreign)
-        hookCtx.changedState->emplace(key, std::pair<bool, ripple::Blob>(false, b));
+        hookCtx.changedState->emplace(*key, std::pair<bool, ripple::Blob>(false, b));
 
     if (b.size() > write_len)
         return TOO_SMALL;
@@ -1090,6 +1128,110 @@ int64_t hook_api::util_sha512h (
     return NOT_IMPLEMENTED; // RH TODO
 }
 
+int64_t hook_api::util_subfield ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
+{
+    return
+        NOT_IMPLEMENTED;
+}/*
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (read_len < 1)
+        return TOO_SMALL;
+
+    unsigned char* upto = (unsigned char*)(memory + read_ptr);
+    unsigned char* end = upto + read_len;
+
+    if (*upto++ & 0xF0 != 0xE0)
+        return INVALID_ARGUMENT;
+
+    int object_depth = 0;
+    int array_depth = 0;
+    int expected_bytes = 0;
+    while (upto != end)
+    {
+        if (expected_bytes > 0)
+        {
+            expected_bytes--;
+            continue;
+        }
+
+        int high = *upto >> 4;
+        int low = *upto & 0xF;
+
+        int type = -1;
+        int field = -1;
+        upto++; if (upto == end) break;
+        if (high > 0 && low > 0)
+        {
+            // common type common field
+            type = high;
+            field = low;
+        } else if (high > 0) {
+            // common type, uncommon field
+            type = high;
+            field = *upto;
+        } else if (low > 0) {
+            // common field, uncommon type
+            field = low;
+            type = *upto;
+        } else {
+            // uncommon type and field
+            type = *upto++;
+            if (upto == end) break;
+            field = *upto;
+        }
+
+        upto++; if (upto == end) break;
+
+        // RH TODO: link this to rippled's internal STObject constants
+        if (type < 1 || type > 19 || ( type >= 9 && type <= 13)) 
+            return INTERNAL_ERROR; 
+
+        bool is_vl = (type == 7 || type == 18 || type == 15 || type == 14 || type == 19);
+        int length = 0;
+        if (is_vl)
+        {
+            length = *upto++;
+            if (length == 0) continue;
+            if (upto == end) break;
+            if (length < 193)
+            {
+                // do nothing
+            } else if (length > 192 && length < 241)
+            {
+                length -= 193;
+                length *= 256;
+                length += *upto++ + 193; if (upto == end) break;
+            } else {
+                int b2 = *upto++; if (upto == end) break;
+                length -= 241;
+                length *= 65536;
+                length += 12481 + (b2 * 256) + *upto++; if (upto == end) break;
+            }
+        }
+
+
+        // RH TODO upto here
+//        if (field == field_id)
+
+    }
+    
+}*/
+  
+int64_t hook_api::util_subarray ( 
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    return NOT_IMPLEMENTED;
+}
 
 int64_t hook_api::util_raddr (
         wasmer_instance_context_t * wasm_ctx,
@@ -1133,15 +1275,27 @@ int64_t hook_api::util_accid (
     if (write_len < 20)
         return TOO_SMALL;
 
-    auto const result = ripple::decodeBase58Token( std::string( (const char*)(memory + read_ptr),
-                (size_t)(read_len) ), TokenType::AccountID );
-    if (result.empty() || result.size() < 21)
+    if (read_len > 49)
+        return TOO_BIG;
+
+    // RH TODO we shouldn't need to slice this input but the base58 routine fails if we dont... maybe
+    // some encoding or padding that shouldnt be there or maybe something that should be there
+    char buffer[50];
+    for (int i = 0; i < read_len; ++i)
+        buffer[i] = *(memory + read_ptr + i);
+    buffer[read_len] = 0;
+
+    std::string raddr{buffer};
+    std::cout << "util_accid raddr: " << raddr << "\n";
+
+    auto const result = decodeBase58Token(raddr, TokenType::AccountID);
+    if (result.empty())
         return INVALID_ARGUMENT;
 
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
-        result.data() + 1, 20,
+        result.data(), 20,
         memory, memory_length);
 }
 

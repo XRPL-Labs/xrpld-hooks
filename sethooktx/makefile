@@ -1,4 +1,4 @@
-all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF carbon.wasm recursiveloop.wasm
+all: x.wasm accept.wasm reject.wasm rollback.wasm print.wasm print2.wasm generateSF carbon.wasm recursiveloop.wasm liteacc.wasm
 
 clean:
 	rm *.wasm generateSF
@@ -37,3 +37,5 @@ carbon.wasm: carbon.c sfcodes.h hookapi.h hookmacro.h
 recursiveloop.wasm: recursiveloop.c hookapi.h hookmacro.h
 	wasmcc recursiveloop.c -o recursiveloop.wasm  -Wl,--allow-undefined 
 
+liteacc.wasm: liteacc.c sfcodes.h hookapi.h hookmacro.h
+	wasmcc liteacc.c -o liteacc.wasm -Wl,--allow-undefined 

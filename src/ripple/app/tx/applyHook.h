@@ -78,6 +78,10 @@ namespace hook_api {
                                             uint32_t kread_ptr, uint32_t kread_len );
     int64_t util_sha512h        ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t read_ptr,  uint32_t read_len );
+    
+    int64_t util_subfield       ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
+    int64_t util_subarray       ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
+    
     int64_t etxn_burden         ( wic_t* w );                                               
     int64_t etxn_details        ( wic_t* w, uint32_t write_ptr, uint32_t write_len );          
     int64_t etxn_fee_base       ( wic_t* w, uint32_t tx_byte_count);                       
@@ -111,6 +115,7 @@ namespace hook_api {
                                             uint32_t kread_ptr, uint32_t kread_len,
                                             uint32_t aread_ptr, uint32_t aread_len );
    
+
     int64_t trace_slot          ( wic_t* w, uint32_t slot );                               
     int64_t trace               ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
     int64_t trace_num           ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int64_t number );
@@ -193,7 +198,7 @@ namespace hook {
     #define WI32 (wasmer_value_tag::WASM_I32)
     #define WI64 (wasmer_value_tag::WASM_I64)
 
-    const int imports_count = 38;
+    const int imports_count = 40;
     wasmer_import_t imports[] = {
 
         
@@ -210,6 +215,11 @@ namespace hook {
         functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::util_subfield,   "util_subfield",    { WI32, WI32, WI32          }),
+        functionImport ( hook_api::util_subarray,   "util_subarray",    { WI32, WI32, WI32          }),
+
+
+        
         functionImport ( hook_api::emit,            "emit",             { WI32, WI32                }),
 //10
         functionImport ( hook_api::etxn_burden,     "etxn_burden",      {                           }),

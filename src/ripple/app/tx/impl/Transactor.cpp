@@ -690,7 +690,7 @@ Transactor::operator()()
             auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
             auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
             if (hookReceiving &&
-                hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+                hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
             {
                 // execute the hook on the receiving account
                 auto hookResult = hook::apply(

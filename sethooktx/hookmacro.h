@@ -24,6 +24,17 @@
           (((uint64_t)(amount_buffer[6])) <<  8) +\
           (((uint64_t)(amount_buffer[7]))))))
 
+#define OTXN_FIELD_AS_UINT32(out, field)\
+{\
+    unsigned char buf[4];\
+    int64_t len = otxn_field((uint32_t)buf, 4, field);\
+    out = ( len == 4 ? \
+            ((int64_t)buf[0] << 24) +\
+            ((int64_t)buf[1] << 16) +\
+            ((int64_t)buf[2] <<  8) +\
+            ((int64_t)buf[3]) : -1);\
+}
+
 // compare if two buffers are equal up to compare_len
 //int buffer_equal(uint8_t* buf1, uint8_t* buf2, uint32_t compare_len, int max_iter)
 #define BUFFER_EQUAL(output, buf1, buf2, compare_len)\
