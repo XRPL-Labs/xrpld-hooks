@@ -11,29 +11,28 @@
 #define SBUF(str) (uint32_t)(str), sizeof(str)
 
 #define TRACEVAR(v) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
+#define TRACEHEX(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), 1);
+
+#define CLEARBUF(b)\
+{\
+    for (int x = 0; GUARD(sizeof(b)), x < sizeof(b); ++x)\
+        b[x] = 0;\
+}
 
 // returns an in64_t, negative if error, non-negative if valid drops
 #define AMOUNT_TO_DROPS(amount_buffer)\
-    (sizeof(amount_buffer) < 8 ? -1 : ((amount_buffer[0] >> 7) ? -2 : (\
-         ((((uint64_t)(amount_buffer[0])) & 0xb00111111) << 56) +\
-          (((uint64_t)(amount_buffer[1])) << 48) +\
-          (((uint64_t)(amount_buffer[2])) << 40) +\
-          (((uint64_t)(amount_buffer[3])) << 32) +\
-          (((uint64_t)(amount_buffer[4])) << 24) +\
-          (((uint64_t)(amount_buffer[5])) << 16) +\
-          (((uint64_t)(amount_buffer[6])) <<  8) +\
-          (((uint64_t)(amount_buffer[7]))))))
+    (sizeof(amount_buffer) < 8 ? -1 : (((amount_buffer)[0] >> 7) ? -2 : (\
+         ((((uint64_t)((amount_buffer)[0])) & 0xb00111111) << 56) +\
+          (((uint64_t)((amount_buffer)[1])) << 48) +\
+          (((uint64_t)((amount_buffer)[2])) << 40) +\
+          (((uint64_t)((amount_buffer)[3])) << 32) +\
+          (((uint64_t)((amount_buffer)[4])) << 24) +\
+          (((uint64_t)((amount_buffer)[5])) << 16) +\
+          (((uint64_t)((amount_buffer)[6])) <<  8) +\
+          (((uint64_t)((amount_buffer)[7]))))))
 
-#define OTXN_FIELD_AS_UINT32(out, field)\
-{\
-    unsigned char buf[4];\
-    int64_t len = otxn_field((uint32_t)buf, 4, field);\
-    out = ( len == 4 ? \
-            ((int64_t)buf[0] << 24) +\
-            ((int64_t)buf[1] << 16) +\
-            ((int64_t)buf[2] <<  8) +\
-            ((int64_t)buf[3]) : -1);\
-}
+#define SUB_LENGTH(x) ((int32_t)(x >> 32))
+#define SUB_OFFSET(x) ((int32_t)(x & 0xFFFFFFFFULL))
 
 // compare if two buffers are equal up to compare_len
 //int buffer_equal(uint8_t* buf1, uint8_t* buf2, uint32_t compare_len, int max_iter)
@@ -55,58 +54,70 @@
     }\
 }
 
-#define DPRINT(x)\
-    {trace((x), sizeof((x)));}
+#define UINT32_TO_BUF(buf_raw, i)\
+{\
+    unsigned char* buf = (unsigned char*)buf_raw;\
+    buf[0] = (((uint64_t)i) >> 24) & 0xFFUL;\
+    buf[1] = (((uint64_t)i) >> 16) & 0xFFUL;\
+    buf[2] = (((uint64_t)i) >>  8) & 0xFFUL;\
+    buf[3] = (((uint64_t)i) >>  0) & 0xFFUL;\
+}
 
-#define BUF_TO_DEC(buf_in, len_in, numout)\
-    {\
-        unsigned char* buf = (buf_in);\
-        int len = (len_in);\
-        int i = 0;\
-        numout = 0;\
-        for (; GUARDM(sizeof(buf_in),55), i < len && (buf)[i] != 0; ++i) {\
-            if ((buf)[i] < '0' || (buf)[i] > '9') {\
-                numout = 0;\
-                break;\
-            }\
-            numout *= 10;\
-            numout += ((buf)[i]-'0');\
-        }\
-    }
 
-#define DEC_TO_BUF(buf_in, len_in, numin_raw)\
-    {\
-        int numin = (numin_raw);\
-        unsigned char* buf = (buf_in);\
-        int len = (len_in);\
-        int digit_count = 0;\
-        int numin2 = numin;\
-        int numin3 = numin;\
-        for (; GUARDM(sizeof(buf_in),73), numin2 > 0; ++digit_count) numin2 /= 10;\
-        if (digit_count < len - 1) {\
-            (buf)[digit_count] = 0;\
-            for (; digit_count > 0; --digit_count, numin3 /= 10)\
-                (buf)[digit_count-1] = '0' + (numin3 % 10);\
-        }\
-    }
+#define UINT32_FROM_BUF(buf)\
+    (((uint64_t)((buf)[0]) << 24) +\
+     ((uint64_t)((buf)[1]) << 16) +\
+     ((uint64_t)((buf)[2]) <<  8) +\
+     ((uint64_t)((buf)[3]) <<  0))
 
-#define TO_HEX( buf_out_master, buf_in, buf_in_len )\
-    {\
-        unsigned char* buf_out = buf_out_master;\
-        for (int i = 0; GUARDM(sizeof(buf_in),84), i < buf_in_len; ++i) {\
-            int low  = (buf_in[i] & 0xFU);\
-            int high = (buf_in[i] >> 4U) & 0xFU;\
-            *buf_out++ =(high < 10 ? high + '0' : (high - 10) + 'A' );\
-            *buf_out++ =(low  < 10 ? low  + '0' : (low  - 10) + 'A' );\
-        }\
-    }
+#define UINT64_TO_BUF(buf_raw, i)\
+{\
+    unsigned char* buf = (unsigned char*)buf_raw;\
+    buf[0] = (((uint64_t)i) >> 56) & 0xFFUL;\
+    buf[1] = (((uint64_t)i) >> 48) & 0xFFUL;\
+    buf[2] = (((uint64_t)i) >> 40) & 0xFFUL;\
+    buf[3] = (((uint64_t)i) >> 32) & 0xFFUL;\
+    buf[4] = (((uint64_t)i) >> 24) & 0xFFUL;\
+    buf[5] = (((uint64_t)i) >> 16) & 0xFFUL;\
+    buf[6] = (((uint64_t)i) >>  8) & 0xFFUL;\
+    buf[7] = (((uint64_t)i) >>  0) & 0xFFUL;\
+}
 
-#define STRLEN(buf, maxlen, lenout)\
-    {\
-        lenout = 0;\
-        for (; (buf)[lenout] != 0 && lenout < maxlen; ++lenout);\
-    }
 
+#define UINT64_FROM_BUF(buf)\
+    (((uint64_t)((buf)[0]) << 56) +\
+     ((uint64_t)((buf)[1]) << 48) +\
+     ((uint64_t)((buf)[2]) << 40) +\
+     ((uint64_t)((buf)[3]) << 32) +\
+     ((uint64_t)((buf)[4]) << 24) +\
+     ((uint64_t)((buf)[5]) << 16) +\
+     ((uint64_t)((buf)[6]) <<  8) +\
+     ((uint64_t)((buf)[7]) <<  0))
+
+
+#define INT64_FROM_BUF(buf)\
+   ((((uint64_t)((buf)[0]&7FU) << 56) +\
+     ((uint64_t)((buf)[1]) << 48) +\
+     ((uint64_t)((buf)[2]) << 40) +\
+     ((uint64_t)((buf)[3]) << 32) +\
+     ((uint64_t)((buf)[4]) << 24) +\
+     ((uint64_t)((buf)[5]) << 16) +\
+     ((uint64_t)((buf)[6]) <<  8) +\
+     ((uint64_t)((buf)[7]) <<  0)) * (buf[0] & 0x80U ? -1 : 1))
+
+#define INT64_TO_BUF(buf_raw, i)\
+{\
+    unsigned char* buf = (unsigned char*)buf_raw;\
+    buf[0] = (((uint64_t)i) >> 56) & 0x7FUL;\
+    buf[1] = (((uint64_t)i) >> 48) & 0xFFUL;\
+    buf[2] = (((uint64_t)i) >> 40) & 0xFFUL;\
+    buf[3] = (((uint64_t)i) >> 32) & 0xFFUL;\
+    buf[4] = (((uint64_t)i) >> 24) & 0xFFUL;\
+    buf[5] = (((uint64_t)i) >> 16) & 0xFFUL;\
+    buf[6] = (((uint64_t)i) >>  8) & 0xFFUL;\
+    buf[7] = (((uint64_t)i) >>  0) & 0xFFUL;\
+    if (i < 0) buf[0] |= 0x80U;\
+}
 
 #define ttPAYMENT 0
 #define tfCANONICAL 0x80000000UL

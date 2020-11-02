@@ -689,6 +689,7 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
         // execution to here means guards are installed correctly
+        fprintf(stderr, "Trying to wasmer_instantiate proposed hook ptr=%llx len=%lu\n", hook.data(), hook.size());
 
         // check if wasmer can run it
         wasmer_instance_t *instance = NULL;

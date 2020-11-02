@@ -11,17 +11,19 @@
 #define HOOKAPI_INCLUDED 1
 
 extern int32_t _g                  (uint32_t id, uint32_t maxiter);
-extern int64_t accept              (uint32_t read_ptr,   uint32_t read_len,   int32_t error_code);
-extern int64_t reject              (uint32_t read_ptr,   uint32_t read_len,   int32_t error_code);
-extern int64_t rollback            (uint32_t read_ptr,   uint32_t read_len,   int32_t error_code);
-extern int64_t util_raddr          (uint32_t write_ptr,  uint32_t write_len,
-                                    uint32_t read_ptr,   uint32_t read_len);
-extern int64_t util_accid          (uint32_t write_ptr,  uint32_t write_len,
-                                    uint32_t read_ptr,   uint32_t read_len);
-extern int64_t util_verify         (uint32_t sread_ptr,  uint32_t sread_len,
-                                    uint32_t kread_ptr,  uint32_t kread_len);
-extern int64_t util_sha512h        (uint32_t write_ptr,  uint32_t write_len,
-                                    uint32_t read_ptr,   uint32_t read_len);
+extern int64_t accept              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
+extern int64_t reject              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
+extern int64_t rollback            (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
+extern int64_t util_raddr          (uint32_t write_ptr, uint32_t write_len,
+                                    uint32_t read_ptr,  uint32_t read_len);
+extern int64_t util_accid          (uint32_t write_ptr, uint32_t write_len,
+                                    uint32_t read_ptr,  uint32_t read_len);
+extern int64_t util_verify         (uint32_t sread_ptr, uint32_t sread_len,
+                                    uint32_t kread_ptr, uint32_t kread_len);
+extern int64_t util_sha512h        (uint32_t write_ptr, uint32_t write_len,
+                                    uint32_t read_ptr,  uint32_t read_len);
+extern int64_t util_subfield       (uint32_t read_ptr,  uint32_t read_len, uint32_t field_id );                 
+extern int64_t util_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32_t array_id );                 
 extern int64_t etxn_burden         (void );
 extern int64_t etxn_details        (uint32_t write_ptr,  uint32_t write_len);
 extern int64_t etxn_fee_base       (uint32_t tx_byte_count);

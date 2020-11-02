@@ -33,9 +33,26 @@ namespace hook_api {
         NOT_IMPLEMENTED = -14,          // an api was called that is reserved for a future version
         INVALID_ACCOUNT = -15,          // an api expected an account id but got something else
         GUARD_VIOLATION = -16,          // a guarded loop or function iterated over its maximum
-        INVALID_FIELD = -17             // the field requested is returning sfInvalid
+        INVALID_FIELD = -17,            // the field requested is returning sfInvalid
+        PARSE_ERROR = -18               // hook asked hookapi to parse something the contents of which was invalid
     };
     // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
+    
+    // many datatypes can be encoded into an int64_t 
+    int64_t data_as_int64(
+            void* ptr_raw,
+            uint32_t len)
+    {
+        unsigned char* ptr = reinterpret_cast<unsigned char*>(ptr_raw);
+        if (len > 8)
+            return TOO_BIG;
+        uint64_t output = 0;
+        for (int i = 0, j = (len-1)*8; i < len; ++i, j-=8)
+            output += (((uint64_t)ptr[i]) << j);
+        if ((1ULL<<63) & output)
+            return TOO_BIG;
+        return output;
+    }
 
     enum ExitType : int8_t {
         ROLLBACK = 0,
@@ -121,8 +138,8 @@ namespace hook_api {
     int64_t trace_num           ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int64_t number );
 
     int64_t otxn_burden         ( wic_t* w );                                              
-    int64_t otxn_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
     int64_t otxn_field          ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    int64_t otxn_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
     int64_t otxn_generation     ( wic_t* w );
     int64_t otxn_id             ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
     int64_t otxn_type           ( wic_t* w );
@@ -210,49 +227,39 @@ namespace hook {
         functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
-// 5        
         functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_subfield,   "util_subfield",    { WI32, WI32, WI32          }),
         functionImport ( hook_api::util_subarray,   "util_subarray",    { WI32, WI32, WI32          }),
-
-
-        
         functionImport ( hook_api::emit,            "emit",             { WI32, WI32                }),
-//10
         functionImport ( hook_api::etxn_burden,     "etxn_burden",      {                           }),
         functionImport ( hook_api::etxn_fee_base,   "etxn_fee_base",    { WI32                      }),
         functionImport ( hook_api::etxn_details,    "etxn_details",     { WI32, WI32                }),
         functionImport ( hook_api::etxn_reserve,    "etxn_reserve",     { WI32                      }),
         functionImport ( hook_api::etxn_generation, "etxn_generation",  {                           }),
-//15        
         functionImport ( hook_api::otxn_burden,     "otxn_burden",      {                           }),
         functionImport ( hook_api::otxn_generation, "otxn_generation",  {                           }),
         functionImport ( hook_api::otxn_field_txt,  "otxn_field_txt",   { WI32, WI32, WI32          }),
         functionImport ( hook_api::otxn_field,      "otxn_field",       { WI32, WI32, WI32          }),
         functionImport ( hook_api::otxn_id,         "otxn_id",          { WI32, WI32                }),
-//20
         functionImport ( hook_api::otxn_type,       "otxn_type",        {                           }),
         functionImport ( hook_api::hook_account,    "hook_account",     { WI32, WI32                }),
         functionImport ( hook_api::hook_hash,       "hook_hash",        { WI32, WI32                }),    
         functionImport ( hook_api::fee_base,        "fee_base",         {                           }),
         functionImport ( hook_api::ledger_seq,      "ledger_seq",       {                           }),
-//25    
         functionImport ( hook_api::nonce,           "nonce",            { WI32                      }),    
         functionImport ( hook_api::state,           "state",            { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::state_foreign,   "state_foreign",    { WI32, WI32, WI32, WI32,
                                                                           WI32, WI32                }),
         functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }), 
         functionImport ( hook_api::slot_set,        "slot_set",         { WI32, WI32, WI32, WI32    }),
-//30        
         functionImport ( hook_api::slot_clear,      "slot_clear",       { WI32                      }),
         functionImport ( hook_api::slot_field_txt,  "slot_field_txt",   { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::slot_field,      "slot_field",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::slot_id,         "slot_id",          { WI32                      }),
         functionImport ( hook_api::slot_type,       "slot_type",        { WI32                      }),
-//35        
         functionImport ( hook_api::trace,           "trace",            { WI32, WI32, WI32          }),
         functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      }),
         functionImport ( hook_api::trace_num,       "trace_num",        { WI32, WI32, WI64          })

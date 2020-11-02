@@ -13,6 +13,8 @@
 
 using namespace ripple;
 
+
+
 bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
     // invert ttHOOK_SET bit
     hookOn ^= (1ULL << ttHOOK_SET);
@@ -264,7 +266,7 @@ std::optional<ripple::uint256>
 inline
 make_state_key(
         std::string_view source)
-{   
+{
 
     size_t source_len = source.size();
 
@@ -283,7 +285,7 @@ make_state_key(
 
     for (; i < 32; ++i)
         key_buffer[i] = data[i - pad];
-    
+
     return ripple::uint256::fromVoid(key_buffer);
 }
 
@@ -317,8 +319,8 @@ int64_t hook_api::state_set (
     uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize);
     if (read_len > maxSize)
         return TOO_BIG;
-    
-    auto const key = 
+
+    auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
 
@@ -390,10 +392,10 @@ int64_t hook_api::state_foreign (
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     bool is_foreign = false;
-    if (aread_ptr == 0 && aread_len == 0)
+    if (aread_ptr == 0)
     {
         // valid arguments, local state
-    } else if (aread_ptr > 0 && aread_len > 0)
+    } else if (aread_ptr > 0)
     {
         // valid arguments, foreign state
         is_foreign = true;
@@ -411,11 +413,11 @@ int64_t hook_api::state_foreign (
     if (kread_len > 32)
         return TOO_BIG;
 
-    if (aread_len != 20)
+    if (is_foreign && aread_len != 20)
         return INVALID_ACCOUNT;
 
 
-    auto const key = 
+    auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
     if (!key)
@@ -427,6 +429,9 @@ int64_t hook_api::state_foreign (
         const auto& cacheEntry = hookCtx.changedState->find(*key);
         if (cacheEntry != hookCtx.changedState->end())
         {
+            if (write_ptr == 0)
+                return data_as_int64(cacheEntry->second.second.data(), cacheEntry->second.second.size());
+
             if (cacheEntry->second.second.size() > write_len)
                 return TOO_SMALL;
 
@@ -453,6 +458,9 @@ int64_t hook_api::state_foreign (
 
     if (!is_foreign)
         hookCtx.changedState->emplace(*key, std::pair<bool, ripple::Blob>(false, b));
+
+    if (write_ptr == 0)
+        return data_as_int64(b.data(), b.size());
 
     if (b.size() > write_len)
         return TOO_SMALL;
@@ -681,7 +689,8 @@ int64_t hook_api::otxn_field (
         uint32_t field_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+
+    if (write_ptr != 0 && NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     auto const& tx = applyCtx.tx;
@@ -701,6 +710,9 @@ int64_t hook_api::otxn_field (
     Serializer s;
     field.add(s);
 
+    if (write_ptr == 0)
+        return data_as_int64(s.getDataPtr(), s.getDataLength());
+
     if (s.getDataLength() - (is_account ? 1 : 0) > write_len)
         return TOO_SMALL;
 
@@ -710,6 +722,7 @@ int64_t hook_api::otxn_field (
         memory, memory_length);
 
 }
+
 
 int64_t hook_api::slot_clear (
         wasmer_instance_context_t * wasm_ctx,
@@ -1128,13 +1141,132 @@ int64_t hook_api::util_sha512h (
     return NOT_IMPLEMENTED; // RH TODO
 }
 
-int64_t hook_api::util_subfield ( 
+// returns object length including header bytes (and footer bytes in the event of array or object)
+// negative indicates error
+// -1 = unexpected end of bytes
+// -2 = unknown type (detected early)
+// -3 = unknown type (end of function)
+// -4 = excessive stobject nesting
+// -5 = excessively large array or object
+inline int32_t get_stobject_length (
+        unsigned char* start,
+        unsigned char* maxptr,
+        int& type,
+        int& field,
+        int recursion_depth = 0)
+{
+    if (recursion_depth > 10)
+        return -4;
+
+    unsigned char* end = maxptr;
+    unsigned char* upto = start;
+    int high = *upto >> 4;
+    int low = *upto & 0xF;
+
+    upto++; if (upto >= end) return -1;
+    if (high > 0 && low > 0)
+    {
+        // common type common field
+        type = high;
+        field = low;
+    } else if (high > 0) {
+        // common type, uncommon field
+        type = high;
+        field = *upto++;
+    } else if (low > 0) {
+        // common field, uncommon type
+        field = low;
+        type = *upto++;
+    } else {
+        // uncommon type and field
+        type = *upto++;
+        if (upto >= end) return -1;
+        field = *upto++;
+    }
+
+    if (upto >= end) return -1;
+
+    // RH TODO: link this to rippled's internal STObject constants
+    // E.g.:
+    /*
+    int field_code = (safe_cast<int>(type) << 16) | field;
+    auto const& fieldObj = ripple::SField::getField;
+    */
+
+    if (type < 1 || type > 19 || ( type >= 9 && type <= 13))
+        return -2;
+
+    bool is_vl = (type == 8 /*ACCID*/ || type == 7 || type == 18 || type == 15 || type == 14 || type == 19);
+    int length = -1;
+    if (is_vl)
+    {
+        length = *upto++;
+        if (length == 0 || upto >= end)
+            return -1;
+
+        if (length < 193)
+        {
+            // do nothing
+        } else if (length > 192 && length < 241)
+        {
+            length -= 193;
+            length *= 256;
+            length += *upto++ + 193; if (upto > end) return -1;
+        } else {
+            int b2 = *upto++; if (upto >= end) return -1;
+            length -= 241;
+            length *= 65536;
+            length += 12481 + (b2 * 256) + *upto++; if (upto >= end) return -1;
+        }
+    } else if ((type >= 1 && type <= 5) || type == 16 || type == 17 )
+    {
+        length =    (type ==  1 ?  2 :
+                    (type ==  2 ?  4 :
+                    (type ==  3 ?  8 :
+                    (type ==  4 ? 16 :
+                    (type ==  5 ? 32 :
+                    (type == 16 ?  1 :
+                    (type == 17 ? 20 : -1 )))))));
+
+    } else if (type == 6) /* AMOUNT */
+    {
+        length =  (*upto++ >> 6 == 1) ? 8 : 48;
+        if (upto >= end) return -1;
+    }
+
+    if (length > -1)
+       return length + (upto - start);
+
+
+    if (type == 15 || type == 14) /* Object / Array */
+    {
+       for(int i = 0; i < 1024; ++i)
+       {
+            int subfield = -1;
+            int subtype = -1;
+            int32_t sublength = get_stobject_length(upto, end, subtype, subfield, recursion_depth + 1);
+            if (sublength < 0) return -1;
+            upto += sublength;
+            if (upto >= end)
+                return -1;
+
+            if ((*upto == 0xD1U && type == 0xDU) ||
+                (*upto == 0xE1U && type == 0xEU))
+                return (upto - start) + 1;
+       }
+       return -5;
+    }
+
+    return -3;
+
+}
+
+
+int64_t hook_api::util_subfield (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
 {
-    return
-        NOT_IMPLEMENTED;
-}/*
+
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -1142,95 +1274,65 @@ int64_t hook_api::util_subfield (
     if (read_len < 1)
         return TOO_SMALL;
 
-    unsigned char* upto = (unsigned char*)(memory + read_ptr);
-    unsigned char* end = upto + read_len;
+    unsigned char* start = (unsigned char*)(memory + read_ptr);
+    unsigned char* upto = start;
+    unsigned char* end = start + read_len;
 
     if (*upto++ & 0xF0 != 0xE0)
         return INVALID_ARGUMENT;
 
-    int object_depth = 0;
-    int array_depth = 0;
-    int expected_bytes = 0;
-    while (upto != end)
+    for (int i = 0; i < 1024 && upto < end; ++i)
     {
-        if (expected_bytes > 0)
-        {
-            expected_bytes--;
-            continue;
-        }
-
-        int high = *upto >> 4;
-        int low = *upto & 0xF;
-
         int type = -1;
         int field = -1;
-        upto++; if (upto == end) break;
-        if (high > 0 && low > 0)
-        {
-            // common type common field
-            type = high;
-            field = low;
-        } else if (high > 0) {
-            // common type, uncommon field
-            type = high;
-            field = *upto;
-        } else if (low > 0) {
-            // common field, uncommon type
-            field = low;
-            type = *upto;
-        } else {
-            // uncommon type and field
-            type = *upto++;
-            if (upto == end) break;
-            field = *upto;
-        }
+        int32_t length = get_stobject_length(upto, end, type, field);
+        if (length < 0)
+            return PARSE_ERROR;
+        if ((type << 16) + field == field_id)
+            return (((int64_t)(upto - start)) << 32) /* start of the object */
+                +   length;
 
-        upto++; if (upto == end) break;
-
-        // RH TODO: link this to rippled's internal STObject constants
-        if (type < 1 || type > 19 || ( type >= 9 && type <= 13)) 
-            return INTERNAL_ERROR; 
-
-        bool is_vl = (type == 7 || type == 18 || type == 15 || type == 14 || type == 19);
-        int length = 0;
-        if (is_vl)
-        {
-            length = *upto++;
-            if (length == 0) continue;
-            if (upto == end) break;
-            if (length < 193)
-            {
-                // do nothing
-            } else if (length > 192 && length < 241)
-            {
-                length -= 193;
-                length *= 256;
-                length += *upto++ + 193; if (upto == end) break;
-            } else {
-                int b2 = *upto++; if (upto == end) break;
-                length -= 241;
-                length *= 65536;
-                length += 12481 + (b2 * 256) + *upto++; if (upto == end) break;
-            }
-        }
-
-
-        // RH TODO upto here
-//        if (field == field_id)
-
+        upto += length;
     }
-    
-}*/
-  
-int64_t hook_api::util_subarray ( 
+
+    return DOESNT_EXIST;
+}
+
+int64_t hook_api::util_subarray (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
 {
+
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    return NOT_IMPLEMENTED;
+    if (read_len < 1)
+        return TOO_SMALL;
+
+    unsigned char* start = (unsigned char*)(memory + read_ptr);
+    unsigned char* upto = start;
+    unsigned char* end = start + read_len;
+
+    if (*upto++ & 0xF0 != 0xD0)
+        return INVALID_ARGUMENT;
+
+    for (int i = 0; i < 1024 && upto < end; ++i)
+    {
+        int type = -1;
+        int field = -1;
+        int32_t length = get_stobject_length(upto, end, type, field);
+        if (length < 0)
+            return PARSE_ERROR;
+
+        if (i == index_id)
+            return (((int64_t)(upto - start)) << 32) /* start of the object */
+                +   length;
+
+        upto += length;
+    }
+
+    return DOESNT_EXIST;
 }
 
 int64_t hook_api::util_raddr (
