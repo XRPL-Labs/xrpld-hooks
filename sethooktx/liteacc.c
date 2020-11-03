@@ -39,7 +39,7 @@ int64_t hook(int64_t reserved )
         accept(SBUF("Liteacc: Outgoing transaction"), 2);
    
     /**
-     * Lite account example has three modes of operation
+     * Lite account example has the following modes of operation
      * ------------------------------------------------
      * 1. Setup:        At least 1 XRP is sent, with an invoice id set to a public key of a dummy account
      *                  If the lite account associated with that public key exists the 1 XRP is deposited
@@ -78,6 +78,9 @@ int64_t hook(int64_t reserved )
     // check for the presence of an invoice id
     int64_t invoice_id_len = otxn_field(SBUF(user_pubkey), sfInvoiceID);
 
+    TRACEVAR(invoice_id_len);
+    TRACEHEX(user_pubkey);
+
     // ensure the invoice id can be used as a lookup key (if it has been provided)
     if (invoice_id_len == 32)
     {
@@ -108,7 +111,7 @@ int64_t hook(int64_t reserved )
         CLEARBUF(keybuf); // zero pad the left
         UINT32_TO_BUF(keybuf + 28, dest_tag);
 
-        if (state(SBUF(user_pubkey), SBUF(keybuf)))
+        if (state(SBUF(user_pubkey), SBUF(keybuf)) > 0)
             have_pubkey = 1;
         else
             rollback(SBUF("Liteacc: dest tag suppled with transaction was not connected to a liteacc."), 4);
@@ -116,7 +119,6 @@ int64_t hook(int64_t reserved )
 
     if (!have_pubkey)
         rollback(SBUF("Liteacc: Cannot continue without a lite acc public key, please supply via InvoiceID"), 5);
-
 
     // fetch the user's balance if they have one
     uint64_t user_balance = 0;
@@ -128,7 +130,6 @@ int64_t hook(int64_t reserved )
         new_user = 0;
     else
         user_balance = 0;
-    
 
     // if we are dealing with an existing user then check if there is a memo attached to the transaction
     uint8_t* payment_ptr = 0;
@@ -219,10 +220,14 @@ int64_t hook(int64_t reserved )
         if (state_set(SBUF(user_pubkey), SBUF(user_dtag_key)) < 0)
             rollback(SBUF("Liteacc: could not assign new user a destination tag"), 11);
 
-        accept(SBUF("Liteacc: New user created, assigned dtag in hook return code."), dest_tag);
+        RBUF2(out, out_len, "Liteacc: New user's balance is ", user_balance, " and dest tag is ", dest_tag);
+        accept(out, out_len, 0);
     }
-
-    accept(SBUF("Liteacc: Balance credited."), 0);
+    
+    // format a string to return in meta
+    RBUF(out, out_len, "Liteacc: User balance is ", user_balance);
+    // return the string and accept the transaction
+    accept(out, out_len, 0);
     return 0;
 /*
     // create a buffer to write the emitted transaction into

@@ -7,8 +7,81 @@
 
 // hook developers should use this guard macro, simply GUARD(<maximum iterations>)
 #define GUARD(maxiter) _g(__LINE__, maxiter+1)
+#define GUARDM(maxiter, n) _g((__LINE__ << 16) + n, maxiter+1)
 
 #define SBUF(str) (uint32_t)(str), sizeof(str)
+
+
+// make a report buffer as a c-string
+// provide a name for a buffer to declare (buf)
+// provide a static string
+// provide an integer to print after the string
+#define RBUF(buf, out_len, str, num)\
+unsigned char buf[sizeof(str) + 21];\
+int out_len = 0;\
+{\
+    int i = 0;\
+    for (; GUARDM(sizeof(str),1),i < sizeof(str); ++i)\
+        (buf)[i] = str[i];\
+    if ((buf)[sizeof(str)-1] == 0) i--;\
+    if ((num) < 0) (buf)[i++] = '-';\
+    uint64_t unsigned_num = (uint64_t)( (num) < 0 ? (num) * -1 : (num) );\
+    uint64_t j = 10000000000000000000ULL;\
+    int start = 1;\
+    for (; GUARDM(20,2), unsigned_num > 0 && j > 0; j /= 10)\
+    {\
+        unsigned char digit = ( unsigned_num / j ) % 10;\
+        if (digit == 0 && start)\
+            continue;\
+        start = 0;\
+        (buf)[i++] = '0' + digit;\
+    }\
+    (buf)[i] = '\0';\
+    out_len = i;\
+}
+
+#define RBUF2(buff, out_len, str, num, str2, num2)\
+unsigned char buff[sizeof(str) + sizeof(str2) + 42];\
+int out_len = 0;\
+{\
+    unsigned char* buf = buff;\
+    int i = 0;\
+    for (; GUARDM(sizeof(str),1),i < sizeof(str); ++i)\
+        (buf)[i] = str[i];\
+    if ((buf)[sizeof(str)-1] == 0) i--;\
+    if ((num) < 0) (buf)[i++] = '-';\
+    uint64_t unsigned_num = (uint64_t)( (num) < 0 ? (num) * -1 : (num) );\
+    uint64_t j = 10000000000000000000ULL;\
+    int start = 1;\
+    for (; GUARDM(20,2), unsigned_num > 0 && j > 0; j /= 10)\
+    {\
+        unsigned char digit = ( unsigned_num / j ) % 10;\
+        if (digit == 0 && start)\
+            continue;\
+        start = 0;\
+        (buf)[i++] = '0' + digit;\
+    }\
+    buf += i;\
+    out_len += i;\
+    i = 0;\
+    for (; GUARDM(sizeof(str2),3),i < sizeof(str2); ++i)\
+        (buf)[i] = str2[i];\
+    if ((buf)[sizeof(str2)-1] == 0) i--;\
+    if ((num2) < 0) (buf)[i++] = '-';\
+    unsigned_num = (uint64_t)( (num2) < 0 ? (num2) * -1 : (num2) );\
+    j = 10000000000000000000ULL;\
+    start = 1;\
+    for (; GUARDM(20,4), unsigned_num > 0 && j > 0; j /= 10)\
+    {\
+        unsigned char digit = ( unsigned_num / j ) % 10;\
+        if (digit == 0 && start)\
+            continue;\
+        start = 0;\
+        (buf)[i++] = '0' + digit;\
+    }\
+    (buf)[i] = '\0';\
+    out_len += i;\
+}
 
 #define TRACEVAR(v) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
 #define TRACEHEX(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), 1);
