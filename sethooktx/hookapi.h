@@ -18,7 +18,8 @@ extern int64_t util_raddr          (uint32_t write_ptr, uint32_t write_len,
                                     uint32_t read_ptr,  uint32_t read_len);
 extern int64_t util_accid          (uint32_t write_ptr, uint32_t write_len,
                                     uint32_t read_ptr,  uint32_t read_len);
-extern int64_t util_verify         (uint32_t sread_ptr, uint32_t sread_len,
+extern int64_t util_verify         (uint32_t dread_ptr, uint32_t dread_len,
+                                    uint32_t sread_ptr, uint32_t sread_len,
                                     uint32_t kread_ptr, uint32_t kread_len);
 extern int64_t util_sha512h        (uint32_t write_ptr, uint32_t write_len,
                                     uint32_t read_ptr,  uint32_t read_len);

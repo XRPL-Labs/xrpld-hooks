@@ -1149,11 +1149,11 @@ int64_t hook_api::util_sha512h (
 // -4 = excessive stobject nesting
 // -5 = excessively large array or object
 inline int32_t get_stobject_length (
-        unsigned char* start,
-        unsigned char* maxptr,
-        int& type,
-        int& field,
-        int recursion_depth = 0)
+    unsigned char* start,
+    unsigned char* maxptr,
+    int& type,
+    int& field,
+    int recursion_depth = 0)
 {
     if (recursion_depth > 10)
         return -4;
@@ -1196,7 +1196,9 @@ inline int32_t get_stobject_length (
     if (type < 1 || type > 19 || ( type >= 9 && type <= 13))
         return -2;
 
-    bool is_vl = (type == 8 /*ACCID*/ || type == 7 || type == 18 || type == 15 || type == 14 || type == 19);
+    bool is_vl = (type == 8 /*ACCID*/ || type == 7 || type == 18 || type == 19);
+
+
     int length = -1;
     if (is_vl)
     {
@@ -1234,9 +1236,10 @@ inline int32_t get_stobject_length (
         if (upto >= end) return -1;
     }
 
+    //printf("%d - Field: %d Type: %d VL: %s Len: %d\n", 
+    //        recursion_depth, field, type, (is_vl ? "yes": "no"), length);
     if (length > -1)
        return length + (upto - start);
-
 
     if (type == 15 || type == 14) /* Object / Array */
     {
@@ -1314,20 +1317,21 @@ int64_t hook_api::util_subarray (
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    if (*upto++ & 0xF0 != 0xD0)
-        return INVALID_ARGUMENT;
+    if (*upto & 0xF0 == 0xD0)
+        upto++;
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
         int type = -1;
         int field = -1;
         int32_t length = get_stobject_length(upto, end, type, field);
+        printf("length: %d\n", length);
         if (length < 0)
             return PARSE_ERROR;
 
         if (i == index_id)
             return (((int64_t)(upto - start)) << 32) /* start of the object */
-                +   length;
+                +   (uint32_t)(length);
 
         upto += length;
     }
@@ -1401,13 +1405,48 @@ int64_t hook_api::util_accid (
         memory, memory_length);
 }
 
+
+int64_t hook_api::util_verify_sto (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t tread_ptr, uint32_t tread_len)
+{
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+/*
+    ripple::Serializer ss { (void*)(memory + tread_ptr), tread_len };
+    auto const sig = get(st, sigField);
+    if (!sig)
+        return false;
+    Serializer ss;
+    ss.add32(prefix);
+    st.addWithoutSigningFields(ss);
+    return verify(
+        pk, Slice(ss.data(), ss.size()), Slice(sig->data(), sig->size()));
+*/
+    return NOT_IMPLEMENTED;
+}
+
+
+        
+
 int64_t hook_api::util_verify (
         wasmer_instance_context_t * wasm_ctx,
+        uint32_t dread_ptr, uint32_t dread_len,
         uint32_t sread_ptr, uint32_t sread_len,
         uint32_t kread_ptr, uint32_t kread_len )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    if (NOT_IN_BOUNDS(dread_ptr, dread_len, memory_length) ||
+        NOT_IN_BOUNDS(sread_ptr, sread_len, memory_length) ||
+        NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    ripple::Slice keyslice  {reinterpret_cast<const void*>(kread_ptr + memory), kread_len};
+    ripple::Slice data {reinterpret_cast<const void*>(dread_ptr + memory), dread_len};
+    ripple::Slice sig  {reinterpret_cast<const void*>(sread_ptr + memory), sread_len};
+    ripple::PublicKey key { keyslice };
+    return verify(key, data, sig, false) ? 1 : 0;
 }
 
 int64_t hook_api::fee_base (

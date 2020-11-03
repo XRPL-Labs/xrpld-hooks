@@ -91,8 +91,10 @@ namespace hook_api {
                                             uint32_t read_ptr, uint32_t read_len );
     int64_t util_accid          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t read_ptr, uint32_t read_len );
-    int64_t util_verify         ( wic_t* w, uint32_t sread_ptr, uint32_t sread_len,
+    int64_t util_verify         ( wic_t* w, uint32_t dread_ptr, uint32_t dread_len,
+                                            uint32_t sread_ptr, uint32_t sread_len,
                                             uint32_t kread_ptr, uint32_t kread_len );
+    int64_t util_verify_sto     ( wic_t* w, uint32_t tread_ptr, uint32_t tread_len );
     int64_t util_sha512h        ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t read_ptr,  uint32_t read_len );
     
@@ -215,7 +217,7 @@ namespace hook {
     #define WI32 (wasmer_value_tag::WASM_I32)
     #define WI64 (wasmer_value_tag::WASM_I64)
 
-    const int imports_count = 40;
+    const int imports_count = 41;
     wasmer_import_t imports[] = {
 
         
@@ -229,7 +231,9 @@ namespace hook {
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
         functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32    }),
+        functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32,
+                                                                          WI32, WI32                }),
+        functionImport ( hook_api::util_verify_sto, "util_verify_sto",  { WI32, WI32                }),
         functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_subfield,   "util_subfield",    { WI32, WI32, WI32          }),
         functionImport ( hook_api::util_subarray,   "util_subarray",    { WI32, WI32, WI32          }),

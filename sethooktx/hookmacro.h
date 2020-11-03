@@ -84,7 +84,7 @@ int out_len = 0;\
 }
 
 #define TRACEVAR(v) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
-#define TRACEHEX(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), 1);
+#define TRACEHEX(v) trace((uint32_t)(v), (uint32_t)(sizeof(v)), 1);
 
 #define CLEARBUF(b)\
 {\
@@ -104,8 +104,8 @@ int out_len = 0;\
           (((uint64_t)((amount_buffer)[6])) <<  8) +\
           (((uint64_t)((amount_buffer)[7]))))))
 
-#define SUB_LENGTH(x) ((int32_t)(x >> 32))
-#define SUB_OFFSET(x) ((int32_t)(x & 0xFFFFFFFFULL))
+#define SUB_OFFSET(x) ((int32_t)(x >> 32))
+#define SUB_LENGTH(x) ((int32_t)(x & 0xFFFFFFFFULL))
 
 // compare if two buffers are equal up to compare_len
 //int buffer_equal(uint8_t* buf1, uint8_t* buf2, uint32_t compare_len, int max_iter)
@@ -126,6 +126,21 @@ int out_len = 0;\
         }\
     }\
 }
+
+#define STARTS_WITH(output, buf, buflen, str)\
+{\
+    output = sizeof((str))-1 > buflen ? 0 : sizeof(str)-1;\
+    if (output)\
+    {\
+        for (int i = 0; GUARDM(sizeof(str),1),i < sizeof((str))-1; ++i)\
+        if ((buf)[i] != (str)[i])\
+        {\
+            output = 0;\
+            break;\
+        }\
+    }\
+}
+
 
 #define UINT32_TO_BUF(buf_raw, i)\
 {\

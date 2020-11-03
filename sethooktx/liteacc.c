@@ -70,6 +70,80 @@ int64_t hook(int64_t reserved )
     if (amount_sent < HOOK_USAGE_FEE_DROPS)
         rollback(SBUF("Liteacc: Insufficient drops sent to do anything!"), 2);
 
+
+    // check for the presence of a memo
+    uint8_t memos[2048];
+    int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
+    TRACEVAR(memos_len);
+    trace(memos, memos_len, 1);
+    do {
+
+        unsigned char* payload_ptr = 0;
+        uint32_t payload_len = 0;
+
+        unsigned char* signature_ptr = 0;
+        uint32_t signature_len = 0;
+
+        unsigned char* publickey_ptr = 0;
+        uint32_t publickey_len = 0;
+
+        for (int i = 0; GUARD(4), i < 3; ++i)
+        {
+            int64_t memo_lookup = util_subarray(memos, memos_len, i);
+            if (memo_lookup < 0)
+                break; // invalid or too few memos
+            unsigned char*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
+            uint32_t memo_len = SUB_LENGTH(memo_lookup);
+            
+            int64_t data_lookup = util_subfield(memo_ptr, memo_len, sfMemoData);
+            int64_t format_lookup = util_subfield(memo_ptr, memo_len, sfMemoFormat);
+            int64_t type_lookup = util_subfield(memo_ptr, memo_len, sfMemoType);
+            
+            if (data_lookup < 0 || format_lookup < 0 || type_lookup < 0)
+                break; 
+
+            unsigned char* data_ptr = SUB_OFFSET(data_lookup) + memos;
+            uint32_t data_len = SUB_LENGTH(data_lookup);
+
+            unsigned char* format_ptr = SUB_OFFSET(format_lookup) + memos;
+            uint32_t format_len = SUB_LENGTH(format_lookup);
+            
+//            unsigned char* type_ptr = SUB_OFFSET(type_lookup) + memos;
+//            uint32_t type_len = SUB_LENGTH(type_lookup);
+
+            int payload_offset = 0, signature_offset = 0, publickey_offset = 0;
+            STARTS_WITH(payload_offset, format_ptr, format_len, "signed/payload+"); 
+            STARTS_WITH(signature_offset, format_ptr, format_len, "signed/signature+"); 
+            STARTS_WITH(publickey_offset, format_ptr, format_len, "signed/publickey+");
+            
+            if (payload_offset)
+            {
+                payload_ptr = data_ptr;
+                payload_len = data_len;
+            } else if (signature_offset)
+            {
+                signature_ptr = data_ptr;
+                signature_len = data_len;
+            } else if (publickey_offset)
+            {
+                publickey_ptr = data_ptr;
+                publickey_len = data_len;
+            } 
+        }
+
+        if (payload_ptr && signature_ptr && publickey_ptr)
+        {
+            // process mode 3 here
+            // RH TODO upto here
+
+        }
+        
+     
+    } while (0); // allows for easy break out for control flow
+
+
+
+
     // the operation of this HOOK is reasonably complex so for demonstration purposes we collect
     // as much data about the situtation as possible and push execution logic to the end
     int32_t have_pubkey = 0, new_user = 1;
@@ -77,9 +151,6 @@ int64_t hook(int64_t reserved )
 
     // check for the presence of an invoice id
     int64_t invoice_id_len = otxn_field(SBUF(user_pubkey), sfInvoiceID);
-
-    TRACEVAR(invoice_id_len);
-    TRACEHEX(user_pubkey);
 
     // ensure the invoice id can be used as a lookup key (if it has been provided)
     if (invoice_id_len == 32)
@@ -93,7 +164,6 @@ int64_t hook(int64_t reserved )
                 all_zeros = 0;
         if (all_zeros)
             rollback(SBUF("Liteacc: invalid public key supplied in invoice_id"), 3);
-
         have_pubkey = 1;
     }
 
@@ -101,6 +171,8 @@ int64_t hook(int64_t reserved )
     // check for the presence of a destination tag
     // with most APIs we can feed in 0,0 to return a small field as an int64_t
     int64_t dest_tag_raw = otxn_field(0, 0, sfDestinationTag);
+    // destintation tags are stored as 4 byte unsigned integers but the above routine returns them as 64bit,
+    // so do a safe cast here... a negative value indicates the lookup failed which is also converted here to dt=0
     uint32_t dest_tag = (dest_tag_raw > 0 ? (uint32_t)(dest_tag_raw & 0xFFFFFFFFULL) : 0);
 
     // a user account can be credited via a destination tag but we need to look up their public key
@@ -109,18 +181,20 @@ int64_t hook(int64_t reserved )
         // construct our dtag state lookup key (must be 256 bits)
         uint8_t keybuf[32];
         CLEARBUF(keybuf); // zero pad the left
-        UINT32_TO_BUF(keybuf + 28, dest_tag);
+        UINT32_TO_BUF(keybuf + 28, dest_tag); // write the dest tag into the last four bytes
 
-        if (state(SBUF(user_pubkey), SBUF(keybuf)) > 0)
-            have_pubkey = 1;
+        if (state(SBUF(user_pubkey), SBUF(keybuf)) > 0) // perform the state lookup
+            have_pubkey = 1; // if it is successful we now have a public key for this user from the dtag
         else
             rollback(SBUF("Liteacc: dest tag suppled with transaction was not connected to a liteacc."), 4);
     }
 
+    // by this point in the hook we should definitely have a public key for the lite account, either because
+    // the user supplied it in the invoice id or because the user supplied a destination tag which we looked up
     if (!have_pubkey)
         rollback(SBUF("Liteacc: Cannot continue without a lite acc public key, please supply via InvoiceID"), 5);
 
-    // fetch the user's balance if they have one
+    // fetch the user's balance if they have one (if they don't they are a new user)
     uint64_t user_balance = 0;
     uint8_t  user_balance_buffer[8];
     int64_t  user_balance_len = 0;
@@ -131,37 +205,7 @@ int64_t hook(int64_t reserved )
     else
         user_balance = 0;
 
-    // if we are dealing with an existing user then check if there is a memo attached to the transaction
-    uint8_t* payment_ptr = 0;
-    uint32_t payment_len = 0;
    
-    if (!new_user) 
-    { 
-        // check for the presence of a memo
-        uint8_t memos[2048];
-        int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
-        TRACEVAR(memos_len);
-        if (memos_len > 0)
-        {
-            // select the memodata field 
-            int64_t sf = util_subfield(memos, memos_len, sfMemoData);
-
-            // if sfMemoData was found then extract the information from the return value of the subfield api
-            if (sf > 0)
-            {
-                payment_len = SUB_LENGTH(sf);
-                payment_ptr = SUB_OFFSET(sf) + memos;
-            }
-        }
-    }
-
-   
-    // now we compute the mode based on what was provided (as detected above)
-    if (payment_ptr)
-    {
-        // mode 3 sending
-        rollback(SBUF("Liteacc: not yet implemented"), 100);
-    } 
 
     TRACEVAR(user_balance);
     // mode 2 receiving or mode 1 setup
