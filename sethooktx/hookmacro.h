@@ -6,8 +6,8 @@
 #define HOOKMACROS_INCLUDED 1
 
 // hook developers should use this guard macro, simply GUARD(<maximum iterations>)
-#define GUARD(maxiter) _g(__LINE__, maxiter+1)
-#define GUARDM(maxiter, n) _g((__LINE__ << 16) + n, maxiter+1)
+#define GUARD(maxiter) _g(__LINE__, (maxiter)+1)
+#define GUARDM(maxiter, n) _g(((__LINE__ << 16) + n), (maxiter)+1)
 
 #define SBUF(str) (uint32_t)(str), sizeof(str)
 
@@ -107,39 +107,31 @@ int out_len = 0;\
 #define SUB_OFFSET(x) ((int32_t)(x >> 32))
 #define SUB_LENGTH(x) ((int32_t)(x & 0xFFFFFFFFULL))
 
-// compare if two buffers are equal up to compare_len
-//int buffer_equal(uint8_t* buf1, uint8_t* buf2, uint32_t compare_len, int max_iter)
-#define BUFFER_EQUAL(output, buf1, buf2, compare_len)\
+// when using this macro buf1len may be dynamic but buf2len must be static
+// provide n >= 1 to indicate how many times the macro will be hit on the line of code
+// e.g. if it is in a loop that loops 10 times n = 10 
+#define BUFFER_EQUAL_GUARD(output, buf1, buf1len, buf2, buf2len, n)\
 {\
-    output = ( sizeof(buf1) < compare_len || sizeof(buf2) < compare_len || compare_len <= 0 ? 0 : 1 );\
-    if (output)\
+    output = ((buf1len) == (buf2len) ? 1 : 0);\
+    for (int x = 0; GUARDM( (buf2len) * (n), 1 ), x < (buf2len);\
+         ++x)\
     {\
-        for (int x = 0;\
-             GUARD( sizeof(buf1) > sizeof(buf2) ? sizeof(buf1) : sizeof(buf2) ), x < compare_len;\
-             ++x)\
-        {\
-            if (buf1[x] != buf2[x])\
-            {\
-                output = 0;\
-                break;\
-            }\
-        }\
-    }\
-}
-
-#define STARTS_WITH(output, buf, buflen, str)\
-{\
-    output = sizeof((str))-1 > buflen ? 0 : sizeof(str)-1;\
-    if (output)\
-    {\
-        for (int i = 0; GUARDM(sizeof(str),1),i < sizeof((str))-1; ++i)\
-        if ((buf)[i] != (str)[i])\
+        if ((buf1)[x] != (buf2)[x])\
         {\
             output = 0;\
             break;\
         }\
     }\
 }
+
+#define BUFFER_EQUAL_STR_GUARD(output, buf1, buf1len, str, n)\
+    BUFFER_EQUAL_GUARD(output, buf1, buf1len, str, (sizeof(str)-1), n)
+
+#define BUFFER_EQUAL_STR(output, buf1, buf1len, str)\
+    BUFFER_EQUAL_GUARD(output, buf1, buf1len, str, (sizeof(str)-1), 1)
+
+#define BUFFER_EQUAL(output, buf1, buf2, compare_len)\
+    BUFFER_EQUAL_GUARD(output, buf1, compare_len, buf2, compare_len, 1)
 
 
 #define UINT32_TO_BUF(buf_raw, i)\

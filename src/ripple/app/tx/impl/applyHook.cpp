@@ -1149,10 +1149,12 @@ int64_t hook_api::util_sha512h (
 // -4 = excessive stobject nesting
 // -5 = excessively large array or object
 inline int32_t get_stobject_length (
-    unsigned char* start,
-    unsigned char* maxptr,
-    int& type,
-    int& field,
+    unsigned char* start,   // in
+    unsigned char* maxptr,  // in
+    int& type,              // out
+    int& field,             // out
+    int& payload_start,     // out the start of actual payload data for this type
+    int& payload_length,    // out the length of actual payload data for this type
     int recursion_depth = 0)
 {
     if (recursion_depth > 10)
@@ -1236,26 +1238,39 @@ inline int32_t get_stobject_length (
         if (upto >= end) return -1;
     }
 
-    //printf("%d - Field: %d Type: %d VL: %s Len: %d\n", 
-    //        recursion_depth, field, type, (is_vl ? "yes": "no"), length);
     if (length > -1)
-       return length + (upto - start);
+    {
+        payload_start = upto - start;
+        payload_length = length;
+//        printf("%d get_stobject_length field: %d Type: %d VL: %s Len: %d Payload_Start: %d Payload_Len: %d\n", 
+//            recursion_depth, field, type, (is_vl ? "yes": "no"), length, payload_start, payload_length);
+        return length + (upto - start);
+    }
 
     if (type == 15 || type == 14) /* Object / Array */
     {
+       payload_start = upto - start;
+
        for(int i = 0; i < 1024; ++i)
        {
-            int subfield = -1;
-            int subtype = -1;
-            int32_t sublength = get_stobject_length(upto, end, subtype, subfield, recursion_depth + 1);
-            if (sublength < 0) return -1;
+            int subfield = -1, subtype = -1, payload_start_ = -1, payload_length_ = -1;
+            int32_t sublength = get_stobject_length(
+                    upto, end, subtype, subfield, payload_start_, payload_length_, recursion_depth + 1);
+//            printf("%d get_stobject_length i %d %d-%d, upto %d sublength %d\n", recursion_depth, i,
+//                    subtype, subfield, upto - start, sublength);
+            if (sublength < 0)
+                return -1;
             upto += sublength;
             if (upto >= end)
                 return -1;
 
             if ((*upto == 0xD1U && type == 0xDU) ||
                 (*upto == 0xE1U && type == 0xEU))
-                return (upto - start) + 1;
+            {
+                payload_length = upto - start - payload_start;
+                upto++;
+                return (upto - start);
+            }
        }
        return -5;
     }
@@ -1281,19 +1296,20 @@ int64_t hook_api::util_subfield (
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    if (*upto++ & 0xF0 != 0xE0)
-        return INVALID_ARGUMENT;
+    if (*upto & 0xF0 == 0xE0)
+        upto++;
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
-        int type = -1;
-        int field = -1;
-        int32_t length = get_stobject_length(upto, end, type, field);
+        int type = -1, field = -1, payload_start = -1, payload_length = -1;
+        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
         if (length < 0)
             return PARSE_ERROR;
+//        printf("util_subfield: length %d payload_length %d upto %d payload_start %d\n", 
+//                length, payload_length, (upto - start), (upto - start) + payload_start);
         if ((type << 16) + field == field_id)
-            return (((int64_t)(upto - start)) << 32) /* start of the object */
-                +   length;
+            return (((int64_t)(upto - start + payload_start)) << 32) /* start of the object */
+                + (uint32_t)(payload_length);
 
         upto += length;
     }
@@ -1322,10 +1338,11 @@ int64_t hook_api::util_subarray (
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
-        int type = -1;
-        int field = -1;
-        int32_t length = get_stobject_length(upto, end, type, field);
-        printf("length: %d\n", length);
+//        printf("util_subarray [%d] called: upto = %d: %02X%02X%02X%02X%02X\n", i, (upto - start),
+//                upto[0], upto[1], upto[2], upto[3], upto[4]);
+        int type = -1, field = -1, payload_start = -1, payload_length = -1;
+        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
+//        printf("util_subarray length: %d\n", length);
         if (length < 0)
             return PARSE_ERROR;
 

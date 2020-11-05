@@ -4,7 +4,7 @@
 int64_t hook(int64_t reserved) __attribute__((used));
 int64_t cbak(int64_t reserved) __attribute__((used));
 
-int64_t cbak(int64_t reserved) 
+int64_t cbak(int64_t reserved)
 {
     accept(0,0,0);
     return 0;
@@ -19,7 +19,7 @@ int64_t hook(int64_t reserved ) {
     // since hooks can be triggered by both incoming and ougoing transactions this is important to know
     unsigned char hook_accid[20];
     hook_account((uint32_t)hook_accid, 20);
-    
+
     // NB:
     //  almost all of the hook apis require a buffer pointer and buffer length to be supplied ... to make this a
     //  little easier to code a macro: `SBUF(your_buffer)` expands to `your_buffer, sizeof(your_buffer)`
@@ -31,7 +31,7 @@ int64_t hook(int64_t reserved ) {
     if (account_field_len < 20)                                   // negative values indicate errors from every api
         rollback(SBUF("Carbon: sfAccount field missing!!!"), 1);  // this code could never be hit in prod
                                                                   // but it's here for completeness
-                                                                  
+
     // compare the "From Account" (sfAccount) on the transaction with the account the hook is running on
     int equal = 0; BUFFER_EQUAL(equal, hook_accid, account_field, 20);
     if (!equal)
@@ -42,7 +42,7 @@ int64_t hook(int64_t reserved ) {
     }
 
     // execution to here means the user has sent a valid transaction FROM the account the hook is installed on
-    
+
     // fetch the sent Amount
     // Amounts can be 384 bits or 64 bits. If the Amount is an XRP value it will be 64 bits.
     unsigned char amount_buffer[48];
@@ -59,17 +59,17 @@ int64_t hook(int64_t reserved ) {
     {
         trace(SBUF("Carbon: XRP transaction detected, computing 1% to send to rfCarbon"), 0);
         int64_t otxn_drops = AMOUNT_TO_DROPS(amount_buffer);
-        TRACEVAR(otxn_drops); 
+        TRACEVAR(otxn_drops);
         if (otxn_drops > 100000)   // if its less we send the default amount. or if there was an error we send default
             drops_to_send = (int64_t)((double)otxn_drops * 0.01f); // otherwise we send 1%
     }
 
-    TRACEVAR(drops_to_send);    
+    TRACEVAR(drops_to_send);
 
     // hooks communicate accounts via the 20 byte account ID, this can be generated from an raddr like so
     // a more efficient way to do this is precompute the account-id from the raddr (if the raddr never changes)
     uint8_t carbon_accid[20];
-    int64_t ret = util_accid( 
+    int64_t ret = util_accid(
             SBUF(carbon_accid),                                   /* <-- generate into this buffer  */
             SBUF("rfCarbonVNTuXckX6x2qTMFmFSnm6dEWGX") );         /* <-- from this r-addr           */
     TRACEVAR(ret);
@@ -90,7 +90,7 @@ int64_t hook(int64_t reserved ) {
     emit(SBUF(tx));
 
     // accept and allow the original transaction through
-    accept(SBUF("Carbon: Emitted a transaction"), 0); 
+    accept(SBUF("Carbon: Emitted a transaction"), 0);
     return 0;
 
 }

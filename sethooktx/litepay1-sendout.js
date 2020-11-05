@@ -70,7 +70,8 @@ api.connect().then(() => {
     {
         Destination: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         DestinationTag: 0,
-        SigningPubKey: litepubkey,
+        SourceTag: 1,
+        PublicKey: litepubkey,
         Amount: process.argv.length > 2 ? process.argv[2] : "1000000",
         Sequence: Math.floor(Date.now()/1000)
     });
