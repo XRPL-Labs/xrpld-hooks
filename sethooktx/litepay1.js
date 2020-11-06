@@ -31,7 +31,7 @@ api.connect().then(() => {
     j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
-        Amount: ( process.argv.length == 3 ? process.argv[2] : ""+ ( ~~(Date.now() / 1000) )) ,
+        Amount: '500000000', // 500 XRP
         Destination: "rGGLq3bp1oMjzFwwXnt3kMVtqgKpcue957",
         LastLedgerSequence: 20,
         InvoiceID: "C8822EE339D53EEC3F7C547C055614AAC26580B2A6462F4B72FDF3395F2392A5",

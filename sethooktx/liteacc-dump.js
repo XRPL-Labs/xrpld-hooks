@@ -128,7 +128,7 @@ exec('./rippled account_objects ' + hook_account, (err, stdout, stderr)=>
             {
                 if (ind == pk)
                 {
-                    lite_accounts[bal_lookup[pk]]['Balance'] = uint64_from_buf(j[x]['HookData']);
+                    lite_accounts[bal_lookup[pk]]['Balance'] = (uint64_from_buf(j[x]['HookData']) / 1000000n) + ' XRP';
                     j[x]['<LITEACC_TYPE>'] = 'Balance';
                     j[x]['<LITEACC_USER>'] = bal_lookup[pk];
                 }

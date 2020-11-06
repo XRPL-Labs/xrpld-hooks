@@ -72,7 +72,7 @@ api.connect().then(() => {
         DestinationTag: 0,
         SourceTag: 1,
         PublicKey: litepubkey,
-        Amount: process.argv.length > 2 ? process.argv[2] : "1000000",
+        Amount: "50000000", // 50 XRP
         Sequence: Math.floor(Date.now()/1000)
     });
 

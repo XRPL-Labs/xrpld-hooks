@@ -1,4 +1,4 @@
-// LITE PAY ACCOUNT 1 
+// LITE PAY ACCOUNT 2 
 /*
 > r.deriveKeypair(r.generateSeed({algorithm: "ed25519"}))
 {
@@ -30,7 +30,7 @@ api.connect().then(() => {
     j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
-        Amount: ( process.argv.length == 3 ? process.argv[2] : ""+ ( ~~(Date.now() / 1000) )) ,
+        Amount: "75000000" , // 75 XRP
         Destination: "rGGLq3bp1oMjzFwwXnt3kMVtqgKpcue957",
         LastLedgerSequence: 20,
         InvoiceID: "AB537E44B1B0188154C9B7B7D1B1CD351109406C789F4B65F6719E332CEDC764",

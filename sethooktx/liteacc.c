@@ -255,9 +255,16 @@ int64_t hook(int64_t reserved )
         if (state(SBUF(balance_buf), SBUF(pubkey_from_state)) != 8)
             rollback(SBUF("Liteacc: [3] Could not retrieve user's balance."), 140);
 
+        // EDGE case: a lite user pays another lite account
+        // in this case the destination is the hook account which would fail if emitted
+        int lite2lite = 0;
+        BUFFER_EQUAL(lite2lite, hook_accid, destination, 20);
+        
         // prepare to emit a transaction
-        etxn_reserve(1);
-        int64_t fee_base = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
+        if (!lite2lite)
+            etxn_reserve(1);
+
+        int64_t fee_base = lite2lite ? 0 : etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
 
         // calculate the total cost to the user and make sure they can pay
         uint64_t billable = drops_to_send + ADDITIONAL_SEND_FEE_DROPS + HOOK_USAGE_FEE_DROPS +
@@ -282,9 +289,46 @@ int64_t hook(int64_t reserved )
         CLEARBUF(balance_buf);
 
         // write balance
-        UINT64_TO_BUF(balance_buf, balance);
+        UINT64_TO_BUF(balance_buf, new_balance);
         if (state_set(SBUF(balance_buf), SBUF(pubkey_from_state)) != 8)
             rollback(SBUF("Liteacc: [3] Failed to set new balance for user."), 170);
+
+        // don't emit a transaction for lite to lite transfers
+        if (lite2lite)
+        {
+            // lookup destination tag
+            uint8_t state_request[32];
+            CLEARBUF(state_request);
+            UINT32_TO_BUF(state_request + 28, dest_tag);
+
+            uint8_t destpk_buf[32];
+            if (state(SBUF(destpk_buf), SBUF(state_request)) != 32)
+                rollback(SBUF("Liteacc: [3] Destination tag did not match any user (lite2lite xfer.)"), 180);
+
+            // look up dest user balance
+            CLEARBUF(balance_buf);
+            if (state(SBUF(balance_buf), SBUF(destpk_buf)) != 8)
+                rollback(SBUF("Liteacc: [3] Could not fetch destination balance (lite2lite xfer.)"), 190);
+
+            uint64_t dest_balance = UINT64_FROM_BUF(balance_buf);
+
+            // compute new balance
+            uint64_t new_dest_balance = dest_balance + drops_to_send;
+
+            if (new_dest_balance < dest_balance)
+                rollback(SBUF("Liteacc: [3] Invariant tripped."), 200);
+
+            CLEARBUF(balance_buf);
+            UINT64_TO_BUF(balance_buf, new_dest_balance);
+
+            // set new balance
+            if (state_set(SBUF(balance_buf), SBUF(destpk_buf)) != 8)
+                rollback(SBUF("Liteacc: [3] Could not set destination balance (lite2lite xfer.)"), 210);
+
+            RBUF2(out, out_len, "Liteacc: [3] Successful l2l xfer ", drops_to_send, ", new balance: ", new_balance);
+            accept(out, out_len, 0);
+        }
+
 
         // create a buffer to write the emitted transaction into
         unsigned char tx[PREPARE_PAYMENT_SIMPLE_SIZE];

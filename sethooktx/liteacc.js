@@ -22,7 +22,7 @@ api.connect().then(() => {
     var activate_carbon = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
-        Amount: "10000000000000",
+        Amount: "10000000000", // 1000 XRP
         Destination: "rGGLq3bp1oMjzFwwXnt3kMVtqgKpcue957",
         LastLedgerSequence: 20,
         Fee: "100000"
