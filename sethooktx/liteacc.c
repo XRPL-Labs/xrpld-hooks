@@ -1,3 +1,15 @@
+/**
+ * Liteacc.c - An example "lite accounts" hook providing a jointly owned account by many users who are uniquely
+ * identified by a src/dest tag and a public key.
+ * 
+ * Author: Richard Holland
+ * Date: 6 Nov 2020
+ *
+ * Note to the reader:
+ * This code is designed to be educational and easy to read, but a real production system would ideally be much
+ * more efficient with its state storage and processing.
+ **/
+
 #include <stdint.h>
 #include "hookapi.h"
 
@@ -16,10 +28,10 @@ int64_t cbak(int64_t reserved)
     return 0;
 }
 
-#define NEW_ACCOUNT_FEE_DROPS 1000000
-#define HOOK_USAGE_FEE_DROPS 100000
-#define ADDITIONAL_SEND_FEE_DROPS 0
-#define SUBSIDIZED_SENDING 1            /* if set to 1 then the hook acc pays outgoing fees */
+#define NEW_ACCOUNT_FEE_DROPS 1000000   /* this is the fee to charge instead of hook_usage for new account */
+#define HOOK_USAGE_FEE_DROPS 100000     /* the fee to do everything else */
+#define ADDITIONAL_SEND_FEE_DROPS 0     /* the fee to charge in addition to hook_usage */
+#define SUBSIDIZED_SENDING 1            /* if set to 0 then the liteacc pays outgoing tx fees, otherwise hook pays */
 
 int64_t hook(int64_t reserved )
 {
@@ -36,7 +48,6 @@ int64_t hook(int64_t reserved )
     // next fetch the sfAccount field from the originating transaction
     uint8_t account_field[20];
     int32_t account_field_len = otxn_field(SBUF(account_field), sfAccount);
-    TRACEVAR(account_field_len);
     if (account_field_len < 20)                                   // negative values indicate errors from every api
         rollback(SBUF("Liteacc: sfAccount field missing!!!"), 10); // this code could never be hit in prod
                                                                   // but it's here for completeness
@@ -81,67 +92,68 @@ int64_t hook(int64_t reserved )
     // check for the presence of a memo
     uint8_t memos[2048];
     int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
-    TRACEVAR(memos_len);
-    trace(memos, memos_len, 1);
 
     // process outgoing send requests encoded in tx memos, if any
-    if (memos_len > 0)
+    if (memos_len > 0)  // mode [3]
     {
-        unsigned char* payload_ptr = 0;
-        uint32_t payload_len = 0;
+        /**
+         * 'Signed Memos' for hooks are supplied in triples in the following 'default' format as per XLS-14d:
+         * NB: The +1 identifies the payload, you may provide multiple payloads
+         * Memo: { MemoData: <app data>,   MemoFormat: "signed/payload+1",   MemoType: [application defined] }
+         * Memo: { MemoData: <signature>,  MemoFormat: "signed/signature+1", MemoType: [application defined] }
+         * Memo: { MemoData: <public_key>, MemoFormat: "signed/publickey+1", MemoType: [application defined] }
+         **/
 
-        unsigned char* signature_ptr = 0;
-        uint32_t signature_len = 0;
+        uint32_t payload_len = 0, signature_len = 0, publickey_len = 0;
+        unsigned char* payload_ptr = 0, signature_ptr = 0, publickey_ptr = 0;
 
-        unsigned char* publickey_ptr = 0;
-        uint32_t publickey_len = 0;
-
-        for (int i = 0; GUARD(4), i < 3; ++i)
+        // loop through the three memos (if 3 are even present) to parse out the relevant fields
+        for (int i = 0; GUARD(3), i < 3; ++i)
         {
+            // the memos are presented in an array object, which we must index into
             int64_t memo_lookup = util_subarray(memos, memos_len, i);
-            TRACEVAR(memo_lookup);
 
             if (memo_lookup < 0)
                 break; // invalid or too few memos
-            unsigned char*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
-            uint32_t memo_len = SUB_LENGTH(memo_lookup);
 
-            // memos are nested inside an actual memo object
+            // if the subfield/array lookup is successful we must extract the two pieces of returned data
+            // which are, respectively, the offset at which the field occurs and the field's length
+            uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
+            uint32_t  memo_len = SUB_LENGTH(memo_lookup);
+
+            // memos are nested inside an actual memo object, so we need to subfield
+            // equivalently in JSON this would look like memo_array[i]["Memo"]
             memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
-            memo_ptr = SUB_OFFSET(memo_lookup) + memos;
+            memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
             memo_len = SUB_LENGTH(memo_lookup);
 
-            trace(SBUF("MEMO:"), 0);
-            trace(memo_ptr, memo_len, 1);
-
-            uint32_t memo_offset = memo_ptr - memos;
-            TRACEVAR(memo_offset);
-            TRACEVAR(memo_len);
-
+            // now we lookup the subfields of the memo itself
+            // again, equivalently this would look like memo_array[i]["Memo"]["MemoData"], ... etc.
             int64_t data_lookup = util_subfield(memo_ptr, memo_len, sfMemoData);
             int64_t format_lookup = util_subfield(memo_ptr, memo_len, sfMemoFormat);
-            int64_t type_lookup = util_subfield(memo_ptr, memo_len, sfMemoType);
 
-            TRACEVAR(data_lookup);
-            TRACEVAR(format_lookup);
-            TRACEVAR(type_lookup);
-
+            // if any of these lookups fail the request is malformed
             if (data_lookup < 0 || format_lookup < 0 || type_lookup < 0)
                 break;
 
+        
+            // care must be taken to add the correct pointer to an offset returned by sub_array or sub_field
+            // since we are working relative to the specific memo we must add memo_ptr, NOT memos or something else
             unsigned char* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
             uint32_t data_len = SUB_LENGTH(data_lookup);
-
-            TRACEVAR(data_len);
 
             unsigned char* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
             uint32_t format_len = SUB_LENGTH(format_lookup);
             
+            // we can use a helper macro to compare the format fields and determine which MemoData is assigned
+            // to each pointer. Note that the last parameter here tells the macro how many times we will hit this
+            // line so it in turn can correctly configure its GUARD(), otherwise we will get a guard violation
             int is_payload = 0, is_signature = 0, is_publickey = 0;
             BUFFER_EQUAL_STR_GUARD(is_payload, format_ptr, format_len,   "signed/payload+1", 3);
             BUFFER_EQUAL_STR_GUARD(is_signature, format_ptr, format_len, "signed/signature+1", 3);
             BUFFER_EQUAL_STR_GUARD(is_publickey, format_ptr, format_len, "signed/publickey+1", 3);
 
+            // assign the pointers according to the detected MemoFormat
             if (is_payload)
             {
                 payload_ptr = data_ptr;
@@ -157,20 +169,10 @@ int64_t hook(int64_t reserved )
             }
         }
 
-        trace(SBUF("payload:"), 0);
-        TRACEVAR(payload_len);
-        trace(payload_ptr, payload_len, 1);
-        trace(SBUF("signature:"), 0);
-        trace(signature_ptr, signature_len, 1);
-        TRACEVAR(signature_len);
-        trace(SBUF("public_key:"), 0);
-        TRACEVAR(publickey_len);
-        trace(publickey_ptr, publickey_len, 1);
-
-
         if (!(payload_ptr && signature_ptr && publickey_ptr))
             rollback(SBUF("Liteacc: [3] Memo is an invalid format."), 50);
 
+        // check the signature is valid
         if (!util_verify(payload_ptr,    payload_len,
                          signature_ptr,  signature_len,
                          publickey_ptr,  publickey_len))
@@ -191,55 +193,60 @@ int64_t hook(int64_t reserved )
         int64_t lookup_amt      = util_subfield(payload_ptr, payload_len, sfAmount);
         int64_t lookup_pubkey   = util_subfield(payload_ptr, payload_len, sfPublicKey);
 
-
-        TRACEVAR(lookup_seq);
-        TRACEVAR(lookup_stag);
-        TRACEVAR(lookup_dest);
-        TRACEVAR(lookup_dtag);
-        TRACEVAR(lookup_amt);
-        TRACEVAR(lookup_pubkey);
-
         if (lookup_seq < 0 || lookup_stag < 0 || lookup_dest < 0 || lookup_amt < 0 || lookup_pubkey < 0)
             rollback(SBUF("Liteacc: [3] Validly signed memo lacked required STObject fields."), 70);
 
-        uint32_t src_tag = UINT32_FROM_BUF(SUB_OFFSET(lookup_stag) + memos);
-        uint32_t seq = UINT32_FROM_BUF(SUB_OFFSET(lookup_seq) + memos);
-        uint64_t drops_to_send = AMOUNT_TO_DROPS(SUB_OFFSET(lookup_amt) + memos);
-        uint8_t* destination = SUB_OFFSET(lookup_dest) + memos;
-        uint32_t dest_tag = UINT32_FROM_BUF(SUB_OFFSET(lookup_dtag) + memos);
+        // extract the actual transaction details, again taking care to add the correct pointer to the offset
+        uint32_t src_tag = UINT32_FROM_BUF(SUB_OFFSET(lookup_stag) + payload_ptr);
+        uint32_t seq = UINT32_FROM_BUF(SUB_OFFSET(lookup_seq) + payload_ptr);
+        uint64_t drops_to_send = AMOUNT_TO_DROPS(SUB_OFFSET(lookup_amt) + payload_ptr);
+        uint8_t* destination = SUB_OFFSET(lookup_dest) + payload_ptr;
+        uint32_t dest_tag = UINT32_FROM_BUF(SUB_OFFSET(lookup_dtag) + payload_ptr);
 
         if (drops_to_send <= 0)
             rollback(SBUF("Liteacc: [3] Invalid amount specified in STObject."), 80);
 
-        uint8_t* pubkey_from_memo = SUB_OFFSET(lookup_pubkey);
+        uint8_t* pubkey_from_memo = SUB_OFFSET(lookup_pubkey) + payload_ptr;
         if (SUB_LENGTH(lookup_pubkey) != 33)
             rollback(SBUF("Liteacc: [3] Invalid public key provided in memo STObject."), 90);
 
+        // we now need to confirm the details of the requested transaction against our state objects
+        // lookup their source tag in our hook state
         uint8_t state_request[32];
-        CLEARBUF(state_request); // set every byte to 0
-        UINT32_TO_BUF(state_request + 28,  src_tag);
+        CLEARBUF(state_request);                        // set every byte to 0
+        UINT32_TO_BUF(state_request + 28,  src_tag);    // set the last 4 bytes to src_tag
 
-        // first verify if the src tag they have stated is their userid is actually connected to their pub key
+        // 'all zeros' ending in the source tag should retun the user's public key
         uint8_t pubkey_from_state[32];
         if (state(SBUF(pubkey_from_state), SBUF(state_request)) != 32)
             rollback(SBUF("Liteacc: [3] No lite account was associated with the supplied source tag."), 100);
 
+        // ... and that public key on record should match the public key supplied in the memo
         int is_equal = 0;
         BUFFER_EQUAL(is_equal, pubkey_from_state, pubkey_from_memo + 1 /* skip leading byte */, 32);
         if (!is_equal)
             rollback(SBUF("Liteacc: [3] Src tag did not match public key on file for this account."), 110);
 
-        // change first 4 bytes to all 1 bits so we can lookup sequence number
+        // we also need to lookup the user's sequence number to prevent replay attacks
+        // to do that we take the same key we used for the source_tag->publickey lookup and change the first
+        // four bytes to be 0xFF
         UINT32_TO_BUF(state_request, 0xFFFFFFFFUL);
         uint8_t last_seq_buf[4];
         if (state(SBUF(last_seq_buf), SBUF(state_request)) != 4)
             rollback(SBUF("Liteacc: [3] Last sequence not found in lookup."), 120);
 
+        // extract the sequence number from the returned state
         uint32_t last_seq = UINT32_FROM_BUF(last_seq_buf);
         if (last_seq >= seq)
             rollback(SBUF("Liteacc: [3] Last sequence is >= provided sequence number."), 130);
 
-        // lookup user's balance
+        // update the sequence number
+        CLEARBUF(last_seq_buf);
+        UINT32_TO_BUF(last_seq_buf, seq);
+        if (state_set(SBUF(last_seq_buf), SBUF(state_request)) != 4)
+            rollback(SBUF("Liteacc: [3] Could not set new sequence number on lite account."), 135); 
+
+        // finally lookup user's balance
         uint8_t balance_buf[8];
         if (state(SBUF(balance_buf), SBUF(pubkey_from_state)) != 8)
             rollback(SBUF("Liteacc: [3] Could not retrieve user's balance."), 140);
@@ -248,6 +255,7 @@ int64_t hook(int64_t reserved )
         etxn_reserve(1);
         int64_t fee_base = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
 
+        // calculate the total cost to the user and make sure they can pay
         uint64_t billable = drops_to_send + ADDITIONAL_SEND_FEE_DROPS + HOOK_USAGE_FEE_DROPS + 
             ( SUBSIDIZED_SENDING ? 0 : fee_base );
 
@@ -284,15 +292,17 @@ int64_t hook(int64_t reserved )
         // emit the transaction
         emit(SBUF(tx));
 
-        // accept
+        // accept the originating transaction, this will cause the state updates to propagate and the emitted tx
+        // to enter the transaction queue atomically.
         RBUF2(out, out_len, "Liteacc: [3] Successfully emitted ", drops_to_send, ", new balance: ", new_balance);
         accept(out, out_len, 0);
         // execution will not occur past here
     }
 
+    // --------- MODE [1] and [2] ---------
+    // execution to here means no memo was attached to the originating transaction, so we are either mode [1] or [2]
 
-    // the operation of this HOOK is reasonably complex so for demonstration purposes we collect
-    // as much data about the situtation as possible and push execution logic to the end
+    // collect information from the invoice ID and destination tags...
     int32_t have_pubkey = 0, new_user = 1;
     uint8_t user_pubkey[32];
 
@@ -367,10 +377,6 @@ int64_t hook(int64_t reserved )
     else
         user_balance = 0;
 
-
-
-    TRACEVAR(user_balance);
-    // mode 2 receiving or mode 1 setup
     if (new_user && amount_sent < NEW_ACCOUNT_FEE_DROPS)
         rollback(SBUF("Liteacc: [1] Insufficient drops sent to create a new account."), 210);
 
@@ -388,51 +394,59 @@ int64_t hook(int64_t reserved )
     // encode the modified balance
     UINT64_TO_BUF(user_balance_buffer, user_balance);
 
-    TRACEVAR(user_balance);
-
     int64_t state_set_result = state_set(SBUF(user_balance_buffer), SBUF(user_pubkey));
-    TRACEVAR(state_set_result);
     if (state_set_result < 0)
         rollback(SBUF("Liteacc: [1|2] Failed to create or update user account."), 240);
 
-    if (new_user)
+    if (!new_user)
     {
-        // assign a destination tag to this user
-        // first get the destination tag we are up to (this is all 0's key)
-        uint8_t  dtag_counter_buffer[4];
-        uint8_t  dtag_counter_key[32];
-        CLEARBUF(dtag_counter_key);
-        int64_t  dtag_counter_len = state(SBUF(dtag_counter_buffer), SBUF(dtag_counter_key));
-
-        if (dtag_counter_len < 0) // first time the hook has been run!
-            dest_tag = 1;
-        else
-            dest_tag = UINT32_FROM_BUF(dtag_counter_buffer) + 1;
-
-        TRACEVAR(dest_tag);
-
-        UINT32_TO_BUF(dtag_counter_buffer, dest_tag);
-
-        // update the counter
-        if (state_set(SBUF(dtag_counter_buffer), SBUF(dtag_counter_key)) < 0)
-            rollback(SBUF("Liteacc: [1] Could not assign new user a destination tag."), 250);
-
-        // create a pointer from the dest tag to the user's public key in case we receive a payment
-        // to this destination tag (so we can find out which user it is for)
-        uint8_t user_dtag_key[32];
-        CLEARBUF(user_dtag_key); // the first 28 bytes of the key are 0
-        UINT32_TO_BUF(user_dtag_key+28, dest_tag); // the last 4 bytes of the key are the dtag
-
-        if (state_set(SBUF(user_pubkey), SBUF(user_dtag_key)) < 0)
-            rollback(SBUF("Liteacc: [1] Could not assign new user a destination tag."), 260);
-
-        RBUF2(out, out_len, "Liteacc: [1] New user's balance is ", user_balance, " and dest tag is ", dest_tag);
+        // if it's an existing user we're done, accept the originating transaction and apply state updates
+        RBUF(out, out_len, "Liteacc: [2] User balance is ", user_balance);
         accept(out, out_len, 0);
+        // execution stops here
     }
 
-    // format a string to return in meta
-    RBUF(out, out_len, "Liteacc: [2] User balance is ", user_balance);
-    // return the string and accept the transaction
+    // execution to here means we have a new user so set up their other state fields
+
+    // assign a destination tag to this user
+    // first get the destination tag we are up to (this is all 0's key)
+    uint8_t  dtag_counter_buffer[4];
+    uint8_t  dtag_counter_key[32];
+    CLEARBUF(dtag_counter_key);
+    int64_t  dtag_counter_len = state(SBUF(dtag_counter_buffer), SBUF(dtag_counter_key));
+
+    if (dtag_counter_len < 0) // first time the hook has been run!
+        dest_tag = 1;
+    else
+        dest_tag = UINT32_FROM_BUF(dtag_counter_buffer) + 1;
+
+    // update the counter's buffer to reflect the incremented value
+    UINT32_TO_BUF(dtag_counter_buffer, dest_tag);
+
+    // update the state for counter
+    if (state_set(SBUF(dtag_counter_buffer), SBUF(dtag_counter_key)) < 0)
+        rollback(SBUF("Liteacc: [1] Could not assign new user a destination tag."), 250);
+
+    // create a map entry from the dest tag to the user's public key in case we receive a payment
+    // to this destination tag (so we can find out which user it is for)
+    uint8_t state_key[32];
+    CLEARBUF(state_key); // the first 28 bytes of the key are 0
+    UINT32_TO_BUF(state_key+28, dest_tag); // the last 4 bytes of the key are the dtag
+
+    if (state_set(SBUF(user_pubkey), SBUF(state_key)) < 0)
+        rollback(SBUF("Liteacc: [1] Could not assign new user a destination tag."), 260);
+
+    // create the user's sequence number entry (this is updated when mode 3 is used)
+    uint8_t blank[4];
+    CLEARBUF(blank);
+    UINT32_TO_BUF(state_key, 0xFFFFFFFFUL);
+    if (state_set(SBUF(blank), SBUF(state_key)) < 0)
+        rollback(SBUF("Liteacc: [1] Could not assign new user a sequence number."), 270);
+
+    // accept originating transaction and apply state changes
+    RBUF2(out, out_len, "Liteacc: [1] New user's balance is ", user_balance, " and dest tag is ", dest_tag);
     accept(out, out_len, 0);
+    // execution stops here
+
     return 0;
 }

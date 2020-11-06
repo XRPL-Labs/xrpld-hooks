@@ -1234,7 +1234,7 @@ inline int32_t get_stobject_length (
 
     } else if (type == 6) /* AMOUNT */
     {
-        length =  (*upto++ >> 6 == 1) ? 8 : 48;
+        length =  (*upto >> 6 == 1) ? 8 : 48;
         if (upto >= end) return -1;
     }
 

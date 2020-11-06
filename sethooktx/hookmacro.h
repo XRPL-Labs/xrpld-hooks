@@ -94,15 +94,15 @@ int out_len = 0;\
 
 // returns an in64_t, negative if error, non-negative if valid drops
 #define AMOUNT_TO_DROPS(amount_buffer)\
-    (sizeof(amount_buffer) < 8 ? -1 : (((amount_buffer)[0] >> 7) ? -2 : (\
-         ((((uint64_t)((amount_buffer)[0])) & 0xb00111111) << 56) +\
-          (((uint64_t)((amount_buffer)[1])) << 48) +\
-          (((uint64_t)((amount_buffer)[2])) << 40) +\
-          (((uint64_t)((amount_buffer)[3])) << 32) +\
-          (((uint64_t)((amount_buffer)[4])) << 24) +\
-          (((uint64_t)((amount_buffer)[5])) << 16) +\
-          (((uint64_t)((amount_buffer)[6])) <<  8) +\
-          (((uint64_t)((amount_buffer)[7]))))))
+     (((amount_buffer)[0] >> 7) ? -2 : (\
+     ((((uint64_t)((amount_buffer)[0])) & 0xb00111111) << 56) +\
+      (((uint64_t)((amount_buffer)[1])) << 48) +\
+      (((uint64_t)((amount_buffer)[2])) << 40) +\
+      (((uint64_t)((amount_buffer)[3])) << 32) +\
+      (((uint64_t)((amount_buffer)[4])) << 24) +\
+      (((uint64_t)((amount_buffer)[5])) << 16) +\
+      (((uint64_t)((amount_buffer)[6])) <<  8) +\
+      (((uint64_t)((amount_buffer)[7])))))
 
 #define SUB_OFFSET(x) ((int32_t)(x >> 32))
 #define SUB_LENGTH(x) ((int32_t)(x & 0xFFFFFFFFULL))
