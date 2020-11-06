@@ -203,7 +203,6 @@ static std::string
 decodeBase58(std::string const& s, InverseArray const& inv)
 {
 
-    std::cout << "decodingBase58: `" << s << "`\n";
     auto psz = s.c_str();
     auto remain = s.size();
     // Skip and count leading zeroes
@@ -217,7 +216,6 @@ decodeBase58(std::string const& s, InverseArray const& inv)
 
     if (remain > 64)
     {
-        std::cout << "base58 return empty route 1\n";
         return {};
     }
 
@@ -229,7 +227,6 @@ decodeBase58(std::string const& s, InverseArray const& inv)
         auto carry = inv[*psz];
         if (carry == -1)
         {
-            std::cout << "base58 return empty route 2\n";
             return {};
         }
         // Apply "b256 = b256 * 58 + carry".
@@ -252,7 +249,6 @@ decodeBase58(std::string const& s, InverseArray const& inv)
     while (iter != b256.end())
         result.push_back(*(iter++));
     
-    std::cout << "base58 return `" << result << "`\n";
     return result;
 }
 

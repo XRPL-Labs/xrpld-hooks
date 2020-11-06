@@ -1,7 +1,7 @@
 /**
  * Liteacc.c - An example "lite accounts" hook providing a jointly owned account by many users who are uniquely
  * identified by a src/dest tag and a public key.
- * 
+ *
  * Author: Richard Holland
  * Date: 6 Nov 2020
  *
@@ -93,6 +93,8 @@ int64_t hook(int64_t reserved )
     uint8_t memos[2048];
     int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
 
+    uint32_t payload_len = 0, signature_len = 0, publickey_len = 0;
+    uint8_t* payload_ptr = 0, *signature_ptr = 0, *publickey_ptr = 0;
     // process outgoing send requests encoded in tx memos, if any
     if (memos_len > 0)  // mode [3]
     {
@@ -104,8 +106,6 @@ int64_t hook(int64_t reserved )
          * Memo: { MemoData: <public_key>, MemoFormat: "signed/publickey+1", MemoType: [application defined] }
          **/
 
-        uint32_t payload_len = 0, signature_len = 0, publickey_len = 0;
-        unsigned char* payload_ptr = 0, signature_ptr = 0, publickey_ptr = 0;
 
         // loop through the three memos (if 3 are even present) to parse out the relevant fields
         for (int i = 0; GUARD(3), i < 3; ++i)
@@ -113,6 +113,7 @@ int64_t hook(int64_t reserved )
             // the memos are presented in an array object, which we must index into
             int64_t memo_lookup = util_subarray(memos, memos_len, i);
 
+            TRACEVAR(memo_lookup);
             if (memo_lookup < 0)
                 break; // invalid or too few memos
 
@@ -120,6 +121,9 @@ int64_t hook(int64_t reserved )
             // which are, respectively, the offset at which the field occurs and the field's length
             uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
             uint32_t  memo_len = SUB_LENGTH(memo_lookup);
+
+            trace(SBUF("MEMO:"), 0);
+            trace(memo_ptr, memo_len, 1);
 
             // memos are nested inside an actual memo object, so we need to subfield
             // equivalently in JSON this would look like memo_array[i]["Memo"]
@@ -133,18 +137,17 @@ int64_t hook(int64_t reserved )
             int64_t format_lookup = util_subfield(memo_ptr, memo_len, sfMemoFormat);
 
             // if any of these lookups fail the request is malformed
-            if (data_lookup < 0 || format_lookup < 0 || type_lookup < 0)
+            if (data_lookup < 0 || format_lookup < 0)
                 break;
 
-        
             // care must be taken to add the correct pointer to an offset returned by sub_array or sub_field
             // since we are working relative to the specific memo we must add memo_ptr, NOT memos or something else
-            unsigned char* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
+            uint8_t* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
             uint32_t data_len = SUB_LENGTH(data_lookup);
 
-            unsigned char* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
+            uint8_t* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
             uint32_t format_len = SUB_LENGTH(format_lookup);
-            
+
             // we can use a helper macro to compare the format fields and determine which MemoData is assigned
             // to each pointer. Note that the last parameter here tells the macro how many times we will hit this
             // line so it in turn can correctly configure its GUARD(), otherwise we will get a guard violation
@@ -168,6 +171,7 @@ int64_t hook(int64_t reserved )
                 publickey_len = data_len;
             }
         }
+
 
         if (!(payload_ptr && signature_ptr && publickey_ptr))
             rollback(SBUF("Liteacc: [3] Memo is an invalid format."), 50);
@@ -244,7 +248,7 @@ int64_t hook(int64_t reserved )
         CLEARBUF(last_seq_buf);
         UINT32_TO_BUF(last_seq_buf, seq);
         if (state_set(SBUF(last_seq_buf), SBUF(state_request)) != 4)
-            rollback(SBUF("Liteacc: [3] Could not set new sequence number on lite account."), 135); 
+            rollback(SBUF("Liteacc: [3] Could not set new sequence number on lite account."), 135);
 
         // finally lookup user's balance
         uint8_t balance_buf[8];
@@ -256,7 +260,7 @@ int64_t hook(int64_t reserved )
         int64_t fee_base = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
 
         // calculate the total cost to the user and make sure they can pay
-        uint64_t billable = drops_to_send + ADDITIONAL_SEND_FEE_DROPS + HOOK_USAGE_FEE_DROPS + 
+        uint64_t billable = drops_to_send + ADDITIONAL_SEND_FEE_DROPS + HOOK_USAGE_FEE_DROPS +
             ( SUBSIDIZED_SENDING ? 0 : fee_base );
 
         if (billable <= 0 || billable < drops_to_send)
