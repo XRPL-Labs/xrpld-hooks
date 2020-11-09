@@ -9,6 +9,7 @@
 
 #ifndef HOOKAPI_INCLUDED
 #define HOOKAPI_INCLUDED 1
+#include <stdint.h>
 
 extern int32_t _g                  (uint32_t id, uint32_t maxiter);
 extern int64_t accept              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);

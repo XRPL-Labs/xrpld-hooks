@@ -640,6 +640,14 @@ Transactor::reset(XRPAmount fee)
     return fee;
 }
 
+static __inline__ unsigned long long rdtsc(void)
+{
+    unsigned hi, lo;
+    __asm__ __volatile__ ("rdtsc" : "=a"(lo), "=d"(hi));
+    return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
+}
+
+
 //------------------------------------------------------------------------------
 std::pair<TER, bool>
 Transactor::operator()()
@@ -664,7 +672,10 @@ Transactor::operator()()
 #endif
 
     auto result = ctx_.preclaimResult;
-    
+
+    bool hook_executed = false;
+    uint64_t prehook_cycles = rdtsc();
+
     if (ctx_.view().rules().enabled(featureHooks) &&
         result == tesSUCCESS)
     {
@@ -672,14 +683,16 @@ Transactor::operator()()
         // check if hooking is required
         auto const& ledger = ctx_.view();
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
-        auto const& hookSending = ledger.read(keylet::hook(accountID));
+        auto const& hookSending = ledger.read(keylet::hook(accountID)); 
         if (hookSending &&
             !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
             !ctx_.tx.isFieldPresent(sfEmitDetails) &&
             hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
         {
             // execute the hook on the sending account
+            hook_executed = true;
             auto hookResult = hook::apply(
+                    hookSending->getFieldH256(sfHookSetTxnID),
                     hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
             if (hookResult != tesSUCCESS) 
                 result = tecHOOK_REJECTED;
@@ -693,7 +706,9 @@ Transactor::operator()()
                 hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
             {
                 // execute the hook on the receiving account
+                hook_executed = true;
                 auto hookResult = hook::apply(
+                        hookReceiving->getFieldH256(sfHookSetTxnID),
                         hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
                 if (hookResult != tesSUCCESS)
                     result = tecHOOK_REJECTED;
@@ -711,8 +726,10 @@ Transactor::operator()()
                 
                 AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
 
+                hook_executed = true;
                 auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
                 auto hookResult = hook::apply(
+                        hookCallback->getFieldH256(sfHookSetTxnID),
                         hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
 
                 // callback is unable to affect the application of an already Emitted Tx to the ledger
@@ -726,6 +743,10 @@ Transactor::operator()()
             }
         }
     }
+
+    uint64_t posthook_cycles = rdtsc();
+    printf("%shook execution took: %llu cpu cycles\n", (hook_executed ? "" : "non-"),
+            posthook_cycles - prehook_cycles);
 
     // fall through allows normal apply
     if (result == tesSUCCESS)

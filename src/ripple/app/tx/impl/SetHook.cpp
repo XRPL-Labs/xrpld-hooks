@@ -34,6 +34,8 @@
 #include <stack>
 #include <string>
 #include <ripple/app/tx/applyHook.h>
+#include <ripple/app/ledger/LedgerMaster.h>
+
 namespace ripple {
 
 // RH TODO deal with overflow on leb128
@@ -88,7 +90,7 @@ check_guard(
     int block_depth = 0;
     int mode = 1; // controls the state machine for searching for guards
                   // 0 = looking for guard from a trigger point (loop or function start)
-                  // 1 = looking for a new trigger point (loop); 
+                  // 1 = looking for a new trigger point (loop);
                   // currently always starts at 1 no-top-of-func check, see above block comment
 
     std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
@@ -108,7 +110,7 @@ check_guard(
                 printf("%02X", hook[z]);
             printf("\n");
         }
-        
+
         int instr = hook[i++]; CHECK_SHORT_HOOK();
 
         if (instr == 0x10) // call instr
@@ -327,7 +329,7 @@ check_guard(
         // numeric instructions with immediates
         if (instr == 0x41 || instr == 0x42)
         {
-            
+
             if (DEBUG_GUARD_CHECK)
                 printf("%d - const instruction at %d\n", mode, i);
 
@@ -344,10 +346,10 @@ check_guard(
         // more numerics with immediates
         if (instr == 0x43 || instr == 0x44)
         {
-            
+
             if (DEBUG_GUARD_CHECK)
                 printf("%d - const float instruction at %d\n", mode, i);
-            
+
             i += ( instr == 0x43 ? 4 : 8 );
             CHECK_SHORT_HOOK();
             continue;
@@ -665,7 +667,7 @@ SetHook::preflight(PreflightContext const& ctx)
                         int array_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                         if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                         {
-                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k << 
+                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k <<
                                 " Offset: " << i << "\n";
                             return temMALFORMED;
                         }
@@ -678,7 +680,7 @@ SetHook::preflight(PreflightContext const& ctx)
                     // execution to here means we are up to the actual expr for the codesec/function
 
                     auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number);
-                    if (result != tesSUCCESS)    
+                    if (result != tesSUCCESS)
                         return result;
 
                     i = code_end;
@@ -801,7 +803,7 @@ TER
 SetHook::setHook()
 {
 
-    const int blobMax = hook::maxHookDataSize();
+    const int blobMax = hook::maxHookStateDataSize();
 
 
     auto const accountKeylet = keylet::account(account_);
@@ -870,12 +872,15 @@ SetHook::setHook()
         auto hook = std::make_shared<SLE>(hookKeylet);
         view().insert(hook);
 
-        hook->setAccountID(sfAccount, account_);
+
         hook->setFieldVL(sfCreateCode, hook_);
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
-        hook->setFieldU32(sfHookDataMaxSize, blobMax);
+        hook->setFieldU32(sfHookStateDataMaxSize, blobMax);
         hook->setFieldU64(sfHookOn, hookOn_);
+        hook->setFieldH256(sfHookSetTxnID, ctx_.tx.getTransactionID());
+
+        //hook->setFieldU32(sfPreviousTxnLgrSeq, ctx_.app.getLedgerMaster().getValidLedgerIndex() + 1);
 
         // Add the hook to the account's directory.
         auto const page = dirAdd(

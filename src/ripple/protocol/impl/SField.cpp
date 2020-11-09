@@ -119,7 +119,7 @@ SF_U32 const sfSignerListID(access, STI_UINT32, 38, "SignerListID");
 SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
 SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
 SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
-SF_U32 const sfHookDataMaxSize(access, STI_UINT32, 42, "HookDataMaxSize");
+SF_U32 const sfHookStateDataMaxSize(access, STI_UINT32, 42, "HookStateDataMaxSize");
 
 SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "EmitGeneration");
 
@@ -184,7 +184,8 @@ SF_U256 const sfPayChannel(access, STI_HASH256, 22, "Channel");
 SF_U256 const sfConsensusHash(access, STI_HASH256, 23, "ConsensusHash");
 SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
-
+SF_U256 const sfHookStateKey(access, STI_HASH256, 26, "HookStateKey");
+SF_U256 const sfHookSetTxnID(access, STI_HASH256, 27, "HookSetTxnID");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");
@@ -244,7 +245,7 @@ SF_Blob const sfUNLModifyValidator(access, STI_VL, 19, "UNLModifyValidator");
 SF_Blob const sfNegativeUNLToDisable(access, STI_VL, 20, "ValidatorToDisable");
 SF_Blob const
     sfNegativeUNLToReEnable(access, STI_VL, 21, "ValidatorToReEnable");
-SF_Blob const sfHookData(access, STI_VL, 22, "HookData");
+SF_Blob const sfHookStateData(access, STI_VL, 22, "HookStateData");
 
 // account
 SF_Account const sfAccount(access, STI_ACCOUNT, 1, "Account");

@@ -38,4 +38,4 @@ recursiveloop.wasm: recursiveloop.c hookapi.h hookmacro.h
 	wasmcc recursiveloop.c -o recursiveloop.wasm  -Wl,--allow-undefined 
 
 liteacc.wasm: liteacc.c sfcodes.h hookapi.h hookmacro.h
-	wasmcc liteacc.c -o liteacc.wasm -Wl,--allow-undefined 
+	wasmcc liteacc.c -o liteacc.wasm -Oz -Wl,--allow-undefined 

@@ -151,18 +151,28 @@ namespace hook_api {
 
 namespace hook {
 
+
     bool canHook(ripple::TxType txType, uint64_t hookOn);
 
     void printWasmerError();
 
-    ripple::TER apply(ripple::Blob, ripple::ApplyContext&, const ripple::AccountID&, bool callback);
+    ripple::TER apply( 
+            ripple::uint256,
+            ripple::Blob,
+            ripple::ApplyContext&,
+            const ripple::AccountID&,
+            bool callback);
 
     struct HookContext;
 
-    int maxHookDataSize(void);
+    int maxHookStateDataSize(void);
 
 #ifndef RIPPLE_HOOK_H_INCLUDED
 #define RIPPLE_HOOK_H_INCLUDED
+    // account -> hook set tx id, already created wasmer instance
+    std::map<ripple::AccountID, std::pair<ripple::uint256, wasmer_instance_t*>> hook_cache;
+    std::mutex hook_cache_lock;
+
     struct HookContext {
         ripple::ApplyContext& applyCtx;
         const ripple::AccountID& account;
@@ -170,7 +180,7 @@ namespace hook {
         ripple::Keylet const& ownerDirKeylet;
         ripple::Keylet const& hookKeylet;
         // uint256 key -> [ has_been_modified, current_state ]
-        std::shared_ptr<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>> changedState;
+        std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
         hook_api::ExitType exitType;
         std::string exitReason {""};
         int64_t exitCode {-1};
@@ -193,7 +203,7 @@ namespace hook {
     };
 
     //todo: [RH] change this to a validator votable figure
-    int maxHookDataSize(void) {
+    int maxHookStateDataSize(void) {
         return 128;
     }
 
@@ -201,6 +211,7 @@ namespace hook {
     setHookState(
         HookContext& hookCtx,
         ripple::Keylet const& hookStateKeylet,
+        ripple::uint256 key,    /* we store the key with the data for ease of development access */
         ripple::Slice& data
     );
 

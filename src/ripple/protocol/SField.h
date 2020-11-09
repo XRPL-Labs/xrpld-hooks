@@ -392,7 +392,7 @@ extern SF_U32 const sfSignerListID;
 extern SF_U32 const sfSettleDelay;
 extern SF_U32 const sfHookStateCount;
 extern SF_U32 const sfHookReserveCount;
-extern SF_U32 const sfHookDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
+extern SF_U32 const sfHookStateDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
 extern SF_U32 const sfEmitGeneration; 
 
 // 64-bit integers
@@ -443,6 +443,8 @@ extern SF_U256 const sfPayChannel;
 extern SF_U256 const sfConsensusHash;
 extern SF_U256 const sfCheckID;
 extern SF_U256 const sfValidatedHash;
+extern SF_U256 const sfHookStateKey;
+extern SF_U256 const sfHookSetTxnID;
 
 // currency amount (common)
 extern SF_Amount const sfAmount;
@@ -472,7 +474,7 @@ extern SF_Blob const sfFundCode;
 extern SF_Blob const sfRemoveCode;
 extern SF_Blob const sfExpireCode;
 extern SF_Blob const sfCreateCode;
-extern SF_Blob const sfHookData;
+extern SF_Blob const sfHookStateData;
 extern SF_Blob const sfMemoType;
 extern SF_Blob const sfMemoData;
 extern SF_Blob const sfMemoFormat;

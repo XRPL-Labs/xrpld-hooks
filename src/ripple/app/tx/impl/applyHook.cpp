@@ -14,6 +14,8 @@
 using namespace ripple;
 
 
+#define PRINTF if (0) printf
+#define FPRINTF if (0) fprintf
 
 bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
     // invert ttHOOK_SET bit
@@ -29,6 +31,7 @@ TER
 hook::setHookState(
     HookContext& hookCtx,
     Keylet const& hookStateKeylet,
+    ripple::uint256 key,
     Slice& data
 ){
 
@@ -44,7 +47,7 @@ hook::setHookState(
         return tefINTERNAL;
     }
 
-    uint32_t hookDataMax = hook->getFieldU32(sfHookDataMaxSize);
+    uint32_t hookDataMax = hook->getFieldU32(sfHookStateDataMaxSize);
 
     // if the blob is too large don't set it
     if (data.size() > hookDataMax) {
@@ -119,7 +122,8 @@ hook::setHookState(
     // add new data to ledger
     auto newHookState = std::make_shared<SLE>(hookStateKeylet);
     view.insert(newHookState);
-    newHookState->setFieldVL(sfHookData, data);
+    newHookState->setFieldVL(sfHookStateData, data);
+    newHookState->setFieldH256(sfHookStateKey, key);
 
     if (!oldHookState) {
         // Add the hook to the account's directory if it wasn't there already
@@ -149,21 +153,53 @@ void hook::printWasmerError()
   int error_len = wasmer_last_error_length();
   char *error_str = (char*)malloc(error_len);
   wasmer_last_error_message(error_str, error_len);
-  printf("Error: `%s`\n", error_str);
+  PRINTF("Error: `%s`\n", error_str);
     free(error_str);
 }
 
-TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account, bool callback = false) {
+#define HOOK_CACHING 1
+
+TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the sethook, used for caching */ 
+                Blob hook, ApplyContext& applyCtx,
+                const AccountID& account,
+                bool callback = false)
+{
 
     wasmer_instance_t *instance = NULL;
 
-    if (wasmer_instantiate(&instance,
-                hook.data(), hook.size(), imports, imports_count) != wasmer_result_t::WASMER_OK) {
-        printf("hook malformed\n");
-        printWasmerError();
-        return temMALFORMED;
-    }
+    // RH TODO: make this threadsafe!
+#ifdef HOOK_CACHING    
+    {
+        auto const& cacheLookup = hook_cache.find(account);
+        bool needsDestruction = false;
+        if (cacheLookup  == hook_cache.end() ||
+                (cacheLookup->second.first != hookSetTxnID && (needsDestruction = true)))
+        {
+            if (needsDestruction)
+            {
+                printf("destroying wasmer instance\n");
+                wasmer_instance_destroy(cacheLookup->second.second);
+            }
+#endif        
 
+            printf("creating wasmer instance\n");
+            if (wasmer_instantiate(&instance,
+                        hook.data(), hook.size(), imports, imports_count) != wasmer_result_t::WASMER_OK) {
+                PRINTF("hook malformed\n");
+                printWasmerError();
+                return temMALFORMED;
+            }
+#ifdef HOOK_CACHING    
+            hook_cache[account] = std::make_pair(hookSetTxnID, instance);
+        } else
+        {
+            printf("Loading cached wasmer instance\n");
+            instance = hook_cache[account].second;
+        }
+    }
+#endif    
+
+    printf("wasmer_instance = %llx\n", reinterpret_cast<uint64_t>(instance));
     HookContext hookCtx {
         .applyCtx = applyCtx,
         .account = account,
@@ -171,14 +207,14 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account, boo
         .ownerDirKeylet = keylet::ownerDir(account),
         .hookKeylet = keylet::hook(account),
         .changedState =
-            std::make_shared<std::map<ripple::uint256 const, std::pair<bool, ripple::Blob>>>(),
+            std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
         .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept() or reject()
         .exitReason = std::string(""),
         .exitCode = -1
     };
 
     wasmer_instance_context_data_set ( instance, &hookCtx );
-    printf("Set HookContext: %lx\n", (void*)&hookCtx);
+    PRINTF("Set HookContext: %lx\n", (void*)&hookCtx);
 
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
@@ -198,19 +234,22 @@ TER hook::apply(Blob hook, ApplyContext& applyCtx, const AccountID& account, boo
 
     printf( "hook exit reason was: `%s`\n", hookCtx.exitReason.c_str() );
 
-    printf( "hook exit code was: %d\n", hookCtx.exitCode );
+    PRINTF( "hook exit code was: %d\n", hookCtx.exitCode );
 
-    printf( "hook ledger no: %d\n", hookCtx.applyCtx.view().info().seq);
+    PRINTF( "hook ledger no: %d\n", hookCtx.applyCtx.view().info().seq);
 
     if (hookCtx.exitType != hook_api::ExitType::ROLLBACK) {
-        printf("Committing changes made by hook\n");
+        PRINTF("Committing changes made by hook\n");
         commitChangesToLedger(hookCtx);
     }
 
 
     // todo: [RH] memory leak here, destroy the imports, instance using a smart pointer
+
+#ifndef HOOK_CACHING    
     wasmer_instance_destroy(instance);
-    printf("running hook 3\n");
+#endif    
+    PRINTF("running hook 3\n");
 
     if (hookCtx.exitType == hook_api::ExitType::ACCEPT) {
         return tesSUCCESS;
@@ -227,15 +266,15 @@ int64_t hook_api::trace_num (
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
 
-    printf("HOOKAPI_trace_num: ");
+    PRINTF("HOOKAPI_trace_num: ");
     if (read_len > 1024) read_len = 1024;
     for (int i = 0; i < read_len && i < memory_length; ++i)
     {
-        printf("%c", memory[read_ptr + i]);
+        PRINTF("%c", memory[read_ptr + i]);
     }
 
 
-    printf(": %lld\n", number);
+    PRINTF(": %lld\n", number);
     return read_len;
 
 }
@@ -247,16 +286,16 @@ int64_t hook_api::trace (
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
 
-    printf("HOOKAPI_trace: ");
+    PRINTF("HOOKAPI_trace: ");
     if (read_len > 1024) read_len = 1024;
     for (int i = 0; i < read_len && i < memory_length; ++i)
     {
         if (as_hex)
-            printf("%02X", memory[read_ptr + i]);
+            PRINTF("%02X", memory[read_ptr + i]);
         else
-            printf("%c", memory[read_ptr + i]);
+            PRINTF("%c", memory[read_ptr + i]);
     }
-    printf("\n");
+    PRINTF("\n");
     return read_len;
 
 }
@@ -297,7 +336,7 @@ int64_t hook_api::state_set (
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (kread_ptr + 32 > memory_length || read_ptr + hook::maxHookDataSize() > memory_length) {
+    if (kread_ptr + 32 > memory_length || read_ptr + hook::maxHookStateDataSize() > memory_length) {
         JLOG(j.trace())
             << "Hook tried to state_set using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
@@ -316,7 +355,7 @@ int64_t hook_api::state_set (
     if (!sle)
         return INTERNAL_ERROR;
 
-    uint32_t maxSize = sle->getFieldU32(sfHookDataMaxSize);
+    uint32_t maxSize = sle->getFieldU32(sfHookStateDataMaxSize);
     if (read_len > maxSize)
         return TOO_BIG;
 
@@ -345,11 +384,11 @@ void hook::commitChangesToLedger ( HookContext& hookCtx ) {
             // this entry isn't just cached, it was actually modified
             auto HSKeylet = keylet::hook_state(hookCtx.account, key);
             auto slice = Slice(blob.data(), blob.size());
-            setHookState(hookCtx, HSKeylet, slice); // should not fail because checks were done before map insertion
+            setHookState(hookCtx, HSKeylet, key, slice); // should not fail because checks were done before map insert
         }
     }
 
-    printf("emitted txn count: %d\n", hookCtx.emitted_txn.size());
+    PRINTF("emitted txn count: %d\n", hookCtx.emitted_txn.size());
 
     auto & netOps = hookCtx.applyCtx.app.getOPs();
     for (; hookCtx.emitted_txn.size() > 0; hookCtx.emitted_txn.pop())
@@ -452,7 +491,7 @@ int64_t hook_api::state_foreign (
     if (!hsSLE)
         return DOESNT_EXIST;
 
-    Blob b = hsSLE->getFieldVL(sfHookData);
+    Blob b = hsSLE->getFieldVL(sfHookStateData);
 
     // it exists add it to cache and return it
 
@@ -804,10 +843,10 @@ int32_t hook_api::_g (
     if (hookCtx.guard_map[id] > maxitr)
     {
         if (id > 0xFFFFU)
-            fprintf(stderr, "MACRO GUARD VIOLATION src: %d macroline: %d, iterations=%d\n",
+            FPRINTF(stderr, "MACRO GUARD VIOLATION src: %d macroline: %d, iterations=%d\n",
                     (id & 0xFFFFU), id >> 16, hookCtx.guard_map[id]);
         else
-            fprintf(stderr, "GUARD VIOLATION id(line)=%d, iterations=%d\n", id, hookCtx.guard_map[id]);
+            FPRINTF(stderr, "GUARD VIOLATION id(line)=%d, iterations=%d\n", id, hookCtx.guard_map[id]);
 
         rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
     }
@@ -852,12 +891,12 @@ int64_t hook_api::emit (
 
     ripple::Blob blob{memory + read_ptr, memory + read_ptr + read_len};
 
-    printf("hook is emitting tx:-----\n");
+    PRINTF("hook is emitting tx:-----\n");
     for (unsigned char c: blob)
     {
-        printf("%02X", c);
+        PRINTF("%02X", c);
     }
-    printf("\n--------\n");
+    PRINTF("\n--------\n");
 
     SerialIter sitTrans(makeSlice(blob));
     std::shared_ptr<STTx const> stpTrans;
@@ -1242,7 +1281,7 @@ inline int32_t get_stobject_length (
     {
         payload_start = upto - start;
         payload_length = length;
-//        printf("%d get_stobject_length field: %d Type: %d VL: %s Len: %d Payload_Start: %d Payload_Len: %d\n", 
+//        PRINTF("%d get_stobject_length field: %d Type: %d VL: %s Len: %d Payload_Start: %d Payload_Len: %d\n", 
 //            recursion_depth, field, type, (is_vl ? "yes": "no"), length, payload_start, payload_length);
         return length + (upto - start);
     }
@@ -1256,7 +1295,7 @@ inline int32_t get_stobject_length (
             int subfield = -1, subtype = -1, payload_start_ = -1, payload_length_ = -1;
             int32_t sublength = get_stobject_length(
                     upto, end, subtype, subfield, payload_start_, payload_length_, recursion_depth + 1);
-//            printf("%d get_stobject_length i %d %d-%d, upto %d sublength %d\n", recursion_depth, i,
+//            PRINTF("%d get_stobject_length i %d %d-%d, upto %d sublength %d\n", recursion_depth, i,
 //                    subtype, subfield, upto - start, sublength);
             if (sublength < 0)
                 return -1;
@@ -1305,7 +1344,7 @@ int64_t hook_api::util_subfield (
         int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
         if (length < 0)
             return PARSE_ERROR;
-//        printf("util_subfield: length %d payload_length %d upto %d payload_start %d\n", 
+//        PRINTF("util_subfield: length %d payload_length %d upto %d payload_start %d\n", 
 //                length, payload_length, (upto - start), (upto - start) + payload_start);
         if ((type << 16) + field == field_id)
             return (((int64_t)(upto - start + payload_start)) << 32) /* start of the object */
@@ -1338,11 +1377,11 @@ int64_t hook_api::util_subarray (
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
-//        printf("util_subarray [%d] called: upto = %d: %02X%02X%02X%02X%02X\n", i, (upto - start),
+//        PRINTF("util_subarray [%d] called: upto = %d: %02X%02X%02X%02X%02X\n", i, (upto - start),
 //                upto[0], upto[1], upto[2], upto[3], upto[4]);
         int type = -1, field = -1, payload_start = -1, payload_length = -1;
         int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
-//        printf("util_subarray length: %d\n", length);
+//        PRINTF("util_subarray length: %d\n", length);
         if (length < 0)
             return PARSE_ERROR;
 
@@ -1551,6 +1590,6 @@ int64_t hook_api::etxn_details (
     out += 20;
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
                                                                       /* upto = 105 | --------- */
-    printf("emitdetails size = %d\n", (out - memory - write_ptr));
+    PRINTF("emitdetails size = %d\n", (out - memory - write_ptr));
     return 105;
 }
