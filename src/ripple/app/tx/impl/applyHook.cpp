@@ -14,9 +14,12 @@
 using namespace ripple;
 
 
-#define PRINTF if (0) printf
-#define FPRINTF if (0) fprintf
-
+// Called by Transactor.cpp to determine if a transaction type can trigger a given hook...
+// The HookOn field in the SetHook transaction determines which transaction types (tt's) trigger the hook.
+// Every bit except ttHookSet is active low, so for example ttESCROW_FINISH = 2, so if the 2nd bit (counting from 0)
+// from the right is 0 then the hook will trigger on ESCROW_FINISH. If it is 1 then ESCROW_FINISH will not trigger
+// the hook. However ttHOOK_SET = 22 is active high, so by default (HookOn == 0) ttHOOK_SET is not triggered by
+// transactions. If you wish to set a hook that has control over ttHOOK_SET then set bit 1U<<22.
 bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
     // invert ttHOOK_SET bit
     hookOn ^= (1ULL << ttHOOK_SET);
@@ -26,7 +29,7 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 }
 
 
-
+// Update HookState ledger objects for the hook... only called after accept() or reject()
 TER
 hook::setHookState(
     HookContext& hookCtx,
@@ -42,8 +45,9 @@ hook::setHookState(
         return tefINTERNAL;
 
     auto const hook = view.peek(hookCtx.hookKeylet);
-    if (!hook) { // [RH] should this be more than trace??
-        JLOG(j.trace()) << "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookCtx.account);
+    if (!hook) {
+        JLOG(j.warn()) <<
+            "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookCtx.account);
         return tefINTERNAL;
     }
 
@@ -148,27 +152,28 @@ hook::setHookState(
     return tesSUCCESS;
 }
 
-void hook::printWasmerError()
+void hook::printWasmerError(beast::Journal::Stream const& x)
 {
   int error_len = wasmer_last_error_length();
   char *error_str = (char*)malloc(error_len);
   wasmer_last_error_message(error_str, error_len);
-  PRINTF("Error: `%s`\n", error_str);
-    free(error_str);
+  JLOG(x) << error_str << "\n";
+  free(error_str);
 }
 
-#define HOOK_CACHING 1
+//#define HOOK_CACHING  // RH NOTE: WASMER USES GLOBAL STATE IN ITS C API WHICH BREAKS CACHING SO CACHING IS OFF
+                        //          WASMER RUNTIME TO BE PATCHED OR SCRAPPED... to be decided
 
-TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the sethook, used for caching */ 
+TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the sethook, used for caching */
                 Blob hook, ApplyContext& applyCtx,
                 const AccountID& account,
                 bool callback = false)
 {
 
+    auto const& j = applyCtx.app.journal("View");
     wasmer_instance_t *instance = NULL;
 
-    // RH TODO: make this threadsafe!
-#ifdef HOOK_CACHING    
+#ifdef HOOK_CACHING
     {
         auto const& cacheLookup = hook_cache.find(account);
         bool needsDestruction = false;
@@ -177,29 +182,31 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
         {
             if (needsDestruction)
             {
-                printf("destroying wasmer instance\n");
+                JLOG(j.trace()) << "Hook Apply: Destroying wasmer instance for " << account <<
+                   " Instance Ptr: " << cacheLookup->second.second << "\n";
                 wasmer_instance_destroy(cacheLookup->second.second);
+                hook_cache.erase(account);
             }
-#endif        
-
-            printf("creating wasmer instance\n");
-            if (wasmer_instantiate(&instance,
-                        hook.data(), hook.size(), imports, imports_count) != wasmer_result_t::WASMER_OK) {
-                PRINTF("hook malformed\n");
-                printWasmerError();
+#endif
+            JLOG(j.trace()) << "Hook Apply: Creating wasmer instance for " << account << "\n";
+            if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) != 
+                    wasmer_result_t::WASMER_OK)
+            {
+                printWasmerError(j.warn());
+                JLOG(j.warn()) << "Hook Apply: Hook was malformed for " << account << "\n";
                 return temMALFORMED;
             }
-#ifdef HOOK_CACHING    
+#ifdef HOOK_CACHING
             hook_cache[account] = std::make_pair(hookSetTxnID, instance);
         } else
         {
-            printf("Loading cached wasmer instance\n");
             instance = hook_cache[account].second;
+            JLOG(j.trace()) << "Hook Apply: Loading cached wasmer instance for " << account <<
+                " Instance Ptr " << instance << "\n";
         }
     }
-#endif    
+#endif
 
-    printf("wasmer_instance = %llx\n", reinterpret_cast<uint64_t>(instance));
     HookContext hookCtx {
         .applyCtx = applyCtx,
         .account = account,
@@ -209,12 +216,12 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
         .changedState =
             std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
         .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept() or reject()
-        .exitReason = std::string(""),
+        .exitReason = std::string("<not set by hook>"),
         .exitCode = -1
     };
 
     wasmer_instance_context_data_set ( instance, &hookCtx );
-    PRINTF("Set HookContext: %lx\n", (void*)&hookCtx);
+    DBG_PRINTF("Set HookContext: %lx\n", (void*)&hookCtx);
 
     wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
     wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
@@ -226,81 +233,90 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
         1,
         results,
         1
-    );
+    ); // we don't check return value because all accept/reject/rollback will fire a non-ok message
 
-    printf( "hook exit type was: %s\n",
+    JLOG(j.trace()) <<
+        "Hook Apply: Exited with " <<
             ( hookCtx.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" :
-            ( hookCtx.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) );
+            ( hookCtx.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) <<
+        ", Reason: '" <<  hookCtx.exitReason.c_str() << "', Exit Code: " << hookCtx.exitCode <<
+        ", Ledger Seq: " << hookCtx.applyCtx.view().info().seq << "\n";
 
-    printf( "hook exit reason was: `%s`\n", hookCtx.exitReason.c_str() );
-
-    PRINTF( "hook exit code was: %d\n", hookCtx.exitCode );
-
-    PRINTF( "hook ledger no: %d\n", hookCtx.applyCtx.view().info().seq);
-
-    if (hookCtx.exitType != hook_api::ExitType::ROLLBACK) {
-        PRINTF("Committing changes made by hook\n");
+    if (hookCtx.exitType != hook_api::ExitType::ROLLBACK)
         commitChangesToLedger(hookCtx);
-    }
 
+    // RH TODO possible memory leak here, destroy the imports, instance using a smart pointer?
 
-    // todo: [RH] memory leak here, destroy the imports, instance using a smart pointer
-
-#ifndef HOOK_CACHING    
+#ifndef HOOK_CACHING
+    JLOG(j.trace()) <<
+        "Hook Apply: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
     wasmer_instance_destroy(instance);
-#endif    
-    PRINTF("running hook 3\n");
+#endif
+    if (hookCtx.exitType == hook_api::ExitType::ACCEPT)
+       return tesSUCCESS;
 
-    if (hookCtx.exitType == hook_api::ExitType::ACCEPT) {
-        return tesSUCCESS;
-    } else {
-        return tecHOOK_REJECTED;
-    }
+    return tecHOOK_REJECTED;
 }
 
 
+
+/* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
+ * specifying both a string and an integer to output */
 int64_t hook_api::trace_num (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, int64_t number )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
-
-    PRINTF("HOOKAPI_trace_num: ");
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
     if (read_len > 1024) read_len = 1024;
-    for (int i = 0; i < read_len && i < memory_length; ++i)
-    {
-        PRINTF("%c", memory[read_ptr + i]);
-    }
-
-
-    PRINTF(": %lld\n", number);
+    if (!j.trace())
+        return read_len;
+    j.trace() << "HOOK::TRACE(num): " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) << 
+        ": " << number << "\n";
     return read_len;
 
 }
 
+/* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
+ * specifying as_hex dumps memory as hex */
 int64_t hook_api::trace (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t as_hex )
 {
-
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
-
-    PRINTF("HOOKAPI_trace: ");
-    if (read_len > 1024) read_len = 1024;
-    for (int i = 0; i < read_len && i < memory_length; ++i)
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+    if (read_len > 1024) read_len = 1024; // max trace is 1 kib
+    if (!j.trace())
+        return read_len;
+    if (as_hex)
     {
-        if (as_hex)
-            PRINTF("%02X", memory[read_ptr + i]);
-        else
-            PRINTF("%c", memory[read_ptr + i]);
+        unsigned char output[2049];
+        for (int i = 0; i < read_len && i < memory_length; ++i)
+        {
+            unsigned char high = (memory[read_ptr + i] >> 4) & 0xF;
+            unsigned char low  = (memory[read_ptr + i] & 0xF);
+            high += ( high < 10 ? '0' : 'A' );
+            low  +=  ( low < 10 ? '0' : 'A' );
+            output[i*2 + 0] = high;
+            output[i*2 + 1] = low;
+        }
+        output[read_len*2] = '\0';
+        printf("TRACEHEX: %s\n", output);
+        j.trace() << "HOOK::TRACE(hex): " << (const char*)output << "\n";
     }
-    PRINTF("\n");
+    else
+    {
+        j.trace() << "HOOK::TRACE(txt): " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len)
+            << "\n";
+    }
     return read_len;
-
 }
 
 
+// zero pad on the left a key to bring it up to 32 bytes
 std::optional<ripple::uint256>
 inline
 make_state_key(
@@ -328,6 +344,10 @@ make_state_key(
     return ripple::uint256::fromVoid(key_buffer);
 }
 
+// update or create a hook state object
+// read_ptr = data to set, kread_ptr = key
+// RH NOTE passing 0 size causes a delete operation which is as-intended
+// RH TODO: check reserve
 int64_t hook_api::state_set (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -348,8 +368,6 @@ int64_t hook_api::state_set (
     if (kread_len < 1)
         return TOO_SMALL;
 
-    if (read_len == 0)
-        return TOO_SMALL;
 
     auto const sle = view.peek(hookCtx.hookKeylet);
     if (!sle)
@@ -362,13 +380,11 @@ int64_t hook_api::state_set (
     auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
-
     (*hookCtx.changedState)[*key] =
         std::pair<bool, ripple::Blob> (true,
                 {memory + read_ptr,  memory + read_ptr + read_len});
 
     return read_len;
-
 }
 
 
@@ -388,13 +404,14 @@ void hook::commitChangesToLedger ( HookContext& hookCtx ) {
         }
     }
 
-    PRINTF("emitted txn count: %d\n", hookCtx.emitted_txn.size());
+    DBG_PRINTF("emitted txn count: %d\n", hookCtx.emitted_txn.size());
 
+    auto const& j = hookCtx.applyCtx.app.journal("View");
     auto & netOps = hookCtx.applyCtx.app.getOPs();
     for (; hookCtx.emitted_txn.size() > 0; hookCtx.emitted_txn.pop())
     {
         auto& tpTrans = hookCtx.emitted_txn.front();
-        std::cout << "submitting emitted tx: " << tpTrans << "\n";
+        JLOG(j.trace()) << "Hook emitted tx: " << tpTrans << "\n";
         try
         {
             netOps.processTransaction(
@@ -402,12 +419,13 @@ void hook::commitChangesToLedger ( HookContext& hookCtx ) {
         }
         catch (std::exception& e)
         {
-            std::cout << "EMITTED TX FAILED TO PROCESS: " << e.what() << "\n";
+            JLOG(j.warn()) << "Hook emitted tx failed to process: " << e.what() << "\n";
         }
     }
 
 }
 
+/* Retrieve the state into write_ptr identified by the key in kread_ptr */
 int64_t hook_api::state (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len,
@@ -419,7 +437,7 @@ int64_t hook_api::state (
             0, 0);
 }
 
-/* this api actually serves both local and foreign state requests
+/* This api actually serves both local and foreign state requests
  * feeding aread_ptr = 0 and aread_len = 0 will cause it to read local */
 int64_t hook_api::state_foreign (
         wasmer_instance_context_t * wasm_ctx,
@@ -511,7 +529,7 @@ int64_t hook_api::state_foreign (
 }
 
 
-
+// Cause the originating transaction to go through, save state changes and emit emitted tx, exit hook
 int64_t hook_api::accept (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -520,6 +538,7 @@ int64_t hook_api::accept (
     return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
 }
 
+// Cause the originating transaction to be rejected, save state changes and emit emitted tx, exit hook
 int64_t hook_api::reject (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -528,6 +547,7 @@ int64_t hook_api::reject (
     return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::REJECT);
 }
 
+// Cause the originating transaction to be rejected, discard state changes and discard emitted tx, exit hook
 int64_t hook_api::rollback (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -536,6 +556,7 @@ int64_t hook_api::rollback (
     return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ROLLBACK);
 }
 
+// called by the above three exit methods
 int64_t hook_api::_exit (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -547,7 +568,8 @@ int64_t hook_api::_exit (
     if (read_ptr) {
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {
             JLOG(j.trace())
-                << "Hook tried to accept/reject/rollback but specified memory outside of the wasm instance limit when specifying a reason string";
+                << "Hook tried to accept/reject/rollback but specified memory outside of the wasm instance " <<
+                "limit when specifying a reason string\n";
             return OUT_OF_BOUNDS;
         }
 
@@ -565,6 +587,7 @@ int64_t hook_api::_exit (
 }
 
 
+// Write the TxnID of the originating transaction into the write_ptr
 int64_t hook_api::otxn_id (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len )
@@ -586,6 +609,7 @@ int64_t hook_api::otxn_id (
         memory, memory_length);
 }
 
+// Return the tt (Transaction Type) numeric code of the originating transaction
 int64_t hook_api::otxn_type ( wasmer_instance_context_t * wasm_ctx )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -593,6 +617,8 @@ int64_t hook_api::otxn_type ( wasmer_instance_context_t * wasm_ctx )
     return applyCtx.tx.getTxnType();
 }
 
+// Return the burden of the originating transaction... this will be 1 unless the originating transaction
+// was itself an emitted transaction from a previous hook invocation
 int64_t hook_api::otxn_burden ( wasmer_instance_context_t * wasm_ctx )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -617,11 +643,8 @@ int64_t hook_api::otxn_burden ( wasmer_instance_context_t * wasm_ctx )
     return (int64_t)(burden);
 }
 
-int64_t hook_api::etxn_generation ( wasmer_instance_context_t * wasm_ctx )
-{
-    return hook_api::otxn_generation ( wasm_ctx ) + 1;
-}
-
+// Return the generation of the originating transaction... this will be 1 unless the originating transaction
+// was itself an emitted transaction from a previous hook invocation
 int64_t hook_api::otxn_generation ( wasmer_instance_context_t * wasm_ctx )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -650,44 +673,22 @@ int64_t hook_api::otxn_generation ( wasmer_instance_context_t * wasm_ctx )
     return hookCtx.generation;
 }
 
+// Return the generation of a hypothetically emitted transaction from this hook
+int64_t hook_api::etxn_generation ( wasmer_instance_context_t * wasm_ctx )
+{
+    return hook_api::otxn_generation ( wasm_ctx ) + 1;
+}
 
+
+// Return the current ledger sequence number
 int64_t hook_api::ledger_seq ( wasmer_instance_context_t * wasm_ctx )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     return applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
 }
 
-int64_t hook_api::slot_field_txt (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id, uint32_t slot )
-{
-    return NOT_IMPLEMENTED; // RH TODO
-}
 
-int64_t hook_api::slot_field (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id, uint32_t slot )
-{
-    return NOT_IMPLEMENTED; // RH TODO
-}
-
-
-int64_t hook_api::slot_id (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot )
-{
-    return NOT_IMPLEMENTED; // RH TODO
-}
-
-int64_t hook_api::slot_type (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot )
-{
-    return NOT_IMPLEMENTED; // RH TODO
-}
-
+// Dump a field in 'full text' form into the hook's memory
 int64_t hook_api::otxn_field_txt (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len,
@@ -721,7 +722,7 @@ int64_t hook_api::otxn_field_txt (
 
 }
 
-
+// Dump a field from the originating transaction into the hook's memory
 int64_t hook_api::otxn_field (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len,
@@ -737,10 +738,10 @@ int64_t hook_api::otxn_field (
     SField const& fieldType = ripple::SField::getField( field_id );
 
     if (fieldType == sfInvalid)
-        return -1;
+        return INVALID_FIELD;
 
     if (tx.getFieldIndex(fieldType) == -1)
-        return -2;
+        return DOESNT_EXIST;
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
 
@@ -759,16 +760,17 @@ int64_t hook_api::otxn_field (
         write_ptr, write_len,
         s.getDataPtr() + (is_account ? 1 : 0), s.getDataLength() - (is_account ? 1 : 0),
         memory, memory_length);
-
 }
 
 
+// RH NOTE: slot system is not yet implemented, but planned feature for prod
 int64_t hook_api::slot_clear (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t slot_id  )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
+    return NOT_IMPLEMENTED;
+    /*
     if (slot_id > hook_api::max_slots)
         return TOO_BIG;
 
@@ -779,8 +781,10 @@ int64_t hook_api::slot_clear (
     hookCtx.slot_free.push(slot_id);
 
     return slot_id;
+    */
 }
 
+// RH NOTE: slot system is not yet implemented, but planned feature for prod
 int64_t hook_api::slot_set (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len,
@@ -829,31 +833,42 @@ int64_t hook_api::slot_set (
 
 }
 
-int32_t hook_api::_g (
+// Slots unimplemented
+int64_t hook_api::slot_field_txt (
         wasmer_instance_context_t * wasm_ctx,
-        uint32_t id, uint32_t maxitr )
+        uint32_t write_ptr, uint32_t write_len,
+        uint32_t field_id, uint32_t slot )
 {
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    if (hookCtx.guard_map.find(id) == hookCtx.guard_map.end())
-        hookCtx.guard_map[id] = 1;
-    else
-        hookCtx.guard_map[id]++;
-
-
-    if (hookCtx.guard_map[id] > maxitr)
-    {
-        if (id > 0xFFFFU)
-            FPRINTF(stderr, "MACRO GUARD VIOLATION src: %d macroline: %d, iterations=%d\n",
-                    (id & 0xFFFFU), id >> 16, hookCtx.guard_map[id]);
-        else
-            FPRINTF(stderr, "GUARD VIOLATION id(line)=%d, iterations=%d\n", id, hookCtx.guard_map[id]);
-
-        rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
-    }
-
-    return 1;
+    return NOT_IMPLEMENTED; // RH TODO
 }
 
+// Slots unimplemented
+int64_t hook_api::slot_field (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t write_ptr, uint32_t write_len,
+        uint32_t field_id, uint32_t slot )
+{
+    return NOT_IMPLEMENTED; // RH TODO
+}
+
+
+// Slots unimplemented
+int64_t hook_api::slot_id (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t slot )
+{
+    return NOT_IMPLEMENTED; // RH TODO
+}
+
+// Slots unimplemented
+int64_t hook_api::slot_type (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t slot )
+{
+    return NOT_IMPLEMENTED; // RH TODO
+}
+
+// Slots unimplemented
 int64_t hook_api::trace_slot (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t slot )
@@ -873,6 +888,9 @@ int64_t hook_api::trace_slot (
     */
 }
 
+
+/* Emit a transaction from this hook. Transaction must be in STObject form, fully formed and valid.
+ * XRPLD does not modify transactions it only checks them for validity. */
 int64_t hook_api::emit (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len )
@@ -891,12 +909,10 @@ int64_t hook_api::emit (
 
     ripple::Blob blob{memory + read_ptr, memory + read_ptr + read_len};
 
-    PRINTF("hook is emitting tx:-----\n");
+    DBG_PRINTF("hook is emitting tx:-----\n");
     for (unsigned char c: blob)
-    {
-        PRINTF("%02X", c);
-    }
-    PRINTF("\n--------\n");
+        DBG_PRINTF("%02X", c);
+    DBG_PRINTF("\n--------\n");
 
     SerialIter sitTrans(makeSlice(blob));
     std::shared_ptr<STTx const> stpTrans;
@@ -924,35 +940,35 @@ int64_t hook_api::emit (
     // rule 1: sfSequence must be present and 0
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
     {
-        std::cout << "EMISSION FAILURE, sfSequence missing or non-zero.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfSequence missing or non-zero.\n";
         return EMISSION_FAILURE;
     }
 
     // rule 2: sfSigningPubKey must be present and 00...00
     if (!stpTrans->isFieldPresent(sfSigningPubKey))
     {
-        std::cout << "EMISSION FAILURE, sfSigningPubKey missing.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey missing.\n";
         return EMISSION_FAILURE;
     }
 
     auto const pk = stpTrans->getSigningPubKey();
     if (pk.size() != 33)
     {
-        std::cout << "EMISSION FAILURE, sfSigningPubKey present but wrong size, expecting 33 bytes.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.\n";
         return EMISSION_FAILURE;
     }
 
     for (int i = 0; i < 33; ++i)
         if (pk[i] != 0)
         {
-            std::cout << "EMISSION FAILURE, sfSigningPubKey present but non-zero.\n";
+            JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey present but non-zero.\n";
             return EMISSION_FAILURE;
         }
 
     // rule 3: sfEmitDetails must be present and valid
     if (!stpTrans->isFieldPresent(sfEmitDetails))
     {
-        std::cout << "EMISSION FAILURE, sfEmitDetails missing.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfEmitDetails missing.\n";
         return EMISSION_FAILURE;
     }
 
@@ -965,7 +981,7 @@ int64_t hook_api::emit (
         !emitDetails.isFieldPresent(sfEmitNonce) ||
         !emitDetails.isFieldPresent(sfEmitCallback))
     {
-        std::cout<< "EMISSION FAILURE, sfEmitDetails malformed.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfEmitDetails malformed.\n";
         return EMISSION_FAILURE;
     }
 
@@ -979,39 +995,39 @@ int64_t hook_api::emit (
 
     if (gen != gen_proper)
     {
-        std::cout << "EMISSION FAILURE, Generation provided in EmitDetails was not correct: " << gen
+        JLOG(j.trace()) << "Hook emission failure: Generation provided in EmitDetails was not correct: " << gen
             << " should be " << gen_proper << "\n";
         return EMISSION_FAILURE;
     }
 
     if (bur != etxn_burden(wasm_ctx))
     {
-        std::cout << "EMISSION FAILURE, Burden provided in EmitDetails was not correct\n";
+        JLOG(j.trace()) << "Hook emission failure: Burden provided in EmitDetails was not correct\n";
         return EMISSION_FAILURE;
     }
 
     if (pTxnID != applyCtx.tx.getTransactionID())
     {
-        std::cout << "EMISSION FAILURE, ParentTxnID provided in EmitDetails was not correct\n";
+        JLOG(j.trace()) << "Hook emission failure: ParentTxnID provided in EmitDetails was not correct\n";
         return EMISSION_FAILURE;
     }
 
     if (hookCtx.nonce_used.find(nonce) == hookCtx.nonce_used.end())
     {
-        std::cout << "EMISSION FAILURE, Nonce provided in EmitDetails was not generated by nonce\n";
+        JLOG(j.trace()) << "Hook emission failure: Nonce provided in EmitDetails was not generated by nonce\n";
         return EMISSION_FAILURE;
     }
 
     if (callback != hookCtx.account)
     {
-        std::cout << "EMISSION FAILURE, Callback account must be the account of the emitting hook\n";
+        JLOG(j.trace()) << "Hook emission failure: Callback account must be the account of the emitting hook\n";
         return EMISSION_FAILURE;
     }
 
     // rule 4: sfSignature must be absent
     if (stpTrans->isFieldPresent(sfSignature))
     {
-        std::cout << "EMISSION FAILURE, sfSignature is present but should not be.\n";
+        JLOG(j.trace()) << "Hook emission failure: sfSignature is present but should not be.\n";
         return EMISSION_FAILURE;
     }
 
@@ -1022,7 +1038,7 @@ int64_t hook_api::emit (
     uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
     if (!stpTrans->isFieldPresent(sfLastLedgerSequence) || tx_lls < ledgerSeq + 1)
     {
-        std::cout << "EMISSION FAILURE, sfLastLedgerSequence missing or invalid\n";
+        JLOG(j.trace()) << "Hook emission failure: sfLastLedgerSequence missing or invalid\n";
         return EMISSION_FAILURE;
     }
 
@@ -1030,7 +1046,7 @@ int64_t hook_api::emit (
     if (stpTrans->isFieldPresent(sfFirstLedgerSequence) &&
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
-        std::cout << "EMISSION FAILURE FirstLedgerSequence > LastLedgerSequence\n";
+        JLOG(j.trace()) << "Hook emission failure: FirstLedgerSequence > LastLedgerSequence\n";
         return EMISSION_FAILURE;
     }
 
@@ -1043,20 +1059,20 @@ int64_t hook_api::emit (
     int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
     if (minfee < 0 || hookCtx.fee_base < 0)
     {
-        std::cout << "EMISSION FAILURE fee could not be calculated\n";
+        JLOG(j.trace()) << "Hook emission failure: fee could not be calculated\n";
         return EMISSION_FAILURE;
     }
 
     if (!stpTrans->isFieldPresent(sfFee))
     {
-        std::cout << "EMISSION FAILURE Fee missing from emitted tx\n";
+        JLOG(j.trace()) << "Hook emission failure: Fee missing from emitted tx\n";
         return EMISSION_FAILURE;
     }
 
     int64_t fee = stpTrans->getFieldAmount(sfFee).xrp().drops();
     if (fee < minfee)
     {
-        std::cout << "EMISSION FAILURE Fee on emitted txn is less than the minimum required fee\n";
+        JLOG(j.trace()) << "Hook emission failure: Fee on emitted txn is less than the minimum required fee\n";
         return EMISSION_FAILURE;
     }
 
@@ -1064,7 +1080,7 @@ int64_t hook_api::emit (
     auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
     if (tpTrans->getStatus() != NEW)
     {
-        std::cout << "EMISSION FAILURE 2 WHILE EMIT: tpTrans->getStatus() != NEW\n";
+        JLOG(j.trace()) << "Hook emission failure: tpTrans->getStatus() != NEW\n";
         return EMISSION_FAILURE;
     }
 
@@ -1073,6 +1089,7 @@ int64_t hook_api::emit (
     return read_len;
 }
 
+// When implemented will return the hash of the current hook
 int64_t hook_api::hook_hash (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t ptr_len )
@@ -1081,6 +1098,7 @@ int64_t hook_api::hook_hash (
     return NOT_IMPLEMENTED; // RH TODO implement
 }
 
+// Write the account id that the running hook is installed on into write_ptr
 int64_t hook_api::hook_account (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t ptr_len )
@@ -1089,13 +1107,14 @@ int64_t hook_api::hook_account (
     if (NOT_IN_BOUNDS(write_ptr, 20, memory_length))
         return OUT_OF_BOUNDS;
 
-
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, 20,
         hookCtx.account.data(), 20,
         memory, memory_length);
 }
 
+// Deterministic nonces (can be called multiple times)
+// Writes nonce into the write_ptr
 int64_t hook_api::nonce (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len )
@@ -1128,6 +1147,7 @@ int64_t hook_api::nonce (
     return 32;
 }
 
+// Reserve one or more transactions for emission from the running hook
 int64_t hook_api::etxn_reserve (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t count )
@@ -1143,7 +1163,7 @@ int64_t hook_api::etxn_reserve (
     return count;
 }
 
-
+// Compute the burden of an emitted transaction based on a number of factors
 int64_t hook_api::etxn_burden (
         wasmer_instance_context_t * wasm_ctx )
 {
@@ -1160,8 +1180,9 @@ int64_t hook_api::etxn_burden (
 
     return burden;
 }
-// hookCtx.applyCtx.app
 
+// When implemented this function will allow all other hook api functions to be called by number instead of
+// name... this is important for size in some cases
 int64_t hook_api::_special (
         wasmer_instance_context_t* wasm_ctx,
         uint32_t api_no,
@@ -1177,10 +1198,13 @@ int64_t hook_api::util_sha512h (
         uint32_t write_ptr, uint32_t write_len,
         uint32_t read_ptr, uint32_t read_len )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    return NOT_IMPLEMENTED; // RH TODO, and bill appropriately
 }
 
-// returns object length including header bytes (and footer bytes in the event of array or object)
+
+// RH NOTE this is a light-weight stobject parsing function for drilling into a provided serialzied object
+// however it could probably be replaced by an existing class or routine or set of routines in XRPLD
+// Returns object length including header bytes (and footer bytes in the event of array or object)
 // negative indicates error
 // -1 = unexpected end of bytes
 // -2 = unknown type (detected early)
@@ -1188,13 +1212,13 @@ int64_t hook_api::util_sha512h (
 // -4 = excessive stobject nesting
 // -5 = excessively large array or object
 inline int32_t get_stobject_length (
-    unsigned char* start,   // in
-    unsigned char* maxptr,  // in
-    int& type,              // out
-    int& field,             // out
-    int& payload_start,     // out the start of actual payload data for this type
-    int& payload_length,    // out the length of actual payload data for this type
-    int recursion_depth = 0)
+    unsigned char* start,   // in - begin iterator
+    unsigned char* maxptr,  // in - end iterator
+    int& type,              // out - populated by serialized type code
+    int& field,             // out - populated by serialized field code
+    int& payload_start,     // out - the start of actual payload data for this type
+    int& payload_length,    // out - the length of actual payload data for this type
+    int recursion_depth = 0)   // used internally
 {
     if (recursion_depth > 10)
         return -4;
@@ -1281,8 +1305,8 @@ inline int32_t get_stobject_length (
     {
         payload_start = upto - start;
         payload_length = length;
-//        PRINTF("%d get_stobject_length field: %d Type: %d VL: %s Len: %d Payload_Start: %d Payload_Len: %d\n", 
-//            recursion_depth, field, type, (is_vl ? "yes": "no"), length, payload_start, payload_length);
+        DBG_PRINTF("%d get_stobject_length field: %d Type: %d VL: %s Len: %d Payload_Start: %d Payload_Len: %d\n",
+            recursion_depth, field, type, (is_vl ? "yes": "no"), length, payload_start, payload_length);
         return length + (upto - start);
     }
 
@@ -1295,8 +1319,8 @@ inline int32_t get_stobject_length (
             int subfield = -1, subtype = -1, payload_start_ = -1, payload_length_ = -1;
             int32_t sublength = get_stobject_length(
                     upto, end, subtype, subfield, payload_start_, payload_length_, recursion_depth + 1);
-//            PRINTF("%d get_stobject_length i %d %d-%d, upto %d sublength %d\n", recursion_depth, i,
-//                    subtype, subfield, upto - start, sublength);
+            DBG_PRINTF("%d get_stobject_length i %d %d-%d, upto %d sublength %d\n", recursion_depth, i,
+                    subtype, subfield, upto - start, sublength);
             if (sublength < 0)
                 return -1;
             upto += sublength;
@@ -1318,7 +1342,8 @@ inline int32_t get_stobject_length (
 
 }
 
-
+// Given an serialized object in memory locate and return the offset and length of a subfield of that object
+// If successful returns offset and length joined as int64_t. Use SUB_OFFSET and SUB_LENGTH to extract.
 int64_t hook_api::util_subfield (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
@@ -1344,18 +1369,16 @@ int64_t hook_api::util_subfield (
         int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
         if (length < 0)
             return PARSE_ERROR;
-//        PRINTF("util_subfield: length %d payload_length %d upto %d payload_start %d\n", 
-//                length, payload_length, (upto - start), (upto - start) + payload_start);
         if ((type << 16) + field == field_id)
             return (((int64_t)(upto - start + payload_start)) << 32) /* start of the object */
                 + (uint32_t)(payload_length);
-
         upto += length;
     }
 
     return DOESNT_EXIST;
 }
 
+// Same as subfield but indexes into a serialized array
 int64_t hook_api::util_subarray (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
@@ -1377,24 +1400,20 @@ int64_t hook_api::util_subarray (
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
-//        PRINTF("util_subarray [%d] called: upto = %d: %02X%02X%02X%02X%02X\n", i, (upto - start),
-//                upto[0], upto[1], upto[2], upto[3], upto[4]);
         int type = -1, field = -1, payload_start = -1, payload_length = -1;
         int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
-//        PRINTF("util_subarray length: %d\n", length);
         if (length < 0)
             return PARSE_ERROR;
-
         if (i == index_id)
             return (((int64_t)(upto - start)) << 32) /* start of the object */
                 +   (uint32_t)(length);
-
         upto += length;
     }
 
     return DOESNT_EXIST;
 }
 
+// Convert an account ID into a base58-check encoded r-address
 int64_t hook_api::util_raddr (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len,
@@ -1421,6 +1440,7 @@ int64_t hook_api::util_raddr (
         memory, memory_length);
 }
 
+// Convert a base58-check encoded r-address into a 20 byte account id
 int64_t hook_api::util_accid (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len,
@@ -1461,13 +1481,14 @@ int64_t hook_api::util_accid (
         memory, memory_length);
 }
 
-
+// when implemented this function will validate an st-object
 int64_t hook_api::util_verify_sto (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t tread_ptr, uint32_t tread_len)
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    return NOT_IMPLEMENTED;
 /*
     ripple::Serializer ss { (void*)(memory + tread_ptr), tread_len };
     auto const sig = get(st, sigField);
@@ -1479,12 +1500,12 @@ int64_t hook_api::util_verify_sto (
     return verify(
         pk, Slice(ss.data(), ss.size()), Slice(sig->data(), sig->size()));
 */
-    return NOT_IMPLEMENTED;
 }
 
 
-        
 
+// Validate either an secp256k1 signature or an ed25519 signature, using the XRPLD convention for identifying
+// the key type. Pointer prefixes: d = data, s = signature, k = public key.
 int64_t hook_api::util_verify (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t dread_ptr, uint32_t dread_len,
@@ -1505,14 +1526,15 @@ int64_t hook_api::util_verify (
     return verify(key, data, sig, false) ? 1 : 0;
 }
 
+// Return the current fee base of the current ledger (multiplied by a margin)
 int64_t hook_api::fee_base (
         wasmer_instance_context_t * wasm_ctx )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
     return (int64_t)((double)(view.fees().base.drops()) * hook_api::fee_base_multiplier);
 }
 
+// Return the fee base for a hypothetically emitted transaction from the current hook based on byte count
 int64_t hook_api::etxn_fee_base (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t tx_byte_count )
@@ -1537,6 +1559,7 @@ int64_t hook_api::etxn_fee_base (
     return fee * hook_api::drops_per_byte * tx_byte_count;
 }
 
+// Populate an sfEmitDetails field in a soon-to-be emitted transaction
 int64_t hook_api::etxn_details (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t write_ptr, uint32_t write_len )
@@ -1590,6 +1613,39 @@ int64_t hook_api::etxn_details (
     out += 20;
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
                                                                       /* upto = 105 | --------- */
-    PRINTF("emitdetails size = %d\n", (out - memory - write_ptr));
+    DBG_PRINTF("emitdetails size = %d\n", (out - memory - write_ptr));
     return 105;
 }
+
+
+// RH TODO: bill based on guard counts
+// Guard function... very important. Enforced on SetHook transaction, keeps track of how many times a
+// runtime loop iterates and terminates the hook if the iteration count rises above a preset number of iterations
+// as determined by the hook developer
+int32_t hook_api::_g (
+        wasmer_instance_context_t * wasm_ctx,
+        uint32_t id, uint32_t maxitr )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.guard_map.find(id) == hookCtx.guard_map.end())
+        hookCtx.guard_map[id] = 1;
+    else
+        hookCtx.guard_map[id]++;
+
+    if (hookCtx.guard_map[id] > maxitr)
+    {
+        if (id > 0xFFFFU)
+        {
+            JLOG(j.trace()) << "Hook macro guard violation. Src line: " << (id & 0xFFFFU) <<
+                              " Macro line: " << (id >> 16) << " Iterations: " << hookCtx.guard_map[id] << "\n";
+        }
+        else
+        {
+            JLOG(j.trace()) << "Hook guard violation. Src line: " << id <<
+                " Iterations: " << hookCtx.guard_map[id] << "\n";
+        }
+        rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
+    }
+    return 1;
+}
+

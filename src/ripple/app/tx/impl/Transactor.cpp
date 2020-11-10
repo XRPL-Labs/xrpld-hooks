@@ -698,7 +698,8 @@ Transactor::operator()()
                 result = tecHOOK_REJECTED;
         }
 
-        if (ctx_.tx.isFieldPresent(sfDestination))
+
+        if (result == tesSUCCESS && ctx_.tx.isFieldPresent(sfDestination))
         {
             auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
             auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
@@ -716,7 +717,7 @@ Transactor::operator()()
         }
 
         // check if there is a callback
-        if (ctx_.tx.isFieldPresent(sfEmitDetails))
+        if (result == tesSUCCESS && ctx_.tx.isFieldPresent(sfEmitDetails))
         {
             try {
                 auto const& emitDetails =

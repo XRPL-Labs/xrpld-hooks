@@ -11,6 +11,9 @@
 #define HOOKAPI_INCLUDED 1
 #include <stdint.h>
 
+int64_t hook(int64_t reserved) __attribute__((used));
+int64_t cbak(int64_t reserved) __attribute__((used));
+
 extern int32_t _g                  (uint32_t id, uint32_t maxiter);
 extern int64_t accept              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
 extern int64_t reject              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
@@ -64,7 +67,28 @@ extern int64_t otxn_generation     (void);
 extern int64_t otxn_id             (uint32_t write_ptr,  uint32_t write_len);
 extern int64_t otxn_type           (void);
 
-#include <stdint.h>
+
+#define SUCCESS  0                  // return codes > 0 are reserved for hook apis to return "success"
+#define OUT_OF_BOUNDS  -1           // could not read or write to a pointer to provided by hook
+#define INTERNAL_ERROR  -2          // eg directory is corrupt
+#define TOO_BIG  -3                 // something you tried to store was too big
+#define TOO_SMALL  -4               // something you tried to store or provide was too small
+#define DOESNT_EXIST  -5            // something you requested wasn't found
+#define NO_FREE_SLOTS  -6           // when trying to load an object there is a maximum of 255 slots
+#define INVALID_ARGUMENT  -7        // self explanatory
+#define ALREADY_SET  -8             // returned when a one-time parameter was already set by the hook
+#define PREREQUISITE_NOT_MET  -9    // returned if a required param wasn't set before calling
+#define FEE_TOO_LARGE  -10          // returned if the attempted operation would result in an absurd fee
+#define EMISSION_FAILURE  -11       // returned if an emitted tx was not accepted by rippled
+#define TOO_MANY_NONCES  -12        // a hook has a maximum of 256 nonces
+#define TOO_MANY_EMITTED_TXN  -13   // a hook has emitted more than its stated number of emitted txn
+#define NOT_IMPLEMENTED  -14        // an api was called that is reserved for a future version
+#define INVALID_ACCOUNT  -15        // an api expected an account id but got something else
+#define GUARD_VIOLATION  -16        // a guarded loop or function iterated over its maximum
+#define INVALID_FIELD  -17          // the field requested is returning sfInvalid
+#define PARSE_ERROR  -18            // hook asked hookapi to parse something the contents of which was invalid
+
+
 #include "sfcodes.h"
 #include "hookmacro.h"
 

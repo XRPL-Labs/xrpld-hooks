@@ -98,7 +98,7 @@ check_guard(
     std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
 
     if (DEBUG_GUARD_CHECK)
-        printf("\n\n\n\start of guard analysis for codesec %d\n", codesec);
+        printf("\n\n\nstart of guard analysis for codesec %d\n", codesec);
 
     for (int i = start_offset; i < end_offset; )
     {
@@ -135,7 +135,8 @@ check_guard(
                     stack.pop();
                     uint64_t b = stack.top();
                     stack.pop();
-                    printf("FOUND: GUARD(%llu, %llu), codesec: %d offset %d\n", a, b, codesec, i);
+                    if (DEBUG_GUARD_CHECK)
+                        printf("FOUND: GUARD(%llu, %llu), codesec: %d offset %d\n", a, b, codesec, i);
 
                     if (b <= 0)
                     {
@@ -418,7 +419,6 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    printf("preflight sethook 1\n");
 
     if (!ctx.tx.isFieldPresent(sfCreateCode) ||
         !ctx.tx.isFieldPresent(sfHookOn))
@@ -428,14 +428,13 @@ SetHook::preflight(PreflightContext const& ctx)
         return temMALFORMED;
     }
 
-    printf("preflight sethook 2\n");
 
     Blob hook = ctx.tx.getFieldVL(sfCreateCode);
 
-    // if the hook is empty it's a delete request
-    if (!hook.empty()) {
-        printf("preflight sethook 3\n");
-
+    // if the hook field is not empty it's a set request, so we need to validate the hook's wasm binary
+    if (!hook.empty())
+    {
+        // RH TODO compute actual smallest possible hook and update this value
         if (hook.size() < 10)
         {
             JLOG(ctx.j.trace())
@@ -443,28 +442,21 @@ SetHook::preflight(PreflightContext const& ctx)
             return temMALFORMED;
         }
 
-        unsigned char header[8] = { 0x00U, 0x61U, 0x73U, 0x6DU, 0x01U, 0x00U, 0x00U, 0x00U };
-
         // check header, magic number
-        // RH TODO clean up debug output
-        bool bad_header = false;
+        unsigned char header[8] = { 0x00U, 0x61U, 0x73U, 0x6DU, 0x01U, 0x00U, 0x00U, 0x00U };
+        for (int i = 0; i < 8; ++i)
         {
-            printf("Hook start: `");
-            for (int i = 0; i < 8; ++i)
-            {
-                bool match = hook[i] == header[i];
-                printf("%02X - %s, ", hook[i], (match ? "t" : "f"));
-                if (!match) bad_header = true;
+            bool match = hook[i] == header[i];
+            if (hook[i] != header[i])
+            {                
+                JLOG(ctx.j.trace())
+                    << "Malformed transaction: Hook was not valid webassembly binary. " <<
+                       "Missing magic number or version.";
+                return temMALFORMED;
             }
-            printf("`\n");
-        }
-        if (bad_header)
-        {
-            JLOG(ctx.j.trace())
-                << "Malformed transaction: Hook was not valid webassembly binary. missing magic number or version.";
-            return temMALFORMED;
         }
 
+        // now we check for guards... first check if _g is imported
         int guard_import_number = -1;
         for (int i = 8, j = 0; i < hook.size();)
         {
@@ -480,14 +472,18 @@ SetHook::preflight(PreflightContext const& ctx)
 
             j = i;
 
+            // each web assembly section begins with a single byte section type followed by an leb128 length
             int section_type = hook[i++];
             int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             int section_start = i;
 
+            if (DEBUG_GUARD_CHECK)
+                printf("WASM binary analysis -- upto %d: section %d with length %d\n", 
+                        i, section_type, section_length);
 
-            printf("WASM binary analysis -- upto %d: section %d with length %d\n", i, section_type, section_length);
             int next_section = i + section_length;
 
+            // we are interested in the import section... we need to know if _g is imported and which import# it is
             if (section_type == 2) // import section
             {
                 int import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
@@ -505,10 +501,10 @@ SetHook::preflight(PreflightContext const& ctx)
                 {
                     // first check module name
                     int mod_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (mod_length < 1)
+                    if (mod_length < 1 || mod_length > (hook.size() - i))
                     {
                         JLOG(ctx.j.trace())
-                            << "Malformed transaction: Hook attempted to specify nil import module\n";
+                            << "Malformed transaction: Hook attempted to specify nil or invalid import module\n";
                         return temMALFORMED;
                     }
 
@@ -523,10 +519,10 @@ SetHook::preflight(PreflightContext const& ctx)
 
                     // next get import name
                     int name_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (name_length < 1)
+                    if (name_length < 1 || name_length > (hook.size() - i))
                     {
                         JLOG(ctx.j.trace())
-                            << "Malformed transaction: Hook attempted to specify nil import name\n";
+                            << "Malformed transaction: Hook attempted to specify nil or invalid import name\n";
                         return temMALFORMED;
                     }
 
@@ -548,11 +544,11 @@ SetHook::preflight(PreflightContext const& ctx)
                     i++; CHECK_SHORT_HOOK();
                     int type_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
 
-
                     // RH TODO: validate that the parameters of the imported functions are correct
                     if (import_name == "_g")
+                    {
                         guard_import_number = func_upto;
-                    else
+                    } else
                     {
                         bool found_import = false;
                         for (int k = 0; k < hook::imports_count; ++k)
@@ -587,7 +583,7 @@ SetHook::preflight(PreflightContext const& ctx)
 
                 // we have an imported guard function, so now we need to enforce the guard rules
                 // which are:
-                // 1. all functions must start with a guard call before any branching
+                // 1. all functions must start with a guard call before any branching [ RH TODO ]
                 // 2. all loops must start with a guard call before any branching
                 // to enforce these rules we must do a second pass of the wasm in case the function
                 // section was placed in this wasm binary before the import section
@@ -595,7 +591,7 @@ SetHook::preflight(PreflightContext const& ctx)
             } else
             if (section_type == 7) // export section
             {
-                int export_count = parseLeb128(hook, i, &i);
+                int export_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 if (export_count <= 0)
                 {
                     JLOG(ctx.j.trace())
@@ -608,7 +604,7 @@ SetHook::preflight(PreflightContext const& ctx)
                 bool found_cbak_export = false;
                 for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
                 {
-                    int name_len = parseLeb128(hook, i, &i);
+                    int name_len = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                     if (name_len == 4)
                     {
 
@@ -620,8 +616,7 @@ SetHook::preflight(PreflightContext const& ctx)
                     }
 
                     i += name_len + 1;
-                    parseLeb128(hook, i, &i);
-
+                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 }
 
                 // execution to here means export section was parsed
@@ -640,7 +635,7 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
 
-        // second pass, where we check all the guard function calls follow the guard rules
+        // second pass... where we check all the guard function calls follow the guard rules
         // minimal other validation in this pass because first pass caught most of it
         for (int i = 8, j = 0; i < hook.size();)
         {
@@ -660,15 +655,15 @@ SetHook::preflight(PreflightContext const& ctx)
                 {
                     // parse locals
                     int code_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    int code_end = i + code_size; // RH TODO check if this is right
+                    int code_end = i + code_size;
                     int local_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                     for (int k = 0; k < local_count; ++k)
                     {
                         int array_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                         if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                         {
-                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: "<<j<<" Local: "<<k <<
-                                " Offset: " << i << "\n";
+                            JLOG(ctx.j.trace()) << "Hook set invalid local type. Codesec: " << j << 
+                                " Local: " << k << " Offset: " << i << "\n";
                             return temMALFORMED;
                         }
                         i++; CHECK_SHORT_HOOK();
@@ -691,18 +686,18 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
         // execution to here means guards are installed correctly
-        fprintf(stderr, "Trying to wasmer_instantiate proposed hook ptr=%llx len=%lu\n", hook.data(), hook.size());
+        
+        JLOG(ctx.j.trace()) << "Trying to wasmer_instantiate proposed hook size = " <<  hook.size() << "\n";
 
         // check if wasmer can run it
         wasmer_instance_t *instance = NULL;
         if (wasmer_instantiate(
             &instance, hook.data(), hook.size(), hook::imports, hook::imports_count)
                 != wasmer_result_t::WASMER_OK) {
-            hook::printWasmerError();
             JLOG(ctx.j.trace()) << "Tried to set a hook with invalid code.";
+            hook::printWasmerError(ctx.j.trace());
             return temMALFORMED;
         }
-
         wasmer_instance_destroy(instance);
 
     }

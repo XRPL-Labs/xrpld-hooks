@@ -19,9 +19,6 @@
  *  - rollback a send (minus a fee) if callback doesnt trigger within X ledgers
  */
 
-int64_t hook(int64_t reserved) __attribute__((used));
-int64_t cbak(int64_t reserved) __attribute__((used));
-
 int64_t cbak(int64_t reserved)
 {
     accept(0,0,0);
