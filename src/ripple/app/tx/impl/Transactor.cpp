@@ -722,9 +722,10 @@ Transactor::operator()()
             }
 
 
-            if (ctx_.tx.isFieldPresent(sfDestination))
+            bool is_owner = false; // Escrows use sfOwner instead of sfDestination
+            if (ctx_.tx.isFieldPresent(sfDestination) || (is_owner = ctx_.tx.isFieldPresent(sfOwner)))
             {
-                auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
+                auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
                 auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
                 if (hookReceiving &&
                     hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
