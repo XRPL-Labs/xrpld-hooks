@@ -1,10 +1,9 @@
 /* blacklist admin key
 {
-  privateKey: 'ED55D3A139AF8F069FE93BB943FE3A46BAF70EA61E0DD02192D4A532D8E87627F0',                                    
-  publicKey: 'EDDC6D9E28CA0FE2D475FC021D226881666EA106FBD2222C8C2110368A49C9513C'                                      
-}  
+  privateKey: 'ED55D3A139AF8F069FE93BB943FE3A46BAF70EA61E0DD02192D4A532D8E87627F0',
+  publicKey: 'EDDC6D9E28CA0FE2D475FC021D226881666EA106FBD2222C8C2110368A49C9513C'
+}
 */
-
 
 const process = require('process')
 const RippleAPI = require('ripple-lib').RippleAPI;
@@ -14,7 +13,6 @@ const addr = require('ripple-address-codec')
 
 const blacklist_pubkey = 'EDDC6D9E28CA0FE2D475FC021D226881666EA106FBD2222C8C2110368A49C9513C'
 const blacklist_seckey = 'ED55D3A139AF8F069FE93BB943FE3A46BAF70EA61E0DD02192D4A532D8E87627F0'
-
 
 const fs = require('fs');
 const api = new RippleAPI({
@@ -30,13 +28,13 @@ api.on('disconnected', (code) => {
     console.log('disconnected, code:', code);
 });
 
-
+// turn memo fields into uppercase hex for ripple-lib
 function hexlify_memos(x)
 {
     if (!("Memos" in x))
         return;
 
-    for (y in x["Memos"]) 
+    for (y in x["Memos"])
     {
         for (a in x["Memos"][y])
         {
@@ -48,20 +46,19 @@ function hexlify_memos(x)
                     let u = x["Memos"][y][a][Fields[z]].toUpperCase()
                     if (u.match(/^[0-9A-F]+$/))
                     {
-                        x["Memos"][y][a][Fields[z]] = u; 
+                        x["Memos"][y][a][Fields[z]] = u;
                         continue;
                     }
-                    
-                    x["Memos"][y][a][Fields[z]] = 
+
+                    x["Memos"][y][a][Fields[z]] =
                             ""+Buffer.from(x["Memos"][y][a][Fields[z]]).toString('hex').toUpperCase();
                 }
             }
         }
     }
 }
-api.connect().then(() => {
-   
 
+api.connect().then(() => {
 
     let blacklist_instruction = bin.encode(
     {
@@ -69,14 +66,13 @@ api.connect().then(() => {
         Flags: 1, // 1 = add, 0 = remove
         Template: [
             {
-                Account: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh" 
+                Account: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh"
             }
         ]
     });
 
     console.log("Blacklist-ADD TXN:")
     console.log(blacklist_instruction)
-
 
     let j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
@@ -86,7 +82,7 @@ api.connect().then(() => {
         LastLedgerSequence: 20,
         InvoiceID: blacklist_pubkey.slice(2),
         Fee: "100000",
-        Memos: [ 
+        Memos: [
             {
                 Memo:{
                     MemoData: blacklist_instruction,
@@ -109,40 +105,21 @@ api.connect().then(() => {
                 }
             }
         ]
-           
-    }
 
+    }
     hexlify_memos(j)
     console.log(JSON.stringify(j))
-
     api.prepareTransaction(j).then((x)=>
     {
         s = api.sign(x.txJSON, 'snoPBrXtMeMyMHUVTgbuqAfg1SUTb')
         console.log(s)
         api.submit(s.signedTransaction).then( response => {
             console.log(response.resultCode, response.resultMessage)
-            console.log("Done!")
-            process.exit()  
+            console.log("Added rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh [ root acc ] to blacklist on " +
+                "rNsA4VzfZZydhGAvfHX3gdpcQMMoJafd6v")
+            process.exit()
         }).catch ( e=> { console.log(e) } );
     });
-
-
 }).then(() => {
- // return api.disconnect();
 }).catch(console.error);
 
-
-
-    /*
-    var encoded = bin.encodeForSigning(j)
-
-    var sk = keypairs.deriveKeypair('snoPBrXtMeMyMHUVTgbuqAfg1SUTb')
-
-    var signature = keypairs.sign(encoded, sk.privateKey)
-
-    j['SigningPubKey'] = sk.publicKey;
-    j['TxnSignature'] = signature;
-
-    var encodedSigned = bin.encode(j)
-    console.log(encodedSigned)
-*/

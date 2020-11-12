@@ -5,8 +5,10 @@
 //#include <ripple/nodestore/NodeObject.h>
 #include <ripple/app/misc/Transaction.h>
 #include <queue>
+#include <optional>
 #include "wasmer.hh"
 #include <any>
+#include <memory>
 
 namespace hook_api {
 
@@ -17,8 +19,8 @@ namespace hook_api {
 #define RIPPLE_HOOK_H_INCLUDED1
 
 // for debugging if you want a lot of output change these to if (1)
-#define DBG_PRINTF if (0) printf
-#define DBG_FPRINTF if (0) fprintf
+#define DBG_PRINTF if (1) printf
+#define DBG_FPRINTF if (1) fprintf
 
     enum api_return_code {
         SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success"
@@ -60,9 +62,10 @@ namespace hook_api {
     }
 
     enum ExitType : int8_t {
+        UNSET = -2,
+        WASM_ERROR = -1,
         ROLLBACK = 0,
         ACCEPT = 1,
-        REJECT = 2,
     };
 
     const int etxn_details_size = 105;
@@ -83,7 +86,7 @@ namespace hook_api {
                                             uint32_t a, uint32_t b, uint32_t c,
                                             uint32_t d, uint32_t e, uint32_t f );
 
-    // not a real API, called by accept, reject and rollback
+    // not a real API, called by accept and rollback
     int64_t _exit               ( wic_t* w, uint32_t read_ptr, uint32_t read_len,
                                             int32_t error_code, ExitType exitType );
 
@@ -91,7 +94,6 @@ namespace hook_api {
     int32_t _g                  ( wic_t* w, uint32_t guard_id, uint32_t maxiter );
 
     int64_t accept              ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    int64_t reject              ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
     int64_t rollback            ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
     int64_t util_raddr          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
                                             uint32_t read_ptr, uint32_t read_len );
@@ -153,7 +155,9 @@ namespace hook {
 
     void printWasmerError(beast::Journal::Stream const& x);
 
-    ripple::TER apply(
+    struct HookResult;
+
+    HookResult apply(
             ripple::uint256,
             ripple::Blob,
             ripple::ApplyContext&,
@@ -170,33 +174,36 @@ namespace hook {
     std::map<ripple::AccountID, std::pair<ripple::uint256, wasmer_instance_t*>> hook_cache;
     std::mutex hook_cache_lock;
 
-    struct HookContext {
-        ripple::ApplyContext& applyCtx;
-        const ripple::AccountID& account;
-        ripple::Keylet const& accountKeylet;
-        ripple::Keylet const& ownerDirKeylet;
-        ripple::Keylet const& hookKeylet;
+    struct HookResult
+    {
+        ripple::Keylet accountKeylet;
+        ripple::Keylet ownerDirKeylet;
+        ripple::Keylet hookKeylet;
+        ripple::AccountID account;
+        std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn; // etx stored here until accept/rollback
         // uint256 key -> [ has_been_modified, current_state ]
         std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
-        hook_api::ExitType exitType;
+        hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
         std::string exitReason {""};
         int64_t exitCode {-1};
+    };
+
+    struct HookContext {
+        ripple::ApplyContext& applyCtx;
         // slots are used up by requesting objects from inside the hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
         // keep the underlying object alive for the duration of the hook's execution
         std::map<int, std::pair<std::string_view, std::any>> slot;
         int slot_counter { 1 };
         std::queue<int> slot_free {};
-
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
-        std::queue<std::shared_ptr<ripple::Transaction>> emitted_txn; // etx stored here until accept/re/rollback
-
         int nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
         std::map<ripple::uint256, bool> nonce_used;
         uint32_t generation = 0; // used for caching, only generated when txn_generation is called
         int64_t burden = 0;      // used for caching, only generated when txn_burden is called
         int64_t fee_base = 0;
         std::map<uint32_t, uint32_t> guard_map; // iteration guard map <id -> upto_iteration>
+        HookResult result;
     };
 
     // RH TODO: fetch this value from the hook sle
@@ -206,17 +213,18 @@ namespace hook {
 
     ripple::TER
     setHookState(
-        HookContext& hookCtx,
+        HookResult& hookResult,
+        ripple::ApplyContext& applyCtx,
         ripple::Keylet const& hookStateKeylet,
-        ripple::uint256 key,    /* we store the key with the data for ease of development access */
+        ripple::uint256 key,
         ripple::Slice& data
     );
 
     // finalize the changes the hook made to the ledger
-    void commitChangesToLedger( HookContext& hookCtx );
+    void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext& );
 
     template <typename F>
-    wasmer_import_t functionImport ( F func, std::string_view call_name, 
+    wasmer_import_t functionImport ( F func, std::string_view call_name,
             std::initializer_list<wasmer_value_tag> func_params, int ret_type = 2);
 
 
@@ -225,7 +233,7 @@ namespace hook {
     #define WI32 (wasmer_value_tag::WASM_I32)
     #define WI64 (wasmer_value_tag::WASM_I64)
 
-    const int imports_count = 41;
+    const int imports_count = 40;
     wasmer_import_t imports[] = {
 
 
@@ -235,7 +243,6 @@ namespace hook {
         functionImport ( hook_api::_g,             "_g",               { WI32, WI32 }, 1 ),
 
         functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
-        functionImport ( hook_api::reject,          "reject",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
         functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
         functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),

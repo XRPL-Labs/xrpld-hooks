@@ -680,68 +680,119 @@ Transactor::operator()()
         result == tesSUCCESS)
     {
 
-        // check if hooking is required
-        auto const& ledger = ctx_.view();
-        auto const& accountID = ctx_.tx.getAccountID(sfAccount);
-        auto const& hookSending = ledger.read(keylet::hook(accountID)); 
-        if (hookSending &&
-            !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
-            !ctx_.tx.isFieldPresent(sfEmitDetails) &&
-            hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn)))
+        std::optional<hook::HookResult> sendResult;
+        std::optional<hook::HookResult> recvResult;
+        do
         {
-            // execute the hook on the sending account
-            hook_executed = true;
-            auto hookResult = hook::apply(
-                    hookSending->getFieldH256(sfHookSetTxnID),
-                    hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
-            if (hookResult != tesSUCCESS) 
-                result = tecHOOK_REJECTED;
-        }
 
+            /**
+             * Hook Application Logic
+             * > Hooks may fire on the: (S)ending account, (R)eceiving account, (C)allback account
+             * > Hooks are applied S -> R -> C
+             * > The callback may not rollback a transaction.
+             * > If and only if S ACCEPTs the transaction, hook application on R can proceed
+             * > If and only if R ACCEPTs the transaction, hook application on C can proceed
+             * > If S or R rollback both rollback
+             * > If a hook is not present it is deemed ACCEPTed
+             */
 
-        if (result == tesSUCCESS && ctx_.tx.isFieldPresent(sfDestination))
-        {
-            auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
-            auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
-            if (hookReceiving &&
-                hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
+            // check if hooking is required
+
+            auto const& ledger = ctx_.view();
+            auto const& accountID = ctx_.tx.getAccountID(sfAccount);
+            auto const& hookSending = ledger.read(keylet::hook(accountID));
+
+            bool fireSendingHook = hookSending &&
+                !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
+                !ctx_.tx.isFieldPresent(sfEmitDetails) &&
+                hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn));
+
+            if (fireSendingHook)
             {
-                // execute the hook on the receiving account
-                hook_executed = true;
-                auto hookResult = hook::apply(
-                        hookReceiving->getFieldH256(sfHookSetTxnID),
-                        hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
-                if (hookResult != tesSUCCESS)
-                    result = tecHOOK_REJECTED;
-            }
-        }
-
-        // check if there is a callback
-        if (result == tesSUCCESS && ctx_.tx.isFieldPresent(sfEmitDetails))
-        {
-            try {
-                auto const& emitDetails =
-                    const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>(); 
-                if (!emitDetails.isFieldPresent(sfEmitCallback))
-                    throw 0;
-                
-                AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+                // execute the hook on the sending account
 
                 hook_executed = true;
-                auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
-                auto hookResult = hook::apply(
-                        hookCallback->getFieldH256(sfHookSetTxnID),
-                        hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
+                sendResult =
+                    hook::apply(
+                            hookSending->getFieldH256(sfHookSetTxnID),
+                            hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
 
-                // callback is unable to affect the application of an already Emitted Tx to the ledger
-                // so we're done
-                
-            } catch ( ... )
-            {
-                if (auto stream = j_.fatal())
-                    stream << "invalid emitDetails block in applied transaction";
-                assert(false);
+                if (sendResult->exitType != hook_api::ExitType::ACCEPT)
+                    break;
             }
+
+
+            if (ctx_.tx.isFieldPresent(sfDestination))
+            {
+                auto const& destAccountID = ctx_.tx.getAccountID(sfDestination);
+                auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
+                if (hookReceiving &&
+                    hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
+                {
+                    // execute the hook on the receiving account
+                    hook_executed = true;
+                    recvResult =
+                        hook::apply(
+                                hookReceiving->getFieldH256(sfHookSetTxnID),
+                                hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
+
+                    if (recvResult->exitType != hook_api::ExitType::ACCEPT)
+                        break;
+
+                }
+            }
+
+
+            // check if there is a callback
+            if (ctx_.tx.isFieldPresent(sfEmitDetails))
+            {
+                try {
+                    auto const& emitDetails =
+                        const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
+                    if (!emitDetails.isFieldPresent(sfEmitCallback))
+                        throw 0;
+
+                    AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+
+                    hook_executed = true;
+                    auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
+                    hook::apply(
+                            hookCallback->getFieldH256(sfHookSetTxnID),
+                            hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
+
+                    // callback is unable to affect the application of an already Emitted Tx to the ledger
+                    // so we're done
+
+                } catch ( ... )
+                {
+                    if (auto stream = j_.fatal())
+                        stream << "invalid emitDetails block in applied transaction";
+                    assert(false);
+                }
+            }
+
+        }
+        while (0);
+
+        if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
+            (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
+        {
+            result = temMALFORMED;
+        } else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
+                   (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
+        {
+            // rollback the whole transaction if either sending or receiving hook called rollback()
+            // do not apply state changes
+            result = tecHOOK_REJECTED;
+        } else
+        {
+            // if sending hook accepted commit changes
+            if (sendResult && sendResult->exitType == hook_api::ExitType::ACCEPT)
+                hook::commitChangesToLedger(*sendResult, ctx_);
+
+            // if recving hook accepted commit changes
+            if (recvResult && recvResult->exitType == hook_api::ExitType::ACCEPT)
+                hook::commitChangesToLedger(*recvResult, ctx_);
         }
     }
 

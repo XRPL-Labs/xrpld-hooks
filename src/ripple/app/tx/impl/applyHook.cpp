@@ -8,8 +8,9 @@
 #include <ripple/app/ledger/OpenLedger.h>
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/NetworkOPs.h>
-#include <optional>
+#include <memory>
 #include <string>
+#include <optional>
 
 using namespace ripple;
 
@@ -32,22 +33,23 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 // Update HookState ledger objects for the hook... only called after accept() or reject()
 TER
 hook::setHookState(
-    HookContext& hookCtx,
+    HookResult& hookResult,
+    ripple::ApplyContext& applyCtx,
     Keylet const& hookStateKeylet,
     ripple::uint256 key,
     Slice& data
 ){
 
-    auto& view = hookCtx.applyCtx.view();
-    auto j = hookCtx.applyCtx.app.journal("View");
-    auto const sle = view.peek(hookCtx.accountKeylet);
+    auto& view = applyCtx.view();
+    auto j = applyCtx.app.journal("View");
+    auto const sle = view.peek(hookResult.accountKeylet);
     if (!sle)
         return tefINTERNAL;
 
-    auto const hook = view.peek(hookCtx.hookKeylet);
+    auto const hook = view.peek(hookResult.hookKeylet);
     if (!hook) {
         JLOG(j.warn()) <<
-            "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookCtx.account);
+            "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookResult.account);
         return tefINTERNAL;
     }
 
@@ -72,7 +74,7 @@ hook::setHookState(
         auto const hint = (*oldHookState)[sfOwnerNode];
 
         // Remove the node from the account directory.
-        if (!view.dirRemove(hookCtx.ownerDirKeylet, hint, hookStateKeylet.key, false))
+        if (!view.dirRemove(hookResult.ownerDirKeylet, hint, hookStateKeylet.key, false))
         {
             return tefBAD_LEDGER;
         }
@@ -133,13 +135,13 @@ hook::setHookState(
         // Add the hook to the account's directory if it wasn't there already
         auto const page = dirAdd(
             view,
-            hookCtx.ownerDirKeylet,
+            hookResult.ownerDirKeylet,
             hookStateKeylet.key,
             false,
-            describeOwnerDir(hookCtx.account),
+            describeOwnerDir(hookResult.account),
             j);
 
-        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(hookCtx.account)
+        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(hookResult.account)
                      << ": " << (page ? "success" : "failure");
 
         if (!page)
@@ -164,12 +166,43 @@ void hook::printWasmerError(beast::Journal::Stream const& x)
 //#define HOOK_CACHING  // RH NOTE: WASMER USES GLOBAL STATE IN ITS C API WHICH BREAKS CACHING SO CACHING IS OFF
                         //          WASMER RUNTIME TO BE PATCHED OR SCRAPPED... to be decided
 
-TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the sethook, used for caching */
-                Blob hook, ApplyContext& applyCtx,
-                const AccountID& account,
-                bool callback = false)
+hook::HookResult
+    hook::apply(
+        ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching */
+        Blob hook, ApplyContext& applyCtx,
+        const AccountID& account,
+        bool callback = false)
 {
 
+    HookContext hookCtx = 
+    {
+        .applyCtx = applyCtx,
+        // we will return this context object (RVO / move constructed)
+        .result = {
+            .accountKeylet = keylet::account(account),
+            .ownerDirKeylet = keylet::ownerDir(account),
+            .hookKeylet = keylet::hook(account),
+            .account = account,
+            .changedState =
+                std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
+            .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
+            .exitReason = std::string("<not set by hook>"),
+            .exitCode = -1
+        }
+    };
+    /*
+    
+    struct HookResult
+    {
+        ripple::AccountID account;
+        std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn; // etx stored here until accept/rollback
+        // uint256 key -> [ has_been_modified, current_state ]
+        std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
+        hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
+        std::string exitReason {""};
+        int64_t exitCode {-1};
+    };
+*/
     auto const& j = applyCtx.app.journal("View");
     wasmer_instance_t *instance = NULL;
 
@@ -194,7 +227,8 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
             {
                 printWasmerError(j.warn());
                 JLOG(j.warn()) << "Hook Apply: Hook was malformed for " << account << "\n";
-                return temMALFORMED;
+                hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
+                return hookCtx.result;
             }
 #ifdef HOOK_CACHING
             hook_cache[account] = std::make_pair(hookSetTxnID, instance);
@@ -207,18 +241,6 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
     }
 #endif
 
-    HookContext hookCtx {
-        .applyCtx = applyCtx,
-        .account = account,
-        .accountKeylet = keylet::account(account),
-        .ownerDirKeylet = keylet::ownerDir(account),
-        .hookKeylet = keylet::hook(account),
-        .changedState =
-            std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
-        .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept() or reject()
-        .exitReason = std::string("<not set by hook>"),
-        .exitCode = -1
-    };
 
     wasmer_instance_context_data_set ( instance, &hookCtx );
     DBG_PRINTF("Set HookContext: %lx\n", (void*)&hookCtx);
@@ -237,13 +259,13 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
 
     JLOG(j.trace()) <<
         "Hook Apply: Exited with " <<
-            ( hookCtx.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" :
-            ( hookCtx.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) <<
-        ", Reason: '" <<  hookCtx.exitReason.c_str() << "', Exit Code: " << hookCtx.exitCode <<
+            ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" :
+            ( hookCtx.result.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) <<
+        ", Reason: '" <<  hookCtx.result.exitReason.c_str() << "', Exit Code: " << hookCtx.result.exitCode <<
         ", Ledger Seq: " << hookCtx.applyCtx.view().info().seq << "\n";
 
-    if (hookCtx.exitType != hook_api::ExitType::ROLLBACK)
-        commitChangesToLedger(hookCtx);
+    if (hookCtx.result.exitType != hook_api::ExitType::ROLLBACK && callback) // callback auto-commits on non-rollback
+        commitChangesToLedger(hookCtx.result, applyCtx);
 
     // RH TODO possible memory leak here, destroy the imports, instance using a smart pointer?
 
@@ -252,10 +274,7 @@ TER hook::apply(ripple::uint256 hookSetTxnID,     /* this is the txid of the set
         "Hook Apply: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
     wasmer_instance_destroy(instance);
 #endif
-    if (hookCtx.exitType == hook_api::ExitType::ACCEPT)
-       return tesSUCCESS;
-
-    return tecHOOK_REJECTED;
+    return hookCtx.result;
 }
 
 
@@ -369,7 +388,7 @@ int64_t hook_api::state_set (
         return TOO_SMALL;
 
 
-    auto const sle = view.peek(hookCtx.hookKeylet);
+    auto const sle = view.peek(hookCtx.result.hookKeylet);
     if (!sle)
         return INTERNAL_ERROR;
 
@@ -380,7 +399,7 @@ int64_t hook_api::state_set (
     auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
-    (*hookCtx.changedState)[*key] =
+    (*hookCtx.result.changedState)[*key] =
         std::pair<bool, ripple::Blob> (true,
                 {memory + read_ptr,  memory + read_ptr + read_len});
 
@@ -388,29 +407,33 @@ int64_t hook_api::state_set (
 }
 
 
-void hook::commitChangesToLedger ( HookContext& hookCtx ) {
+void hook::commitChangesToLedger(
+        hook::HookResult& hookResult,
+        ripple::ApplyContext& applyCtx)
+{
 
     // first write all changes to state
 
-    for (const auto& cacheEntry : *(hookCtx.changedState)) {
+    for (const auto& cacheEntry : *(hookResult.changedState)) {
         bool is_modified = cacheEntry.second.first;
         const auto& key = cacheEntry.first;
         const auto& blob = cacheEntry.second.second;
         if (is_modified) {
             // this entry isn't just cached, it was actually modified
-            auto HSKeylet = keylet::hook_state(hookCtx.account, key);
+            auto HSKeylet = keylet::hook_state(hookResult.account, key);
             auto slice = Slice(blob.data(), blob.size());
-            setHookState(hookCtx, HSKeylet, key, slice); // should not fail because checks were done before map insert
+            setHookState(hookResult, applyCtx, HSKeylet, key, slice); 
+            // ^ should not fail... checks were done before map insert
         }
     }
 
-    DBG_PRINTF("emitted txn count: %d\n", hookCtx.emitted_txn.size());
+    DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
 
-    auto const& j = hookCtx.applyCtx.app.journal("View");
-    auto & netOps = hookCtx.applyCtx.app.getOPs();
-    for (; hookCtx.emitted_txn.size() > 0; hookCtx.emitted_txn.pop())
+    auto const& j = applyCtx.app.journal("View");
+    auto & netOps = applyCtx.app.getOPs();
+    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
-        auto& tpTrans = hookCtx.emitted_txn.front();
+        auto& tpTrans = hookResult.emittedTxn.front();
         JLOG(j.trace()) << "Hook emitted tx: " << tpTrans << "\n";
         try
         {
@@ -483,8 +506,8 @@ int64_t hook_api::state_foreign (
     // first check if the requested state was previously cached this session
     if (!is_foreign) // we only cache local
     {
-        const auto& cacheEntry = hookCtx.changedState->find(*key);
-        if (cacheEntry != hookCtx.changedState->end())
+        const auto& cacheEntry = hookCtx.result.changedState->find(*key);
+        if (cacheEntry != hookCtx.result.changedState->end())
         {
             if (write_ptr == 0)
                 return data_as_int64(cacheEntry->second.second.data(), cacheEntry->second.second.size());
@@ -500,12 +523,12 @@ int64_t hook_api::state_foreign (
     }
 
     // cache miss look it up
-    auto const sle = view.peek(hookCtx.hookKeylet);
+    auto const sle = view.peek(hookCtx.result.hookKeylet);
     if (!sle)
         return INTERNAL_ERROR;
 
     auto hsSLE = view.peek(keylet::hook_state(
-                (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.account), *key));
+                (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.result.account), *key));
     if (!hsSLE)
         return DOESNT_EXIST;
 
@@ -514,7 +537,7 @@ int64_t hook_api::state_foreign (
     // it exists add it to cache and return it
 
     if (!is_foreign)
-        hookCtx.changedState->emplace(*key, std::pair<bool, ripple::Blob>(false, b));
+        hookCtx.result.changedState->emplace(*key, std::pair<bool, ripple::Blob>(false, b));
 
     if (write_ptr == 0)
         return data_as_int64(b.data(), b.size());
@@ -536,15 +559,6 @@ int64_t hook_api::accept (
         int32_t error_code )
 {
     return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
-}
-
-// Cause the originating transaction to be rejected, save state changes and emit emitted tx, exit hook
-int64_t hook_api::reject (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len,
-        int32_t error_code )
-{
-    return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::REJECT);
 }
 
 // Cause the originating transaction to be rejected, discard state changes and discard emitted tx, exit hook
@@ -573,11 +587,11 @@ int64_t hook_api::_exit (
             return OUT_OF_BOUNDS;
         }
 
-        hookCtx.exitReason = std::string ( (const char*)(memory + read_ptr), (size_t)read_len  );
+        hookCtx.result.exitReason = std::string ( (const char*)(memory + read_ptr), (size_t)read_len  );
     }
 
-    hookCtx.exitType = exitType;
-    hookCtx.exitCode = error_code;
+    hookCtx.result.exitType = exitType;
+    hookCtx.result.exitCode = error_code;
 
     wasmer_raise_runtime_error(0, 0);
 
@@ -904,7 +918,7 @@ int64_t hook_api::emit (
     if (hookCtx.expected_etxn_count < 0)
         return PREREQUISITE_NOT_MET;
 
-    if (hookCtx.emitted_txn.size() >= hookCtx.expected_etxn_count)
+    if (hookCtx.result.emittedTxn.size() >= hookCtx.expected_etxn_count)
         return TOO_MANY_EMITTED_TXN;
 
     ripple::Blob blob{memory + read_ptr, memory + read_ptr + read_len};
@@ -1018,7 +1032,7 @@ int64_t hook_api::emit (
         return EMISSION_FAILURE;
     }
 
-    if (callback != hookCtx.account)
+    if (callback != hookCtx.result.account)
     {
         JLOG(j.trace()) << "Hook emission failure: Callback account must be the account of the emitting hook\n";
         return EMISSION_FAILURE;
@@ -1084,7 +1098,7 @@ int64_t hook_api::emit (
         return EMISSION_FAILURE;
     }
 
-    hookCtx.emitted_txn.push(tpTrans);
+    hookCtx.result.emittedTxn.push(tpTrans);
 
     return read_len;
 }
@@ -1109,7 +1123,7 @@ int64_t hook_api::hook_account (
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, 20,
-        hookCtx.account.data(), 20,
+        hookCtx.result.account.data(), 20,
         memory, memory_length);
 }
 
@@ -1134,7 +1148,7 @@ int64_t hook_api::nonce (
             ripple::HashPrefix::emitTxnNonce,
             view.info().seq,
             hookCtx.nonce_counter++,
-            hookCtx.account
+            hookCtx.result.account
     );
 
     hookCtx.nonce_used[hash] = true;
@@ -1249,6 +1263,8 @@ inline int32_t get_stobject_length (
         field = *upto++;
     }
 
+    DBG_PRINTF("%d get_st_object found field %d type %d\n", recursion_depth, field, type); 
+
     if (upto >= end) return -1;
 
     // RH TODO: link this to rippled's internal STObject constants
@@ -1327,8 +1343,8 @@ inline int32_t get_stobject_length (
             if (upto >= end)
                 return -1;
 
-            if ((*upto == 0xD1U && type == 0xDU) ||
-                (*upto == 0xE1U && type == 0xEU))
+            if ((*upto == 0xE1U && type == 0xEU) ||
+                (*upto == 0xF1U && type == 0xFU))
             {
                 payload_length = upto - start - payload_start;
                 upto++;
@@ -1342,8 +1358,9 @@ inline int32_t get_stobject_length (
 
 }
 
-// Given an serialized object in memory locate and return the offset and length of a subfield of that object
-// If successful returns offset and length joined as int64_t. Use SUB_OFFSET and SUB_LENGTH to extract.
+// Given an serialized object in memory locate and return the offset and length of the payload of a subfield of that
+// object. Arrays are returned fully formed. If successful returns offset and length joined as int64_t.
+// Use SUB_OFFSET and SUB_LENGTH to extract.
 int64_t hook_api::util_subfield (
         wasmer_instance_context_t * wasm_ctx,
         uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
@@ -1360,6 +1377,11 @@ int64_t hook_api::util_subfield (
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
+    DBG_PRINTF("util_subfield called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+    for (int j = -5; j < 5; ++j)
+        DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
+    DBG_PRINTF("\n");
+
     if (*upto & 0xF0 == 0xE0)
         upto++;
 
@@ -1370,8 +1392,18 @@ int64_t hook_api::util_subfield (
         if (length < 0)
             return PARSE_ERROR;
         if ((type << 16) + field == field_id)
+        {
+            DBG_PRINTF("util_subfield returned for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+            for (int j = -5; j < 5; ++j)
+                DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j));
+            DBG_PRINTF("\n");
+            if (type == 0xF)    // we return arrays fully formed
+                return (((int64_t)(upto - start)) << 32) /* start of the object */
+                    + (uint32_t)(length);
+            // return pointers to all other objects as payloads
             return (((int64_t)(upto - start + payload_start)) << 32) /* start of the object */
                 + (uint32_t)(payload_length);
+        }
         upto += length;
     }
 
@@ -1395,8 +1427,13 @@ int64_t hook_api::util_subarray (
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    if (*upto & 0xF0 == 0xD0)
+    if (*upto & 0xF0 == 0xF0)
         upto++;
+
+    DBG_PRINTF("util_subarray called, looking for index %u\n", index_id);
+    for (int j = -5; j < 5; ++j)
+        printf(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
+    DBG_PRINTF("\n");
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
@@ -1405,8 +1442,15 @@ int64_t hook_api::util_subarray (
         if (length < 0)
             return PARSE_ERROR;
         if (i == index_id)
+        {
+            DBG_PRINTF("util_subarray returned for index %u\n", index_id);
+            for (int j = -5; j < 5; ++j)
+                DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j + length));
+            DBG_PRINTF("\n");
+
             return (((int64_t)(upto - start)) << 32) /* start of the object */
                 +   (uint32_t)(length);
+        }
         upto += length;
     }
 

@@ -213,7 +213,9 @@ int64_t hook(int64_t reserved )
         }
     }
 
-    RBUF(result_buffer, result_len, ( flags == 0 ? "Blacklist: Removed " : "Blacklist: Added "), processed_count);
+    RBUF(result_buffer, result_len, "Blacklist: Processed + ", processed_count);
+    if (flags == 0) 
+        result_buffer[21] = '-';
     accept(result_buffer, result_len, 0); 
 
     return 0;

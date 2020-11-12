@@ -10,8 +10,6 @@ api.on('connected', () => {
   console.log('connected');
 });
 api.on('disconnected', (code) => {
-  // code - [close code](https://developer.mozilla.org/en-US/docs/Web/API/CloseEvent) sent by the server
-  // will be 1000 if this was normal closure
   console.log('disconnected, code:', code);
 });
 
@@ -37,9 +35,8 @@ api.connect().then(() => {
         api.submit(s.signedTransaction).then( response => {
             console.log(response.resultCode, response.resultMessage)
             console.log("Sent 100 XRP to rENDKpJtubdd9R7vJiY5oJ1sKXbZifXgUT")
-
+            
             binary = fs.readFileSync('firewall.wasm').toString('hex').toUpperCase();
-
             j = {
                 Account: 'rENDKpJtubdd9R7vJiY5oJ1sKXbZifXgUT',
                 TransactionType: "SetHook",
@@ -47,7 +44,7 @@ api.connect().then(() => {
                 HookOn: '0000000000000000'
             }
             api.prepareTransaction(j).then( (x)=>
-                {
+            {
 
                 s= api.sign(x.txJSON, 'sn3ZaJikJ8mCF6XUHxnPYvbRBsGBK')
                 console.log(s)
@@ -57,13 +54,8 @@ api.connect().then(() => {
 
 
                 }).catch ( e=> { console.log(e) });
-
-
-                } );
-
+            });
         }).catch ( e=> { console.log(e) } );
      });
-
 }).then(() => {
- // return api.disconnect();
 }).catch(console.error);

@@ -30,5 +30,8 @@ liteacc.wasm: liteacc.c sfcodes.h hookapi.h hookmacro.h
 firewall.wasm: firewall.c sfcodes.h hookapi.h hookmacro.h
 	wasmcc firewall.c -o firewall.wasm -Oz -Wl,--allow-undefined
 
+firewall-min.wasm: firewall-min.c sfcodes.h hookapi.h hookmacro.h
+	wasmcc firewall-min.c -o firewall-min.wasm -Oz -Wl,--allow-undefined
+
 blacklist.wasm: blacklist.c sfcodes.h hookapi.h hookmacro.h
 	wasmcc blacklist.c -o blacklist.wasm -O0 -Wl,--allow-undefined
