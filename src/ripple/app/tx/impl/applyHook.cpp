@@ -14,6 +14,20 @@
 
 using namespace ripple;
 
+/* returns true iff every even char is ascii and every odd char is 00
+ * only a hueristic, may be inaccurate in edgecases */
+inline bool is_UTF16LE(const uint8_t* buffer, size_t len)
+{
+    if (len % 2 != 0 || len == 0)
+        return false;
+
+    for (int i = 0; i < len; i+=2)
+        if (buffer[i + 0] == 0 || buffer[i + 1] != 0)
+            return false;
+
+    return true;
+}
+
 
 // Called by Transactor.cpp to determine if a transaction type can trigger a given hook...
 // The HookOn field in the SetHook transaction determines which transaction types (tt's) trigger the hook.
@@ -298,6 +312,7 @@ int64_t hook_api::trace_num (
 
 }
 
+
 /* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
  * specifying as_hex dumps memory as hex */
 int64_t hook_api::trace (
@@ -312,24 +327,31 @@ int64_t hook_api::trace (
         return read_len;
     if (as_hex)
     {
-        unsigned char output[2049];
+        uint8_t output[2048];
         for (int i = 0; i < read_len && i < memory_length; ++i)
         {
             unsigned char high = (memory[read_ptr + i] >> 4) & 0xF;
             unsigned char low  = (memory[read_ptr + i] & 0xF);
-            high += ( high < 10 ? '0' : 'A' );
-            low  +=  ( low < 10 ? '0' : 'A' );
+            high += ( high < 10U ? '0' : 'A' - 10 );
+            low  += ( low  < 10U ? '0' : 'A' - 10 );
             output[i*2 + 0] = high;
             output[i*2 + 1] = low;
         }
-        output[read_len*2] = '\0';
-        printf("TRACEHEX: %s\n", output);
-        j.trace() << "HOOK::TRACE(hex): " << (const char*)output << "\n";
+        j.trace() << "HOOK::TRACE(hex): '" << std::string_view((const char*)output, (size_t)(read_len*2)) << "'\n";
+    }
+    else if (is_UTF16LE(memory + read_ptr, read_len))
+    {
+        uint8_t output[1024];
+        int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
+        for (int i = 0; i < len; ++i)
+            output[i] = memory[read_ptr + i * 2];
+        j.trace() << "HOOK::TRACE(txt): '" << std::string_view((const char*)output, (size_t)(len)) << "'\n";
     }
     else
     {
-        j.trace() << "HOOK::TRACE(txt): " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len)
-            << "\n";
+        
+        j.trace() << "HOOK::TRACE(txt): '" << std::string_view((const char*)(memory + read_ptr), (size_t)read_len)
+            << "'\n";
     }
     return read_len;
 }
@@ -579,6 +601,8 @@ int64_t hook_api::_exit (
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    if (read_len > 1024) read_len = 1024;
+
     if (read_ptr) {
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {
             JLOG(j.trace())
@@ -587,7 +611,16 @@ int64_t hook_api::_exit (
             return OUT_OF_BOUNDS;
         }
 
-        hookCtx.result.exitReason = std::string ( (const char*)(memory + read_ptr), (size_t)read_len  );
+        // assembly script and some other languages use utf16 for strings
+        if (is_UTF16LE(read_ptr + memory, read_len))
+        {
+            uint8_t output[512];
+            int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
+            for (int i = 0; i < len; ++i)
+                output[i] = memory[read_ptr + i * 2];
+            hookCtx.result.exitReason = std::string((const char*)(output), (size_t)len);
+        } else
+            hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);
     }
 
     hookCtx.result.exitType = exitType;
