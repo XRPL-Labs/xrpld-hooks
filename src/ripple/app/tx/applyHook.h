@@ -2,7 +2,6 @@
 #include <ripple/protocol/TER.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/beast/utility/Journal.h>
-//#include <ripple/nodestore/NodeObject.h>
 #include <ripple/app/misc/Transaction.h>
 #include <queue>
 #include <optional>
@@ -43,7 +42,6 @@ namespace hook_api {
         INVALID_FIELD = -17,            // the field requested is returning sfInvalid
         PARSE_ERROR = -18               // hook asked hookapi to parse something the contents of which was invalid
     };
-    // less than 0xFFFF  : remove sign bit and shift right 16 bits and this is a TER code
 
     // many datatypes can be encoded into an int64_t
     int64_t data_as_int64(
@@ -76,7 +74,7 @@ namespace hook_api {
     const double fee_base_multiplier = 1.1f;
 #endif
 
-    // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp
+    // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
     using wic_t = wasmer_instance_context_t;
 
@@ -240,7 +238,7 @@ namespace hook {
         functionImport ( hook_api::_special,        "_",                { WI32, WI32, WI32, WI32,
                 WI32, WI32                }),
 
-        functionImport ( hook_api::_g,             "_g",               { WI32, WI32 }, 1 ),
+        functionImport ( hook_api::_g,             "_g",                { WI32, WI32 }, 1 ),
 
         functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
         functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),

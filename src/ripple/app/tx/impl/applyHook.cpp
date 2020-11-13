@@ -63,16 +63,15 @@ hook::setHookState(
     auto const hook = view.peek(hookResult.hookKeylet);
     if (!hook) {
         JLOG(j.warn()) <<
-            "Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookResult.account);
+            "Hook: Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookResult.account);
         return tefINTERNAL;
     }
 
     uint32_t hookDataMax = hook->getFieldU32(sfHookStateDataMaxSize);
 
     // if the blob is too large don't set it
-    if (data.size() > hookDataMax) {
+    if (data.size() > hookDataMax)
        return temHOOK_DATA_TOO_LARGE;
-    }
 
     uint32_t stateCount = hook->getFieldU32(sfHookStateCount);
     uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
@@ -80,7 +79,8 @@ hook::setHookState(
     auto const oldHookState = view.peek(hookStateKeylet);
 
     // if the blob is nil then delete the entry if it exists
-    if (data.size() == 0) {
+    if (data.size() == 0)
+    {
 
         if (!view.peek(hookStateKeylet))
             return tesSUCCESS; // a request to remove a non-existent entry is defined as success
@@ -155,8 +155,9 @@ hook::setHookState(
             describeOwnerDir(hookResult.account),
             j);
 
-        JLOG(j.trace()) << "Create/update hook state for account " << toBase58(hookResult.account)
-                     << ": " << (page ? "success" : "failure");
+        JLOG(j.trace()) << "Hook: Create/update hook state: " 
+            << key << " for account " << toBase58(hookResult.account)
+            << ": " << (page ? "success" : "failure");
 
         if (!page)
             return tecDIR_FULL;
@@ -173,7 +174,7 @@ void hook::printWasmerError(beast::Journal::Stream const& x)
   int error_len = wasmer_last_error_length();
   char *error_str = (char*)malloc(error_len);
   wasmer_last_error_message(error_str, error_len);
-  JLOG(x) << error_str << "\n";
+  JLOG(x) << "Hook: Wasmer Error: " << error_str;
   free(error_str);
 }
 
@@ -204,19 +205,7 @@ hook::HookResult
             .exitCode = -1
         }
     };
-    /*
     
-    struct HookResult
-    {
-        ripple::AccountID account;
-        std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn; // etx stored here until accept/rollback
-        // uint256 key -> [ has_been_modified, current_state ]
-        std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
-        hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
-        std::string exitReason {""};
-        int64_t exitCode {-1};
-    };
-*/
     auto const& j = applyCtx.app.journal("View");
     wasmer_instance_t *instance = NULL;
 
@@ -229,18 +218,18 @@ hook::HookResult
         {
             if (needsDestruction)
             {
-                JLOG(j.trace()) << "Hook Apply: Destroying wasmer instance for " << account <<
+                JLOG(j.trace()) << "Hook: Destroying wasmer instance for " << account <<
                    " Instance Ptr: " << cacheLookup->second.second << "\n";
                 wasmer_instance_destroy(cacheLookup->second.second);
                 hook_cache.erase(account);
             }
 #endif
-            JLOG(j.trace()) << "Hook Apply: Creating wasmer instance for " << account << "\n";
+            JLOG(j.trace()) << "Hook: Creating wasmer instance for " << account << "\n";
             if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) != 
                     wasmer_result_t::WASMER_OK)
             {
                 printWasmerError(j.warn());
-                JLOG(j.warn()) << "Hook Apply: Hook was malformed for " << account << "\n";
+                JLOG(j.warn()) << "Hook: Hook was malformed for " << account << "\n";
                 hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
                 return hookCtx.result;
             }
@@ -249,7 +238,7 @@ hook::HookResult
         } else
         {
             instance = hook_cache[account].second;
-            JLOG(j.trace()) << "Hook Apply: Loading cached wasmer instance for " << account <<
+            JLOG(j.trace()) << "Hook: Loading cached wasmer instance for " << account <<
                 " Instance Ptr " << instance << "\n";
         }
     }
@@ -269,10 +258,10 @@ hook::HookResult
         1,
         results,
         1
-    ); // we don't check return value because all accept/reject/rollback will fire a non-ok message
+    ); // we don't check return value because all accept/rollback will fire a non-ok message despite being normal exec
 
     JLOG(j.trace()) <<
-        "Hook Apply: Exited with " <<
+        "Hook: Exited with " <<
             ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" :
             ( hookCtx.result.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) <<
         ", Reason: '" <<  hookCtx.result.exitReason.c_str() << "', Exit Code: " << hookCtx.result.exitCode <<
@@ -285,7 +274,7 @@ hook::HookResult
 
 #ifndef HOOK_CACHING
     JLOG(j.trace()) <<
-        "Hook Apply: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
+        "Hook: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
     wasmer_instance_destroy(instance);
 #endif
     return hookCtx.result;
@@ -306,8 +295,8 @@ int64_t hook_api::trace_num (
     if (read_len > 1024) read_len = 1024;
     if (!j.trace())
         return read_len;
-    j.trace() << "HOOK::TRACE(num): " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) << 
-        ": " << number << "\n";
+    j.trace() << "Hook: [trace()]: " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) << 
+        ": " << number;
     return read_len;
 
 }
@@ -337,7 +326,8 @@ int64_t hook_api::trace (
             output[i*2 + 0] = high;
             output[i*2 + 1] = low;
         }
-        j.trace() << "HOOK::TRACE(hex): '" << std::string_view((const char*)output, (size_t)(read_len*2)) << "'\n";
+        j.trace() 
+            << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(read_len*2));
     }
     else if (is_UTF16LE(memory + read_ptr, read_len))
     {
@@ -345,13 +335,14 @@ int64_t hook_api::trace (
         int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
         for (int i = 0; i < len; ++i)
             output[i] = memory[read_ptr + i * 2];
-        j.trace() << "HOOK::TRACE(txt): '" << std::string_view((const char*)output, (size_t)(len)) << "'\n";
+        j.trace() 
+            << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(len));
     }
     else
     {
         
-        j.trace() << "HOOK::TRACE(txt): '" << std::string_view((const char*)(memory + read_ptr), (size_t)read_len)
-            << "'\n";
+        j.trace() 
+            << "Hook: [trace()]: '" << std::string_view((const char*)(memory + read_ptr), (size_t)read_len);
     }
     return read_len;
 }
@@ -399,7 +390,7 @@ int64_t hook_api::state_set (
 
     if (kread_ptr + 32 > memory_length || read_ptr + hook::maxHookStateDataSize() > memory_length) {
         JLOG(j.trace())
-            << "Hook tried to state_set using memory outside of the wasm instance limit";
+            << "Hook: tried to state_set using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
     }
 
@@ -456,7 +447,7 @@ void hook::commitChangesToLedger(
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
         auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook emitted tx: " << tpTrans->getID() << "\n";
+        JLOG(j.trace()) << "Hook: emitted tx: " << tpTrans->getID() << "\n";
         try
         {
             netOps.processTransaction(
@@ -464,7 +455,7 @@ void hook::commitChangesToLedger(
         }
         catch (std::exception& e)
         {
-            JLOG(j.warn()) << "Hook emitted tx failed to process: " << e.what() << "\n";
+            JLOG(j.warn()) << "Hook: emitted tx failed to process: " << e.what() << "\n";
         }
     }
 
@@ -508,7 +499,7 @@ int64_t hook_api::state_foreign (
         write_ptr + write_len > memory_length)
     {
         JLOG(j.trace())
-            << "Hook tried to state using memory outside of the wasm instance limit";
+            << "Hook: tried to state using memory outside of the wasm instance limit";
         return OUT_OF_BOUNDS;
     }
 
@@ -580,6 +571,9 @@ int64_t hook_api::accept (
         uint32_t read_ptr, uint32_t read_len,
         int32_t error_code )
 {
+    // RH NOTE: this will fail unless your wasmer was compiled with a patch
+    // At time of writing there is no official way to terminate a wasmer binary early
+    // https://github.com/RichardAH/wasmer/commit/e17e1e949279c4cf2fd660d6e983c0cf34f6043b
     return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
 }
 
@@ -606,8 +600,8 @@ int64_t hook_api::_exit (
     if (read_ptr) {
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {
             JLOG(j.trace())
-                << "Hook tried to accept/reject/rollback but specified memory outside of the wasm instance " <<
-                "limit when specifying a reason string\n";
+                << "Hook: tried to accept/rollback but specified memory outside of the wasm instance " <<
+                "limit when specifying a reason string";
             return OUT_OF_BOUNDS;
         }
 
@@ -680,7 +674,7 @@ int64_t hook_api::otxn_burden ( wasmer_instance_context_t * wasm_ctx )
 
     if (!pd.isFieldPresent(sfEmitBurden)) {
         JLOG(j.trace())
-            << "Hook found sfEmitDetails but sfEmitBurden was not in the object? ... ignoring";
+            << "Hook: found sfEmitDetails but sfEmitBurden was not in the object? ... ignoring";
         return 1;
     }
 
@@ -708,7 +702,7 @@ int64_t hook_api::otxn_generation ( wasmer_instance_context_t * wasm_ctx )
 
     if (!pd.isFieldPresent(sfEmitGeneration)) {
         JLOG(j.trace())
-            << "Hook found sfEmitDetails but sfEmitGeneration was not in the object? ... ignoring";
+            << "Hook: found sfEmitDetails but sfEmitGeneration was not in the object? ... ignoring";
         return 1;
     }
 
@@ -805,7 +799,7 @@ int64_t hook_api::otxn_field (
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
-        s.getDataPtr() + (is_account ? 1 : 0), s.getDataLength() - (is_account ? 1 : 0),
+        (unsigned char*)(s.getDataPtr()) + (is_account ? 1 : 0), s.getDataLength() - (is_account ? 1 : 0),
         memory, memory_length);
 }
 
@@ -969,7 +963,8 @@ int64_t hook_api::emit (
     }
     catch (std::exception& e)
     {
-        std::cout << "EMISSION FAILURE 1 WHILE EMIT: " << e.what() << "\n";
+        JLOG(j.trace())
+            << "Hook: Emission failure: " << e.what() << "\n";
         return EMISSION_FAILURE;
     }
 
@@ -987,35 +982,40 @@ int64_t hook_api::emit (
     // rule 1: sfSequence must be present and 0
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
     {
-        JLOG(j.trace()) << "Hook emission failure: sfSequence missing or non-zero.\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: sfSequence missing or non-zero.";
         return EMISSION_FAILURE;
     }
 
     // rule 2: sfSigningPubKey must be present and 00...00
     if (!stpTrans->isFieldPresent(sfSigningPubKey))
     {
-        JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey missing.\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: sfSigningPubKey missing.";
         return EMISSION_FAILURE;
     }
 
     auto const pk = stpTrans->getSigningPubKey();
     if (pk.size() != 33)
     {
-        JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.";
         return EMISSION_FAILURE;
     }
 
     for (int i = 0; i < 33; ++i)
         if (pk[i] != 0)
         {
-            JLOG(j.trace()) << "Hook emission failure: sfSigningPubKey present but non-zero.\n";
+            JLOG(j.trace()) 
+                << "Hook: Emission failure: sfSigningPubKey present but non-zero.";
             return EMISSION_FAILURE;
         }
 
     // rule 3: sfEmitDetails must be present and valid
     if (!stpTrans->isFieldPresent(sfEmitDetails))
     {
-        JLOG(j.trace()) << "Hook emission failure: sfEmitDetails missing.\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: sfEmitDetails missing.";
         return EMISSION_FAILURE;
     }
 
@@ -1028,7 +1028,8 @@ int64_t hook_api::emit (
         !emitDetails.isFieldPresent(sfEmitNonce) ||
         !emitDetails.isFieldPresent(sfEmitCallback))
     {
-        JLOG(j.trace()) << "Hook emission failure: sfEmitDetails malformed.\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: sfEmitDetails malformed.";
         return EMISSION_FAILURE;
     }
 
@@ -1042,39 +1043,42 @@ int64_t hook_api::emit (
 
     if (gen != gen_proper)
     {
-        JLOG(j.trace()) << "Hook emission failure: Generation provided in EmitDetails was not correct: " << gen
-            << " should be " << gen_proper << "\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: Generation provided in EmitDetails was not correct: " << gen
+            << " should be " << gen_proper;
         return EMISSION_FAILURE;
     }
 
     if (bur != etxn_burden(wasm_ctx))
     {
-        JLOG(j.trace()) << "Hook emission failure: Burden provided in EmitDetails was not correct\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: Burden provided in EmitDetails was not correct";
         return EMISSION_FAILURE;
     }
 
     if (pTxnID != applyCtx.tx.getTransactionID())
     {
-        JLOG(j.trace()) << "Hook emission failure: ParentTxnID provided in EmitDetails was not correct\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: ParentTxnID provided in EmitDetails was not correct";
         return EMISSION_FAILURE;
     }
 
     if (hookCtx.nonce_used.find(nonce) == hookCtx.nonce_used.end())
     {
-        JLOG(j.trace()) << "Hook emission failure: Nonce provided in EmitDetails was not generated by nonce\n";
+        JLOG(j.trace()) << "Hook: Emission failure: Nonce provided in EmitDetails was not generated by nonce";
         return EMISSION_FAILURE;
     }
 
     if (callback != hookCtx.result.account)
     {
-        JLOG(j.trace()) << "Hook emission failure: Callback account must be the account of the emitting hook\n";
+        JLOG(j.trace()) << "Hook: Emission failure: Callback account must be the account of the emitting hook";
         return EMISSION_FAILURE;
     }
 
     // rule 4: sfSignature must be absent
     if (stpTrans->isFieldPresent(sfSignature))
     {
-        JLOG(j.trace()) << "Hook emission failure: sfSignature is present but should not be.\n";
+        JLOG(j.trace()) << "Hook: Emission failure: sfSignature is present but should not be.";
         return EMISSION_FAILURE;
     }
 
@@ -1085,7 +1089,7 @@ int64_t hook_api::emit (
     uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
     if (!stpTrans->isFieldPresent(sfLastLedgerSequence) || tx_lls < ledgerSeq + 1)
     {
-        JLOG(j.trace()) << "Hook emission failure: sfLastLedgerSequence missing or invalid\n";
+        JLOG(j.trace()) << "Hook: Emission failure: sfLastLedgerSequence missing or invalid.";
         return EMISSION_FAILURE;
     }
 
@@ -1093,7 +1097,7 @@ int64_t hook_api::emit (
     if (stpTrans->isFieldPresent(sfFirstLedgerSequence) &&
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
-        JLOG(j.trace()) << "Hook emission failure: FirstLedgerSequence > LastLedgerSequence\n";
+        JLOG(j.trace()) << "Hook: Emission failure: FirstLedgerSequence > LastLedgerSequence.";
         return EMISSION_FAILURE;
     }
 
@@ -1106,20 +1110,23 @@ int64_t hook_api::emit (
     int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
     if (minfee < 0 || hookCtx.fee_base < 0)
     {
-        JLOG(j.trace()) << "Hook emission failure: fee could not be calculated\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: fee could not be calculated.";
         return EMISSION_FAILURE;
     }
 
     if (!stpTrans->isFieldPresent(sfFee))
     {
-        JLOG(j.trace()) << "Hook emission failure: Fee missing from emitted tx\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: Fee missing from emitted tx.";
         return EMISSION_FAILURE;
     }
 
     int64_t fee = stpTrans->getFieldAmount(sfFee).xrp().drops();
     if (fee < minfee)
     {
-        JLOG(j.trace()) << "Hook emission failure: Fee on emitted txn is less than the minimum required fee\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: Fee on emitted txn is less than the minimum required fee.";
         return EMISSION_FAILURE;
     }
 
@@ -1127,7 +1134,8 @@ int64_t hook_api::emit (
     auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
     if (tpTrans->getStatus() != NEW)
     {
-        JLOG(j.trace()) << "Hook emission failure: tpTrans->getStatus() != NEW\n";
+        JLOG(j.trace()) 
+            << "Hook: Emission failure: tpTrans->getStatus() != NEW";
         return EMISSION_FAILURE;
     }
 
@@ -1416,8 +1424,8 @@ int64_t hook_api::util_subfield (
         DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
     DBG_PRINTF("\n");
 
-    if (*upto & 0xF0 == 0xE0)
-        upto++;
+//    if ((*upto & 0xF0) == 0xE0)
+//        upto++;
 
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
@@ -1461,7 +1469,7 @@ int64_t hook_api::util_subarray (
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    if (*upto & 0xF0 == 0xF0)
+    if ((*upto & 0xF0) == 0xF0)
         upto++;
 
     DBG_PRINTF("util_subarray called, looking for index %u\n", index_id);
@@ -1629,7 +1637,7 @@ int64_t hook_api::etxn_fee_base (
         return FEE_TOO_LARGE;
 
     uint64_t fee = base_fee * burden;
-    if (fee < burden || fee & (3 << 62)) // a second under flow to handle
+    if (fee < burden || fee & (3ULL << 62)) // a second under flow to handle
         return FEE_TOO_LARGE;
 
     hookCtx.fee_base = fee;
@@ -1714,13 +1722,13 @@ int32_t hook_api::_g (
     {
         if (id > 0xFFFFU)
         {
-            JLOG(j.trace()) << "Hook macro guard violation. Src line: " << (id & 0xFFFFU) <<
-                              " Macro line: " << (id >> 16) << " Iterations: " << hookCtx.guard_map[id] << "\n";
+            JLOG(j.trace()) << "Hook: Macro guard violation. Src line: " << (id & 0xFFFFU) <<
+                              " Macro line: " << (id >> 16) << " Iterations: " << hookCtx.guard_map[id];
         }
         else
         {
-            JLOG(j.trace()) << "Hook guard violation. Src line: " << id <<
-                " Iterations: " << hookCtx.guard_map[id] << "\n";
+            JLOG(j.trace()) << "Hook: Guard violation. Src line: " << id <<
+                " Iterations: " << hookCtx.guard_map[id];
         }
         rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
     }

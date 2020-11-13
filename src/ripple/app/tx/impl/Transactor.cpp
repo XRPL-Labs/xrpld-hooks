@@ -697,15 +697,14 @@ Transactor::operator()()
              * > If and only if S ACCEPTs the transaction, hook application on R can proceed
              * > If and only if R ACCEPTs the transaction, hook application on C can proceed
              * > If S or R rollback both rollback
-             * > If a hook is not present it is deemed ACCEPTed
+             * > If a hook is not present it is deemed as though it ran and called ACCEPT()
              */
-
-            // check if hooking is required
 
             auto const& ledger = ctx_.view();
             auto const& accountID = ctx_.tx.getAccountID(sfAccount);
             auto const& hookSending = ledger.read(keylet::hook(accountID));
 
+            // First check if the Sending account has a hook that can be fired
             bool fireSendingHook = hookSending &&
                 !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
                 hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn));
@@ -725,7 +724,8 @@ Transactor::operator()()
             }
 
 
-            bool is_owner = false; // Escrows use sfOwner instead of sfDestination
+            // Next check if the Receiving account has as a hook that can be fired...
+            bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
             if (ctx_.tx.isFieldPresent(sfDestination) || (is_owner = ctx_.tx.isFieldPresent(sfOwner)))
             {
                 auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
@@ -747,7 +747,7 @@ Transactor::operator()()
             }
 
 
-            // check if there is a callback
+            // Finally check if there is a callback
             if (ctx_.tx.isFieldPresent(sfEmitDetails))
             {
                 try {
@@ -776,22 +776,25 @@ Transactor::operator()()
             }
 
         }
-        while (0);
+        while (0); // do {} while(0) used to make above control flow easy
 
+        // Three possible outcomes after execution: An error, a rollback or an accept
         if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
             (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
         {
+            // error condition
             result = temMALFORMED;
         } else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
                    (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
         {
-            // rollback the whole transaction if either sending or receiving hook called rollback()
+            // rollback condition
             // do not apply state changes
             result = tecHOOK_REJECTED;
         } else
         {
+            // no error or rollback however a hook may only have been present on one account
             // if sending hook accepted commit changes
-            if (sendResult && sendResult->exitType == hook_api::ExitType::ACCEPT)
+            if (sendResult && sendResult->exitType == hook_api::ExitType::ACCEPT) // defensive
                 hook::commitChangesToLedger(*sendResult, ctx_);
 
             // if recving hook accepted commit changes
@@ -801,8 +804,9 @@ Transactor::operator()()
     }
 
     uint64_t posthook_cycles = rdtsc();
-    printf("%shook execution took: %llu cpu cycles\n", (hook_executed ? "" : "non-"),
-            posthook_cycles - prehook_cycles);
+    JLOG(j_.trace()) 
+        << "Hook: Transactor: " << (hook_executed ? "hook " : "non-hook ") << "execution took "
+        << (posthook_cycles - prehook_cycles);
 
     // fall through allows normal apply
     if (result == tesSUCCESS)

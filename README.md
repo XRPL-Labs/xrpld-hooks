@@ -1,3 +1,84 @@
+# Hooks Technology Preview
+This is a fork of the rippled codebase incorporating the work-in-progress "Hooks" amendment. This amendment will allow web assembly smart contracts to run directly on the XRP ledger when completed and adopted.
+
+## Docker Container
+Building rippled can be non-trivial, especially in this case since modified libraries are used. We have provided a tech-preview docker container for your convenience. Follow the steps below to use it.
+### Starting the container
+1. Download and install docker.
+2. To download the container use:
+```bash
+docker pull richardah/xrpld-hooks-tech-preview
+```
+3. Then to run the container interactively use:
+```bash
+docker run --name xrpld-hooks richardah/xrpld-hooks-tech-preview &
+docker exec -it xrpld-hooks /bin/bash
+```
+4. Set up a second terminal to view the log:
+
+Open a new terminal window on your system and run.
+```bash
+docker exec -it xrpld-hooks tail -f log
+```
+ This will show you the trace log of xrpld as it runs, which will be important for knowing if your transactions fail or succeed and what actions the hooks take.
+
+5. If you need to kill the container and restart it:
+```bash
+exit #from the container
+docker container prune -f
+```
+ Then repeat step 3.
+
+### Interacting with the container
+After following the above steps you will be inside a shell inside the container. Rippled will already be running with the correct settings. Read the README.md in the container for further instructions on installing and interacting with the example hooks.
+
+## Compilation
+- Compile and install the modified Wasmer from https://github.com/RichardAH/wasmer
+- Compile rippled as per usual
+                                                                                                                       
+## Usage                                                                                                               
+Note: Examples are provided under hook-api-examples.
+
+## SetHook Transaction
+Set a Hook on an activated account using a SetHook Transaction (ttHOOK_SET = 22). This must contain the following fields:
+- sfAccount
+- sfCreateCode: Containing the binary of the web assembly
+- sfHookOn: An unsigned 64bit integer (explained bellow)
+
+### sfHookOn
+Each bit in this unsigned int64 indicates whether the Hook should execute on a particular transaction type. All bits are *active low* **except** bit 22 which is *active high*. Since 22 is ttHOOK_SET this means the default value of all 0's will not fire on a SetHook transaction but will fire on every other transaction type. This is a deliberate design choice to help people avoid bricking their XRPL account with a misbehaving hook.
+
+Bits are numbered from right to left from 0 to 63).
+
+Examples:
+
+1. If we want to completely disable the hook:
+```C
+~(1ULL << 22) /* every bit is 1 except bit 22 which is 0 */
+```
+
+2. If we want to disable the hook on everything except ttPAYMENT:
+```C
+~(1ULL << 22) & ~(1ULL)
+```
+
+3. If we want to enable the hook on everything except ttHOOK_SET
+```C
+0
+```
+
+4. If we want to enable hook firing on ttHOOK_SET (dangerous) and every other transaction type:
+```C
+(1ULL << 22)
+```
+
+## Hook API
+- Documentation for the Hook API can be found in `hook-api-examples/hookapi.h`.
+- For further details check:
+1. `src/ripple/app/tx/applyHook.h` and
+2. `src/ripple/app/tx/impl/applyHook.cpp`
+(Further documentation to be released in future.)
+
 # The XRP Ledger
 
 The XRP Ledger is a decentralized cryptographic ledger powered by a network of peer-to-peer servers. The XRP Ledger uses a novel Byzantine Fault Tolerant consensus algorithm to settle and record transactions in a secure distributed database without a central operator.

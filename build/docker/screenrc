@@ -1,0 +1,9 @@
+split -v
+startup_message off
+defscrollback 1000
+screen -t cmd /bin/bash
+screen -t cmd tail -f /opt/rippled-hooks/log
+focus right
+select 1
+focus left
+select 0
