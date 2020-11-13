@@ -113,7 +113,7 @@ public:
     bool
     emitted()
     {
-        return flags_ & ApplyFlags::tapEMIT;
+        return flags_ & ApplyFlags::tapEMIT || tx.isFieldPresent(sfEmitDetails);
     }
 
 private:

@@ -19,8 +19,8 @@ namespace hook_api {
 #define RIPPLE_HOOK_H_INCLUDED1
 
 // for debugging if you want a lot of output change these to if (1)
-#define DBG_PRINTF if (1) printf
-#define DBG_FPRINTF if (1) fprintf
+#define DBG_PRINTF if (0) printf
+#define DBG_FPRINTF if (0) fprintf
 
     enum api_return_code {
         SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success"

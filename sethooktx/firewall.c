@@ -28,8 +28,6 @@ int64_t hook(int64_t reserved)
     int64_t lookup = state_foreign(SBUF(blacklist_status), SBUF(otxn_accid), SBUF(blacklist_accid));
     if (lookup == INVALID_ACCOUNT)
         trace(SBUF("Firewall: Warning specified blacklist account does not exist."), 0);
-    else if (lookup < 0)
-        trace_num(SBUF("Firewall: Warning blacklist lookup failed"), lookup);
 
     if (blacklist_status[0] == 0)
         accept(SBUF("Firewall: Allowing transaction."), 0);

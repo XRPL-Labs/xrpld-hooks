@@ -434,7 +434,7 @@ void hook::commitChangesToLedger(
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
         auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook emitted tx: " << tpTrans << "\n";
+        JLOG(j.trace()) << "Hook emitted tx: " << tpTrans->getID() << "\n";
         try
         {
             netOps.processTransaction(
@@ -1147,6 +1147,7 @@ int64_t hook_api::nonce (
     auto hash = ripple::sha512Half(
             ripple::HashPrefix::emitTxnNonce,
             view.info().seq,
+            applyCtx.tx.getTransactionID(),
             hookCtx.nonce_counter++,
             hookCtx.result.account
     );

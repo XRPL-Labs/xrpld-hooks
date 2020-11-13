@@ -291,6 +291,10 @@ Transactor::setSeq()
     if (!sle)
         return;
 
+    // do not update sequence of sfAccountTxnID for emitted tx
+    if (ctx_.emitted())
+        return;
+    
     std::uint32_t const t_seq = ctx_.tx.getSequence();
 
     sle->setFieldU32(sfSequence, t_seq + 1);
@@ -704,7 +708,6 @@ Transactor::operator()()
 
             bool fireSendingHook = hookSending &&
                 !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
-                !ctx_.tx.isFieldPresent(sfEmitDetails) &&
                 hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn));
 
             if (fireSendingHook)
