@@ -25,8 +25,7 @@ Liteacc and Firewall have helper scripts to dump this info. Note that the Create
 of the hook, so it's best to truncate these entries with sed: e.g. `sed 's/CreateCode.*/CreateCode": <hook wasm>,/g'`
 
 ## Building
-To build you can run `make` from the current directory (`/opt/rippled-hooks/`)
-The makefile shows you how to build a hook.
+To build you can run `make` from any hook's directory. The example `makefile` in each directory shows you how to build a hook.
 
 ## Minimum example hook
 Please have a look at the accept hook in `./accept/`
