@@ -8,6 +8,9 @@ the `SetHook` transaction.
 3. Javascript files .js are runnable with nodejs and provide a way to installing hooks and interacting with the ledger
 through ripple-lib.
 
+## Building
+To build you can run `make` from any hook's directory. The example `makefile` in each directory shows you how to build a hook.
+
 ## Interacting
 To interact with the example hooks change (`cd`) into one of these directories:
 - liteacc
@@ -23,9 +26,6 @@ Finally run the additional .js files to interact with the hook or write your own
 Run `./rippled account_objects <account on which the hook is installed on>` to inspect the Hook's State Data.
 Liteacc and Firewall have helper scripts to dump this info. Note that the CreateCode entry contains the entire binary
 of the hook, so it's best to truncate these entries with sed: e.g. `sed 's/CreateCode.*/CreateCode": <hook wasm>,/g'`
-
-## Building
-To build you can run `make` from any hook's directory. The example `makefile` in each directory shows you how to build a hook.
 
 ## Minimum example hook
 Please have a look at the accept hook in `./accept/`
