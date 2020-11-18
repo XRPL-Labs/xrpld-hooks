@@ -25,6 +25,7 @@ docker exec -it xrpld-hooks tail -f log
 5. If you need to kill the container and restart it:
 ```bash
 exit #from the container
+docker kill xrpld-hooks
 docker container prune -f
 ```
  Then repeat step 3.
