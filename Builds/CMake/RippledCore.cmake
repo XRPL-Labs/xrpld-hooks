@@ -964,7 +964,7 @@ target_link_libraries (rippled
   Ripple::opts
   Ripple::libs
   Ripple::xrpl_core
-  /usr/lib/libwasmer.a
+  #  /usr/lib/libwasmer.a
   )
 exclude_if_included (rippled)
 # define a macro for tests that might need to
