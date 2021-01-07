@@ -5,9 +5,15 @@
 #include <ripple/app/misc/Transaction.h>
 #include <queue>
 #include <optional>
-#include "wasmer.hh"
 #include <any>
 #include <memory>
+
+#include "common/value.h"
+#include "vm/configure.h"
+#include "vm/vm.h"
+#include "common/errcode.h"
+#include "runtime/hostfunc.h"
+#include "runtime/importobj.h"
 
 namespace hook_api {
 
@@ -74,84 +80,88 @@ namespace hook_api {
     const double fee_base_multiplier = 1.1f;
 #endif
 
-    // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
+    #define DECLARE_HOOK_FUNCTION(R, F, ...)\
+        class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
+        {\
+            public:\
+            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*, __VA_ARGS__);\
+        }
 
-    using wic_t = wasmer_instance_context_t;
+    #define DEFINE_HOOK_FUNCTION(R, F, ...)\
+        SSVM::Expect<R> WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* mem, __VA_ARGS__)
+
+
+    // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
     // the "special" _() api allows every other api to be invoked by a number (crc32 of name)
     // instead of function name
-    int64_t _special            ( wic_t* w, uint32_t api_no,
-                                            uint32_t a, uint32_t b, uint32_t c,
-                                            uint32_t d, uint32_t e, uint32_t f );
-
-    // not a real API, called by accept and rollback
-    int64_t _exit               ( wic_t* w, uint32_t read_ptr, uint32_t read_len,
-                                            int32_t error_code, ExitType exitType );
-
-    // real apis start here ---
-    int32_t _g                  ( wic_t* w, uint32_t guard_id, uint32_t maxiter );
-
-    int64_t accept              ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    int64_t rollback            ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    int64_t util_raddr          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t read_ptr, uint32_t read_len );
-    int64_t util_accid          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t read_ptr, uint32_t read_len );
-    int64_t util_verify         ( wic_t* w, uint32_t dread_ptr, uint32_t dread_len,
-                                            uint32_t sread_ptr, uint32_t sread_len,
-                                            uint32_t kread_ptr, uint32_t kread_len );
-    int64_t util_verify_sto     ( wic_t* w, uint32_t tread_ptr, uint32_t tread_len );
-    int64_t util_sha512h        ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t read_ptr,  uint32_t read_len );
-    int64_t util_subfield       ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
-    int64_t util_subarray       ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
-    int64_t etxn_burden         ( wic_t* w );
-    int64_t etxn_details        ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
-    int64_t etxn_fee_base       ( wic_t* w, uint32_t tx_byte_count);
-    int64_t etxn_reserve        ( wic_t* w, uint32_t count );
-    int64_t etxn_generation     ( wic_t* w );
-    int64_t emit                ( wic_t* w, uint32_t read_ptr, uint32_t read_len );
-    int64_t hook_account        ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
-    int64_t hook_hash           ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
-    int64_t fee_base            ( wic_t* w );
-    int64_t ledger_seq          ( wic_t* w );
-    int64_t nonce               ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
-    int64_t slot_clear          ( wic_t* w, uint32_t slot );
-    int64_t slot_set            ( wic_t* w, uint32_t read_ptr, uint32_t read_len,
-                                            uint32_t slot_type, int32_t slot );
-
-    int64_t slot_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t field_id, uint32_t slot );
-    int64_t slot_field          ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t field_id, uint32_t slot );
-    int64_t slot_id             ( wic_t* w, uint32_t slot );
-    int64_t slot_type           ( wic_t* w, uint32_t slot );
-    int64_t state_set           ( wic_t* w, uint32_t read_ptr,  uint32_t read_len,
-                                            uint32_t kread_ptr, uint32_t kread_len );
-    int64_t state               ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t kread_ptr, uint32_t kread_len );
-    int64_t state_foreign       ( wic_t* w, uint32_t write_ptr, uint32_t write_len,
-                                            uint32_t kread_ptr, uint32_t kread_len,
-                                            uint32_t aread_ptr, uint32_t aread_len );
-    int64_t trace_slot          ( wic_t* w, uint32_t slot );
-    int64_t trace               ( wic_t* w, uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
-    int64_t trace_num           ( wic_t* w, uint32_t read_ptr, uint32_t read_len, int64_t number );
-
-    int64_t otxn_burden         ( wic_t* w );
-    int64_t otxn_field          ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
-    int64_t otxn_field_txt      ( wic_t* w, uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
-    int64_t otxn_generation     ( wic_t* w );
-    int64_t otxn_id             ( wic_t* w, uint32_t write_ptr, uint32_t write_len );
-    int64_t otxn_type           ( wic_t* w );
+    DECLARE_HOOK_FUNCTION(int64_t, _sepcial, uint32_t api_no,
+                                           uint32_t a, uint32_t b, uint32_t c,
+                                           uint32_t d, uint32_t e, uint32_t f);
 
 
-}
+    DECLARE_HOOK_FUNCTION(int32_t,  _g,                 uint32_t guard_id, uint32_t maxiter );
+
+    DECLARE_HOOK_FUNCTION(int64_t,	accept              uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	rollback            uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_raddr          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr, uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_accid          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr, uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_verify         uint32_t dread_ptr, uint32_t dread_len,
+                                                        uint32_t sread_ptr, uint32_t sread_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_verify_sto     uint32_t tread_ptr, uint32_t tread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_sha512h        uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield       uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray       uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_burden         );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_details        uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base       uint32_t tx_byte_count);
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve        uint32_t count );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_generation     );
+    DECLARE_HOOK_FUNCTION(int64_t,	emit                uint32_t read_ptr, uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	hook_account        uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	hook_hash           uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	fee_base            );
+    DECLARE_HOOK_FUNCTION(int64_t,	ledger_seq          );
+    DECLARE_HOOK_FUNCTION(int64_t,	nonce               uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_clear          uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_set            uint32_t read_ptr, uint32_t read_len,
+                                                        uint32_t slot_type, int32_t slot );
+
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_field_txt      uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t field_id, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_field          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t field_id, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_id             uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_type           uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	state_set           uint32_t read_ptr,  uint32_t read_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	state               uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	state_foreign       uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len,
+                                                        uint32_t aread_ptr, uint32_t aread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot          uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace               uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_num           uint32_t read_ptr, uint32_t read_len, int64_t number );
+
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_burden         );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field          uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field_txt      uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_generation     );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_id             uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_type           );
+
+} /* end namespace hook_api */
 
 namespace hook {
 
     bool canHook(ripple::TxType txType, uint64_t hookOn);
 
-    void printWasmerError(beast::Journal::Stream const& x);
+    void printWasmError(beast::Journal::Stream const& x);
 
     struct HookResult;
 
@@ -168,9 +178,6 @@ namespace hook {
 
 #ifndef RIPPLE_HOOK_H_INCLUDED
 #define RIPPLE_HOOK_H_INCLUDED
-    // account -> hook set tx id, already created wasmer instance
-    std::map<ripple::AccountID, std::pair<ripple::uint256, wasmer_instance_t*>> hook_cache;
-    std::mutex hook_cache_lock;
 
     struct HookResult
     {
@@ -221,66 +228,67 @@ namespace hook {
     // finalize the changes the hook made to the ledger
     void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext& );
 
-    template <typename F>
-    wasmer_import_t functionImport ( F func, std::string_view call_name,
-            std::initializer_list<wasmer_value_tag> func_params, int ret_type = 2);
+    #define ADD_HOOK_FUNCTION(F)\
+        addHostFunc(#F, std::make_unique<hook_api::WasmFunction_##F>())
+
+    class HookModule : public SSVM::Runtime::ImportObject
+    {
+    public:
+        HookModule() : SSVM::Runtime::ImportObject("env")
+        {
+            ADD_HOOK_FUNCTION(_special);
+            ADD_HOOK_FUNCTION(_g);
+            ADD_HOOK_FUNCTION(accept);
+            ADD_HOOK_FUNCTION(rollback);
+            ADD_HOOK_FUNCTION(util_raddr);
+            ADD_HOOK_FUNCTION(util_accid);
+            ADD_HOOK_FUNCTION(util_verify);
+            ADD_HOOK_FUNCTION(util_verify_sto);
+            ADD_HOOK_FUNCTION(util_sha512h);
+            ADD_HOOK_FUNCTION(util_subfield);
+            ADD_HOOK_FUNCTION(util_subarray);
+            ADD_HOOK_FUNCTION(emit);
+            ADD_HOOK_FUNCTION(etxn_burden);
+            ADD_HOOK_FUNCTION(etxn_fee_base);
+            ADD_HOOK_FUNCTION(etxn_details);
+            ADD_HOOK_FUNCTION(etxn_reserve);
+            ADD_HOOK_FUNCTION(etxn_generation);
+            ADD_HOOK_FUNCTION(otxn_burden);
+            ADD_HOOK_FUNCTION(otxn_generation);
+            ADD_HOOK_FUNCTION(otxn_field_txt);
+            ADD_HOOK_FUNCTION(otxn_field);
+            ADD_HOOK_FUNCTION(otxn_id);
+            ADD_HOOK_FUNCTION(otxn_type);
+            ADD_HOOK_FUNCTION(hook_account);
+            ADD_HOOK_FUNCTION(hook_hash);
+            ADD_HOOK_FUNCTION(fee_base);
+            ADD_HOOK_FUNCTION(ledger_seq);
+            ADD_HOOK_FUNCTION(nonce);
+            ADD_HOOK_FUNCTION(state);
+            ADD_HOOK_FUNCTION(state_foreign);
+            ADD_HOOK_FUNCTION(state_set);
+            ADD_HOOK_FUNCTION(slot_set);
+            ADD_HOOK_FUNCTION(slot_clear);
+            ADD_HOOK_FUNCTION(slot_field_txt);
+            ADD_HOOK_FUNCTION(slot_field);
+            ADD_HOOK_FUNCTION(slot_id);
+            ADD_HOOK_FUNCTION(slot_type);
+            ADD_HOOK_FUNCTION(trace);
+            ADD_HOOK_FUNCTION(trace_slot);
+            ADD_HOOK_FUNCTION(trace_num);
+
+            SSVM::AST::Limit TabLimit(10, 20);
+            addHostTable("table", std::make_unique<SSVM::Runtime::Instance::TableInstance>(
+                    SSVM::ElemType::FuncRef, TabLimit));
+            SSVM::AST::Limit MemLimit(1, 1);
+            addHostMemory("memory", std::make_unique<SSVM::Runtime::Instance::MemoryInstance>(MemLimit));
+        }
+    }
 
 
     #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
         (std::ceil( (double)state_count/(double)5.0 ))
-    #define WI32 (wasmer_value_tag::WASM_I32)
-    #define WI64 (wasmer_value_tag::WASM_I64)
 
-    const int imports_count = 40;
-    wasmer_import_t imports[] = {
-
-
-        functionImport ( hook_api::_special,        "_",                { WI32, WI32, WI32, WI32,
-                WI32, WI32                }),
-
-        functionImport ( hook_api::_g,             "_g",                { WI32, WI32 }, 1 ),
-
-        functionImport ( hook_api::accept,          "accept",           { WI32, WI32, WI32          }),
-        functionImport ( hook_api::rollback,        "rollback",         { WI32, WI32, WI32          }),
-        functionImport ( hook_api::util_raddr,      "util_raddr",       { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::util_accid,      "util_accid",       { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::util_verify,     "util_verify",      { WI32, WI32, WI32, WI32,
-                                                                          WI32, WI32                }),
-        functionImport ( hook_api::util_verify_sto, "util_verify_sto",  { WI32, WI32                }),
-        functionImport ( hook_api::util_sha512h,    "util_sha512h",     { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::util_subfield,   "util_subfield",    { WI32, WI32, WI32          }),
-        functionImport ( hook_api::util_subarray,   "util_subarray",    { WI32, WI32, WI32          }),
-        functionImport ( hook_api::emit,            "emit",             { WI32, WI32                }),
-        functionImport ( hook_api::etxn_burden,     "etxn_burden",      {                           }),
-        functionImport ( hook_api::etxn_fee_base,   "etxn_fee_base",    { WI32                      }),
-        functionImport ( hook_api::etxn_details,    "etxn_details",     { WI32, WI32                }),
-        functionImport ( hook_api::etxn_reserve,    "etxn_reserve",     { WI32                      }),
-        functionImport ( hook_api::etxn_generation, "etxn_generation",  {                           }),
-        functionImport ( hook_api::otxn_burden,     "otxn_burden",      {                           }),
-        functionImport ( hook_api::otxn_generation, "otxn_generation",  {                           }),
-        functionImport ( hook_api::otxn_field_txt,  "otxn_field_txt",   { WI32, WI32, WI32          }),
-        functionImport ( hook_api::otxn_field,      "otxn_field",       { WI32, WI32, WI32          }),
-        functionImport ( hook_api::otxn_id,         "otxn_id",          { WI32, WI32                }),
-        functionImport ( hook_api::otxn_type,       "otxn_type",        {                           }),
-        functionImport ( hook_api::hook_account,    "hook_account",     { WI32, WI32                }),
-        functionImport ( hook_api::hook_hash,       "hook_hash",        { WI32, WI32                }),
-        functionImport ( hook_api::fee_base,        "fee_base",         {                           }),
-        functionImport ( hook_api::ledger_seq,      "ledger_seq",       {                           }),
-        functionImport ( hook_api::nonce,           "nonce",            { WI32                      }),
-        functionImport ( hook_api::state,           "state",            { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::state_foreign,   "state_foreign",    { WI32, WI32, WI32, WI32,
-                                                                          WI32, WI32                }),
-        functionImport ( hook_api::state_set,       "state_set",        { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::slot_set,        "slot_set",         { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::slot_clear,      "slot_clear",       { WI32                      }),
-        functionImport ( hook_api::slot_field_txt,  "slot_field_txt",   { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::slot_field,      "slot_field",       { WI32, WI32, WI32, WI32    }),
-        functionImport ( hook_api::slot_id,         "slot_id",          { WI32                      }),
-        functionImport ( hook_api::slot_type,       "slot_type",        { WI32                      }),
-        functionImport ( hook_api::trace,           "trace",            { WI32, WI32, WI32          }),
-        functionImport ( hook_api::trace_slot,      "trace_slot",       { WI32                      }),
-        functionImport ( hook_api::trace_num,       "trace_num",        { WI32, WI32, WI64          })
-    };
 
 
 #define HOOK_SETUP()\
