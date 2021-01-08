@@ -41,8 +41,8 @@ include(RippledInterface)
 
 ###
 
-include(deps/Boost)
 include(deps/libssvm)
+include(deps/Boost)
 include(deps/OpenSSL)
 include(deps/Secp256k1)
 include(deps/Ed25519-donna)

@@ -14,6 +14,69 @@
 
 using namespace ripple;
 
+#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
+    (std::ceil( (double)state_count/(double)5.0 ))
+
+#define HOOK_SETUP()\
+    [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
+    [[maybe_unused]] auto& view = applyCtx.view();\
+    [[maybe_unused]] auto j = applyCtx.app.journal("View");\
+    [[maybe_unused]] const uint64_t memory_length = memoryCtx.getDataPageSize() * memoryCtx.kPageSize;
+
+#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
+        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+{\
+    int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
+    if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
+    {\
+        JLOG(j.trace())\
+            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len\
+            << " bytes past end of wasm memory";\
+        return OUT_OF_BOUNDS;\
+    }\
+//RH upto here, swap for memoryCtx.setBytes construct a std::span?
+    ::memcpy(host_memory_ptr + guest_dst_ptr, host_src_ptr, bytes_to_write);\
+    return bytes_to_write;\
+}
+
+// ptr = pointer inside the wasm memory space
+#define NOT_IN_BOUNDS(ptr, len, memory_length)\
+    (ptr > memory_length || \
+     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
+
+#define HOOK_EXIT(read_ptr, read_len, error_code, exitType)\
+{\
+    if (read_len > 1024) read_len = 1024;\
+    if (read_ptr) {\
+        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
+            JLOG(j.trace())\
+                << "Hook: tried to accept/rollback but specified memory outside of the wasm instance " <<\
+                "limit when specifying a reason string";\
+            return OUT_OF_BOUNDS;\
+        }\
+        /* assembly script and some other languages use utf16 for strings */\
+        if (is_UTF16LE(read_ptr + memory, read_len))\
+        {\
+            uint8_t output[512];\
+            int len = read_len / 2; /* is_UTF16LE will only return true if read_len is even */\
+            for (int i = 0; i < len; ++i)\
+                output[i] = memory[read_ptr + i * 2];\
+            hookCtx.result.exitReason = std::string((const char*)(output), (size_t)len);\
+        } else\
+            hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);\
+    }\
+    hookCtx.result.exitType = exitType;\
+    hookCtx.result.exitCode = error_code;\
+    return SSVM::ErrCode::Terminated;\
+}
+
+#define HOOK_FUNCTION(R, F, ...)\
+    SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx, __VA_ARGS__)
+
+#define HOOK_FUNCTION_NO_ARGS(R, F)\
+    SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)
+
+
 /* returns true iff every even char is ascii and every odd char is 00
  * only a hueristic, may be inaccurate in edgecases */
 inline bool is_UTF16LE(const uint8_t* buffer, size_t len)
@@ -155,7 +218,7 @@ hook::setHookState(
             describeOwnerDir(hookResult.account),
             j);
 
-        JLOG(j.trace()) << "Hook: Create/update hook state: " 
+        JLOG(j.trace()) << "Hook: Create/update hook state: "
             << key << " for account " << toBase58(hookResult.account)
             << ": " << (page ? "success" : "failure");
 
@@ -169,7 +232,7 @@ hook::setHookState(
     return tesSUCCESS;
 }
 
-void hook::printWasmerError(beast::Journal::Stream const& x)
+void hook::printWasmError(beast::Journal::Stream const& x)
 {
   int error_len = wasmer_last_error_length();
   char *error_str = (char*)malloc(error_len);
@@ -177,9 +240,6 @@ void hook::printWasmerError(beast::Journal::Stream const& x)
   JLOG(x) << "Hook: Wasmer Error: " << error_str;
   free(error_str);
 }
-
-//#define HOOK_CACHING  // RH NOTE: WASMER USES GLOBAL STATE IN ITS C API WHICH BREAKS CACHING SO CACHING IS OFF
-                        //          WASMER RUNTIME TO BE PATCHED OR SCRAPPED... to be decided
 
 hook::HookResult
     hook::apply(
@@ -189,7 +249,7 @@ hook::HookResult
         bool callback = false)
 {
 
-    HookContext hookCtx = 
+    HookContext hookCtx =
     {
         .applyCtx = applyCtx,
         // we will return this context object (RVO / move constructed)
@@ -205,44 +265,19 @@ hook::HookResult
             .exitCode = -1
         }
     };
-    
+
     auto const& j = applyCtx.app.journal("View");
     wasmer_instance_t *instance = NULL;
 
-#ifdef HOOK_CACHING
+    JLOG(j.trace()) << "Hook: Creating wasmer instance for " << account << "\n";
+    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) !=
+            wasmer_result_t::WASMER_OK)
     {
-        auto const& cacheLookup = hook_cache.find(account);
-        bool needsDestruction = false;
-        if (cacheLookup  == hook_cache.end() ||
-                (cacheLookup->second.first != hookSetTxnID && (needsDestruction = true)))
-        {
-            if (needsDestruction)
-            {
-                JLOG(j.trace()) << "Hook: Destroying wasmer instance for " << account <<
-                   " Instance Ptr: " << cacheLookup->second.second << "\n";
-                wasmer_instance_destroy(cacheLookup->second.second);
-                hook_cache.erase(account);
-            }
-#endif
-            JLOG(j.trace()) << "Hook: Creating wasmer instance for " << account << "\n";
-            if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) != 
-                    wasmer_result_t::WASMER_OK)
-            {
-                printWasmerError(j.warn());
-                JLOG(j.warn()) << "Hook: Hook was malformed for " << account << "\n";
-                hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
-                return hookCtx.result;
-            }
-#ifdef HOOK_CACHING
-            hook_cache[account] = std::make_pair(hookSetTxnID, instance);
-        } else
-        {
-            instance = hook_cache[account].second;
-            JLOG(j.trace()) << "Hook: Loading cached wasmer instance for " << account <<
-                " Instance Ptr " << instance << "\n";
-        }
+        printWasmError(j.warn());
+        JLOG(j.warn()) << "Hook: Hook was malformed for " << account << "\n";
+        hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
+        return hookCtx.result;
     }
-#endif
 
 
     wasmer_instance_context_data_set ( instance, &hookCtx );
@@ -272,21 +307,18 @@ hook::HookResult
 
     // RH TODO possible memory leak here, destroy the imports, instance using a smart pointer?
 
-#ifndef HOOK_CACHING
     JLOG(j.trace()) <<
         "Hook: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
     wasmer_instance_destroy(instance);
-#endif
     return hookCtx.result;
 }
 
-
-
 /* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
  * specifying both a string and an integer to output */
-int64_t hook_api::trace_num (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len, int64_t number )
+HOOK_FUNCTION(
+    int64_t,
+    trace_num,
+    uint32_t read_ptr, uint32_t read_len, int64_t number)
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
@@ -295,7 +327,7 @@ int64_t hook_api::trace_num (
     if (read_len > 1024) read_len = 1024;
     if (!j.trace())
         return read_len;
-    j.trace() << "Hook: [trace()]: " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) << 
+    j.trace() << "Hook: [trace()]: " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) <<
         ": " << number;
     return read_len;
 
@@ -304,9 +336,10 @@ int64_t hook_api::trace_num (
 
 /* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
  * specifying as_hex dumps memory as hex */
-int64_t hook_api::trace (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len, uint32_t as_hex )
+HOOK_FUNCTION(
+    int64_t,
+    trace,
+    uint32_t read_ptr, uint32_t read_len, uint32_t as_hex )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
@@ -326,7 +359,7 @@ int64_t hook_api::trace (
             output[i*2 + 0] = high;
             output[i*2 + 1] = low;
         }
-        j.trace() 
+        j.trace()
             << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(read_len*2));
     }
     else if (is_UTF16LE(memory + read_ptr, read_len))
@@ -335,13 +368,13 @@ int64_t hook_api::trace (
         int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
         for (int i = 0; i < len; ++i)
             output[i] = memory[read_ptr + i * 2];
-        j.trace() 
+        j.trace()
             << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(len));
     }
     else
     {
-        
-        j.trace() 
+
+        j.trace()
             << "Hook: [trace()]: '" << std::string_view((const char*)(memory + read_ptr), (size_t)read_len);
     }
     return read_len;
@@ -380,10 +413,11 @@ make_state_key(
 // read_ptr = data to set, kread_ptr = key
 // RH NOTE passing 0 size causes a delete operation which is as-intended
 // RH TODO: check reserve
-int64_t hook_api::state_set (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len,
-        uint32_t kread_ptr, uint32_t kread_len )
+HOOK_FUNCTION(
+    int64_t,
+    state_set,
+    uint32_t read_ptr, uint32_t read_len,
+    uint32_t kread_ptr, uint32_t kread_len )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -435,7 +469,7 @@ void hook::commitChangesToLedger(
             // this entry isn't just cached, it was actually modified
             auto HSKeylet = keylet::hook_state(hookResult.account, key);
             auto slice = Slice(blob.data(), blob.size());
-            setHookState(hookResult, applyCtx, HSKeylet, key, slice); 
+            setHookState(hookResult, applyCtx, HSKeylet, key, slice);
             // ^ should not fail... checks were done before map insert
         }
     }
@@ -462,10 +496,11 @@ void hook::commitChangesToLedger(
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
-int64_t hook_api::state (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t kread_ptr, uint32_t kread_len )
+HOOK_FUNCTION(
+    int64_t,
+    state,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t kread_ptr, uint32_t kread_len )
 {
     return hook_api::state_foreign( wasm_ctx,
             write_ptr, write_len,
@@ -475,11 +510,12 @@ int64_t hook_api::state (
 
 /* This api actually serves both local and foreign state requests
  * feeding aread_ptr = 0 and aread_len = 0 will cause it to read local */
-int64_t hook_api::state_foreign (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t kread_ptr, uint32_t kread_len,
-        uint32_t aread_ptr, uint32_t aread_len )
+HOOK_FUNCTION(
+    int64_t,
+    state_foreign,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t kread_ptr, uint32_t kread_len,
+    uint32_t aread_ptr, uint32_t aread_len )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -564,74 +600,40 @@ int64_t hook_api::state_foreign (
         memory, memory_length);
 }
 
-
-// Cause the originating transaction to go through, save state changes and emit emitted tx, exit hook
-int64_t hook_api::accept (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len,
-        int32_t error_code )
-{
-    // RH NOTE: this will fail unless your wasmer was compiled with a patch
-    // At time of writing there is no official way to terminate a wasmer binary early
-    // https://github.com/RichardAH/wasmer/commit/e17e1e949279c4cf2fd660d6e983c0cf34f6043b
-    return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
-}
-
-// Cause the originating transaction to be rejected, discard state changes and discard emitted tx, exit hook
-int64_t hook_api::rollback (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len,
-        int32_t error_code )
-{
-    return hook_api::_exit(wasm_ctx, read_ptr, read_len, error_code, hook_api::ExitType::ROLLBACK);
-}
-
-// called by the above three exit methods
-int64_t hook_api::_exit (
-        wasmer_instance_context_t * wasm_ctx,
+/*inline int64_t _exit (
         uint32_t read_ptr, uint32_t read_len,
         int32_t error_code, hook_api::ExitType exitType )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+*/
 
-    if (read_len > 1024) read_len = 1024;
+// Cause the originating transaction to go through, save state changes and emit emitted tx, exit hook
+HOOK_FUNCTION(
+    int64_t,
+    accept,
+    uint32_t read_ptr, uint32_t read_len,
+    int32_t error_code )
+{
+    HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
+}
 
-    if (read_ptr) {
-        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {
-            JLOG(j.trace())
-                << "Hook: tried to accept/rollback but specified memory outside of the wasm instance " <<
-                "limit when specifying a reason string";
-            return OUT_OF_BOUNDS;
-        }
-
-        // assembly script and some other languages use utf16 for strings
-        if (is_UTF16LE(read_ptr + memory, read_len))
-        {
-            uint8_t output[512];
-            int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
-            for (int i = 0; i < len; ++i)
-                output[i] = memory[read_ptr + i * 2];
-            hookCtx.result.exitReason = std::string((const char*)(output), (size_t)len);
-        } else
-            hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);
-    }
-
-    hookCtx.result.exitType = exitType;
-    hookCtx.result.exitCode = error_code;
-
-    wasmer_raise_runtime_error(0, 0);
-
-    // unreachable
-    return 0;
-
+// Cause the originating transaction to be rejected, discard state changes and discard emitted tx, exit hook
+HOOK_FUNCTION(
+    int64_t,
+    rollback,
+    uint32_t read_ptr, uint32_t read_len,
+    int32_t error_code )
+{
+    HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ROLLBACK);
 }
 
 
 // Write the TxnID of the originating transaction into the write_ptr
-int64_t hook_api::otxn_id (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len )
+HOOK_FUNCTION(
+    int64_t,
+    otxn_id,
+    uint32_t write_ptr, uint32_t write_len )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -651,7 +653,9 @@ int64_t hook_api::otxn_id (
 }
 
 // Return the tt (Transaction Type) numeric code of the originating transaction
-int64_t hook_api::otxn_type ( wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+        int64_t,
+        otxn_type )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -660,7 +664,9 @@ int64_t hook_api::otxn_type ( wasmer_instance_context_t * wasm_ctx )
 
 // Return the burden of the originating transaction... this will be 1 unless the originating transaction
 // was itself an emitted transaction from a previous hook invocation
-int64_t hook_api::otxn_burden ( wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+        int64_t,
+        otxn_burden)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.burden)
@@ -686,7 +692,9 @@ int64_t hook_api::otxn_burden ( wasmer_instance_context_t * wasm_ctx )
 
 // Return the generation of the originating transaction... this will be 1 unless the originating transaction
 // was itself an emitted transaction from a previous hook invocation
-int64_t hook_api::otxn_generation ( wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+        int64_t,
+        otxn_generation)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -715,14 +723,18 @@ int64_t hook_api::otxn_generation ( wasmer_instance_context_t * wasm_ctx )
 }
 
 // Return the generation of a hypothetically emitted transaction from this hook
-int64_t hook_api::etxn_generation ( wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+        int64_t,
+        etxn_generation)
 {
     return hook_api::otxn_generation ( wasm_ctx ) + 1;
 }
 
 
 // Return the current ledger sequence number
-int64_t hook_api::ledger_seq ( wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+        int64_t,
+        ledger_seq)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     return applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
@@ -730,10 +742,11 @@ int64_t hook_api::ledger_seq ( wasmer_instance_context_t * wasm_ctx )
 
 
 // Dump a field in 'full text' form into the hook's memory
-int64_t hook_api::otxn_field_txt (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id )
+HOOK_FUNCTION(
+    int64_t,
+    otxn_field_txt,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t field_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
@@ -764,10 +777,11 @@ int64_t hook_api::otxn_field_txt (
 }
 
 // Dump a field from the originating transaction into the hook's memory
-int64_t hook_api::otxn_field (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id )
+HOOK_FUNCTION(
+    int64_t,
+    otxn_field,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t field_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -805,9 +819,10 @@ int64_t hook_api::otxn_field (
 
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
-int64_t hook_api::slot_clear (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot_id  )
+HOOK_FUNCTION(
+    int64_t,
+    slot_clear,
+    uint32_t slot_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     return NOT_IMPLEMENTED;
@@ -826,10 +841,11 @@ int64_t hook_api::slot_clear (
 }
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
-int64_t hook_api::slot_set (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len,
-        uint32_t slot_type, int32_t slot_into )
+HOOK_FUNCTION(
+    int64_t,
+    slot_set,
+    uint32_t read_ptr, uint32_t read_len,
+    uint32_t slot_type, int32_t slot_into )
 {
 
     return NOT_IMPLEMENTED;
@@ -875,44 +891,49 @@ int64_t hook_api::slot_set (
 }
 
 // Slots unimplemented
-int64_t hook_api::slot_field_txt (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id, uint32_t slot )
+HOOK_FUNCTION(
+    int64_t,
+    slot_field_txt,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t field_id, uint32_t slot )
 {
     return NOT_IMPLEMENTED; // RH TODO
 }
 
 // Slots unimplemented
-int64_t hook_api::slot_field (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t field_id, uint32_t slot )
+HOOK_FUNCTION(
+    int64_t,
+    slot_field,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t field_id, uint32_t slot )
 {
     return NOT_IMPLEMENTED; // RH TODO
 }
 
 
 // Slots unimplemented
-int64_t hook_api::slot_id (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot )
+HOOK_FUNCTION(
+    int64_t,
+    slot_id,
+    uint32_t slot )
 {
     return NOT_IMPLEMENTED; // RH TODO
 }
 
 // Slots unimplemented
-int64_t hook_api::slot_type (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot )
+HOOK_FUNCTION(
+    int64_t,
+    slot_type,
+    uint32_t slot )
 {
     return NOT_IMPLEMENTED; // RH TODO
 }
 
 // Slots unimplemented
-int64_t hook_api::trace_slot (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t slot )
+HOOK_FUNCTION(
+    int64_t,
+    slot,
+    uint32_t slot )
 {
 
     return NOT_IMPLEMENTED;
@@ -932,9 +953,10 @@ int64_t hook_api::trace_slot (
 
 /* Emit a transaction from this hook. Transaction must be in STObject form, fully formed and valid.
  * XRPLD does not modify transactions it only checks them for validity. */
-int64_t hook_api::emit (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len )
+HOOK_FUNCTION(
+    int64_t,
+    emit,
+    uint32_t read_ptr, uint32_t read_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
@@ -982,7 +1004,7 @@ int64_t hook_api::emit (
     // rule 1: sfSequence must be present and 0
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: sfSequence missing or non-zero.";
         return EMISSION_FAILURE;
     }
@@ -990,7 +1012,7 @@ int64_t hook_api::emit (
     // rule 2: sfSigningPubKey must be present and 00...00
     if (!stpTrans->isFieldPresent(sfSigningPubKey))
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: sfSigningPubKey missing.";
         return EMISSION_FAILURE;
     }
@@ -998,7 +1020,7 @@ int64_t hook_api::emit (
     auto const pk = stpTrans->getSigningPubKey();
     if (pk.size() != 33)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.";
         return EMISSION_FAILURE;
     }
@@ -1006,7 +1028,7 @@ int64_t hook_api::emit (
     for (int i = 0; i < 33; ++i)
         if (pk[i] != 0)
         {
-            JLOG(j.trace()) 
+            JLOG(j.trace())
                 << "Hook: Emission failure: sfSigningPubKey present but non-zero.";
             return EMISSION_FAILURE;
         }
@@ -1014,7 +1036,7 @@ int64_t hook_api::emit (
     // rule 3: sfEmitDetails must be present and valid
     if (!stpTrans->isFieldPresent(sfEmitDetails))
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: sfEmitDetails missing.";
         return EMISSION_FAILURE;
     }
@@ -1028,7 +1050,7 @@ int64_t hook_api::emit (
         !emitDetails.isFieldPresent(sfEmitNonce) ||
         !emitDetails.isFieldPresent(sfEmitCallback))
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: sfEmitDetails malformed.";
         return EMISSION_FAILURE;
     }
@@ -1043,7 +1065,7 @@ int64_t hook_api::emit (
 
     if (gen != gen_proper)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: Generation provided in EmitDetails was not correct: " << gen
             << " should be " << gen_proper;
         return EMISSION_FAILURE;
@@ -1051,14 +1073,14 @@ int64_t hook_api::emit (
 
     if (bur != etxn_burden(wasm_ctx))
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: Burden provided in EmitDetails was not correct";
         return EMISSION_FAILURE;
     }
 
     if (pTxnID != applyCtx.tx.getTransactionID())
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: ParentTxnID provided in EmitDetails was not correct";
         return EMISSION_FAILURE;
     }
@@ -1110,14 +1132,14 @@ int64_t hook_api::emit (
     int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
     if (minfee < 0 || hookCtx.fee_base < 0)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: fee could not be calculated.";
         return EMISSION_FAILURE;
     }
 
     if (!stpTrans->isFieldPresent(sfFee))
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: Fee missing from emitted tx.";
         return EMISSION_FAILURE;
     }
@@ -1125,7 +1147,7 @@ int64_t hook_api::emit (
     int64_t fee = stpTrans->getFieldAmount(sfFee).xrp().drops();
     if (fee < minfee)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: Fee on emitted txn is less than the minimum required fee.";
         return EMISSION_FAILURE;
     }
@@ -1134,7 +1156,7 @@ int64_t hook_api::emit (
     auto tpTrans = std::make_shared<Transaction>(stpTrans, reason, app);
     if (tpTrans->getStatus() != NEW)
     {
-        JLOG(j.trace()) 
+        JLOG(j.trace())
             << "Hook: Emission failure: tpTrans->getStatus() != NEW";
         return EMISSION_FAILURE;
     }
@@ -1145,18 +1167,20 @@ int64_t hook_api::emit (
 }
 
 // When implemented will return the hash of the current hook
-int64_t hook_api::hook_hash (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t ptr_len )
+HOOK_FUNCTION(
+    int64_t,
+    hook_hash,
+    uint32_t write_ptr, uint32_t ptr_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     return NOT_IMPLEMENTED; // RH TODO implement
 }
 
 // Write the account id that the running hook is installed on into write_ptr
-int64_t hook_api::hook_account (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t ptr_len )
+HOOK_FUNCTION(
+    int64_t,
+    hook_account,
+    uint32_t write_ptr, uint32_t ptr_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(write_ptr, 20, memory_length))
@@ -1170,9 +1194,10 @@ int64_t hook_api::hook_account (
 
 // Deterministic nonces (can be called multiple times)
 // Writes nonce into the write_ptr
-int64_t hook_api::nonce (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len )
+HOOK_FUNCTION(
+    int64_t,
+    nonce,
+    uint32_t write_ptr, uint32_t write_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
 
@@ -1204,9 +1229,10 @@ int64_t hook_api::nonce (
 }
 
 // Reserve one or more transactions for emission from the running hook
-int64_t hook_api::etxn_reserve (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t count )
+HOOK_FUNCTION(
+    int64_t,
+    etxn_reserve,
+    uint32_t count )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.expected_etxn_count > -1)
@@ -1220,8 +1246,9 @@ int64_t hook_api::etxn_reserve (
 }
 
 // Compute the burden of an emitted transaction based on a number of factors
-int64_t hook_api::etxn_burden (
-        wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+    int64_t,
+    etxn_burden)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -1239,20 +1266,22 @@ int64_t hook_api::etxn_burden (
 
 // When implemented this function will allow all other hook api functions to be called by number instead of
 // name... this is important for size in some cases
-int64_t hook_api::_special (
-        wasmer_instance_context_t* wasm_ctx,
-        uint32_t api_no,
-        uint32_t a, uint32_t b, uint32_t c,
-        uint32_t d, uint32_t e, uint32_t f )
+HOOK_FUNCTION(
+    int64_t,
+    _special,
+    uint32_t api_no,
+    uint32_t a, uint32_t b, uint32_t c,
+    uint32_t d, uint32_t e, uint32_t f )
 {
     return NOT_IMPLEMENTED; // RH TODO
 }
 
 
-int64_t hook_api::util_sha512h (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t read_ptr, uint32_t read_len )
+HOOK_FUNCTION(
+    int64_t,
+    util_sha512h,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr, uint32_t read_len )
 {
     return NOT_IMPLEMENTED; // RH TODO, and bill appropriately
 }
@@ -1305,7 +1334,7 @@ inline int32_t get_stobject_length (
         field = *upto++;
     }
 
-    DBG_PRINTF("%d get_st_object found field %d type %d\n", recursion_depth, field, type); 
+    DBG_PRINTF("%d get_st_object found field %d type %d\n", recursion_depth, field, type);
 
     if (upto >= end) return -1;
 
@@ -1403,9 +1432,10 @@ inline int32_t get_stobject_length (
 // Given an serialized object in memory locate and return the offset and length of the payload of a subfield of that
 // object. Arrays are returned fully formed. If successful returns offset and length joined as int64_t.
 // Use SUB_OFFSET and SUB_LENGTH to extract.
-int64_t hook_api::util_subfield (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
+HOOK_FUNCTION(
+    int64_t,
+    util_subfield,
+    uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -1453,9 +1483,10 @@ int64_t hook_api::util_subfield (
 }
 
 // Same as subfield but indexes into a serialized array
-int64_t hook_api::util_subarray (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
+HOOK_FUNCTION(
+    int64_t,
+    util_subarray,
+    uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -1500,10 +1531,11 @@ int64_t hook_api::util_subarray (
 }
 
 // Convert an account ID into a base58-check encoded r-address
-int64_t hook_api::util_raddr (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t read_ptr, uint32_t read_len )
+HOOK_FUNCTION(
+    int64_t,
+    util_raddr,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr, uint32_t read_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
@@ -1527,10 +1559,11 @@ int64_t hook_api::util_raddr (
 }
 
 // Convert a base58-check encoded r-address into a 20 byte account id
-int64_t hook_api::util_accid (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len,
-        uint32_t read_ptr, uint32_t read_len )
+HOOK_FUNCTION(
+    int64_t,
+    util_accid,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr, uint32_t read_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -1568,9 +1601,10 @@ int64_t hook_api::util_accid (
 }
 
 // when implemented this function will validate an st-object
-int64_t hook_api::util_verify_sto (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t tread_ptr, uint32_t tread_len)
+HOOK_FUNCTION(
+    int64_t,
+    util_verify_sto,
+    uint32_t tread_ptr, uint32_t tread_len )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -1592,11 +1626,12 @@ int64_t hook_api::util_verify_sto (
 
 // Validate either an secp256k1 signature or an ed25519 signature, using the XRPLD convention for identifying
 // the key type. Pointer prefixes: d = data, s = signature, k = public key.
-int64_t hook_api::util_verify (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t dread_ptr, uint32_t dread_len,
-        uint32_t sread_ptr, uint32_t sread_len,
-        uint32_t kread_ptr, uint32_t kread_len )
+HOOK_FUNCTION(
+    int64_t,
+    util_verify,
+    uint32_t dread_ptr, uint32_t dread_len,
+    uint32_t sread_ptr, uint32_t sread_len,
+    uint32_t kread_ptr, uint32_t kread_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -1613,17 +1648,19 @@ int64_t hook_api::util_verify (
 }
 
 // Return the current fee base of the current ledger (multiplied by a margin)
-int64_t hook_api::fee_base (
-        wasmer_instance_context_t * wasm_ctx )
+HOOK_FUNCTION_NO_ARGS(
+    int64_t,
+    fee_base)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     return (int64_t)((double)(view.fees().base.drops()) * hook_api::fee_base_multiplier);
 }
 
 // Return the fee base for a hypothetically emitted transaction from the current hook based on byte count
-int64_t hook_api::etxn_fee_base (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t tx_byte_count )
+HOOK_FUNCTION(
+    int64_t,
+    etxn_fee_base,
+    uint32_t tx_byte_count )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -1646,9 +1683,10 @@ int64_t hook_api::etxn_fee_base (
 }
 
 // Populate an sfEmitDetails field in a soon-to-be emitted transaction
-int64_t hook_api::etxn_details (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t write_ptr, uint32_t write_len )
+HOOK_FUNCTION(
+    int64_t,
+    etxn_details,
+    uint32_t write_ptr, uint32_t write_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
@@ -1708,9 +1746,10 @@ int64_t hook_api::etxn_details (
 // Guard function... very important. Enforced on SetHook transaction, keeps track of how many times a
 // runtime loop iterates and terminates the hook if the iteration count rises above a preset number of iterations
 // as determined by the hook developer
-int32_t hook_api::_g (
-        wasmer_instance_context_t * wasm_ctx,
-        uint32_t id, uint32_t maxitr )
+HOOK_FUNCTION(
+    int32_t,
+    _g,
+    uint32_t id, uint32_t maxitr )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.guard_map.find(id) == hookCtx.guard_map.end())

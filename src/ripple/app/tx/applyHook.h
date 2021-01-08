@@ -15,13 +15,19 @@
 #include "runtime/hostfunc.h"
 #include "runtime/importobj.h"
 
+
+#ifndef RIPPLE_HOOK_H_INCLUDED
+#define RIPPLE_HOOK_H_INCLUDED
+
+namespace hook {
+    struct HookContext;
+}
+
 namespace hook_api {
 
 #define TER_TO_HOOK_RETURN_CODE(x)\
     (((TERtoInt(x)) << 16)*-1)
 
-#ifndef RIPPLE_HOOK_H_INCLUDED1
-#define RIPPLE_HOOK_H_INCLUDED1
 
 // for debugging if you want a lot of output change these to if (1)
 #define DBG_PRINTF if (0) printf
@@ -78,17 +84,15 @@ namespace hook_api {
     const int max_emit = 255;
     const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
-#endif
 
     #define DECLARE_HOOK_FUNCTION(R, F, ...)\
         class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
         {\
             public:\
+            hook::HookContext& hookCtx;\
+            WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
             SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*, __VA_ARGS__);\
         }
-
-    #define DEFINE_HOOK_FUNCTION(R, F, ...)\
-        SSVM::Expect<R> WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* mem, __VA_ARGS__)
 
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
@@ -176,8 +180,6 @@ namespace hook {
 
     int maxHookStateDataSize(void);
 
-#ifndef RIPPLE_HOOK_H_INCLUDED
-#define RIPPLE_HOOK_H_INCLUDED
 
     struct HookResult
     {
@@ -228,54 +230,58 @@ namespace hook {
     // finalize the changes the hook made to the ledger
     void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext& );
 
-    #define ADD_HOOK_FUNCTION(F)\
-        addHostFunc(#F, std::make_unique<hook_api::WasmFunction_##F>())
+    #define ADD_HOOK_FUNCTION(F, ctx)\
+        addHostFunc(#F, std::make_unique<hook_api::WasmFunction_##F>(ctx))
 
     class HookModule : public SSVM::Runtime::ImportObject
     {
+    
     public:
-        HookModule() : SSVM::Runtime::ImportObject("env")
+        HookContext hookCtx;
+
+        HookModule(HookContext& ctx) : SSVM::Runtime::ImportObject("env"), hookCtx(ctx)
         {
-            ADD_HOOK_FUNCTION(_special);
-            ADD_HOOK_FUNCTION(_g);
-            ADD_HOOK_FUNCTION(accept);
-            ADD_HOOK_FUNCTION(rollback);
-            ADD_HOOK_FUNCTION(util_raddr);
-            ADD_HOOK_FUNCTION(util_accid);
-            ADD_HOOK_FUNCTION(util_verify);
-            ADD_HOOK_FUNCTION(util_verify_sto);
-            ADD_HOOK_FUNCTION(util_sha512h);
-            ADD_HOOK_FUNCTION(util_subfield);
-            ADD_HOOK_FUNCTION(util_subarray);
-            ADD_HOOK_FUNCTION(emit);
-            ADD_HOOK_FUNCTION(etxn_burden);
-            ADD_HOOK_FUNCTION(etxn_fee_base);
-            ADD_HOOK_FUNCTION(etxn_details);
-            ADD_HOOK_FUNCTION(etxn_reserve);
-            ADD_HOOK_FUNCTION(etxn_generation);
-            ADD_HOOK_FUNCTION(otxn_burden);
-            ADD_HOOK_FUNCTION(otxn_generation);
-            ADD_HOOK_FUNCTION(otxn_field_txt);
-            ADD_HOOK_FUNCTION(otxn_field);
-            ADD_HOOK_FUNCTION(otxn_id);
-            ADD_HOOK_FUNCTION(otxn_type);
-            ADD_HOOK_FUNCTION(hook_account);
-            ADD_HOOK_FUNCTION(hook_hash);
-            ADD_HOOK_FUNCTION(fee_base);
-            ADD_HOOK_FUNCTION(ledger_seq);
-            ADD_HOOK_FUNCTION(nonce);
-            ADD_HOOK_FUNCTION(state);
-            ADD_HOOK_FUNCTION(state_foreign);
-            ADD_HOOK_FUNCTION(state_set);
-            ADD_HOOK_FUNCTION(slot_set);
-            ADD_HOOK_FUNCTION(slot_clear);
-            ADD_HOOK_FUNCTION(slot_field_txt);
-            ADD_HOOK_FUNCTION(slot_field);
-            ADD_HOOK_FUNCTION(slot_id);
-            ADD_HOOK_FUNCTION(slot_type);
-            ADD_HOOK_FUNCTION(trace);
-            ADD_HOOK_FUNCTION(trace_slot);
-            ADD_HOOK_FUNCTION(trace_num);
+            addHostFunc("_", std::make_unique<hook_api::WasmFunction__special(ctx));
+
+            ADD_HOOK_FUNCTION(_g, ctx);
+            ADD_HOOK_FUNCTION(accept, ctx);
+            ADD_HOOK_FUNCTION(rollback, ctx);
+            ADD_HOOK_FUNCTION(util_raddr, ctx);
+            ADD_HOOK_FUNCTION(util_accid, ctx);
+            ADD_HOOK_FUNCTION(util_verify, ctx);
+            ADD_HOOK_FUNCTION(util_verify_sto, ctx);
+            ADD_HOOK_FUNCTION(util_sha512h, ctx);
+            ADD_HOOK_FUNCTION(util_subfield, ctx);
+            ADD_HOOK_FUNCTION(util_subarray, ctx);
+            ADD_HOOK_FUNCTION(emit, ctx);
+            ADD_HOOK_FUNCTION(etxn_burden, ctx);
+            ADD_HOOK_FUNCTION(etxn_fee_base, ctx);
+            ADD_HOOK_FUNCTION(etxn_details, ctx);
+            ADD_HOOK_FUNCTION(etxn_reserve, ctx);
+            ADD_HOOK_FUNCTION(etxn_generation, ctx);
+            ADD_HOOK_FUNCTION(otxn_burden, ctx);
+            ADD_HOOK_FUNCTION(otxn_generation, ctx);
+            ADD_HOOK_FUNCTION(otxn_field_txt, ctx);
+            ADD_HOOK_FUNCTION(otxn_field, ctx);
+            ADD_HOOK_FUNCTION(otxn_id, ctx);
+            ADD_HOOK_FUNCTION(otxn_type, ctx);
+            ADD_HOOK_FUNCTION(hook_account, ctx);
+            ADD_HOOK_FUNCTION(hook_hash, ctx);
+            ADD_HOOK_FUNCTION(fee_base, ctx);
+            ADD_HOOK_FUNCTION(ledger_seq, ctx);
+            ADD_HOOK_FUNCTION(nonce, ctx);
+            ADD_HOOK_FUNCTION(state, ctx);
+            ADD_HOOK_FUNCTION(state_foreign, ctx);
+            ADD_HOOK_FUNCTION(state_set, ctx);
+            ADD_HOOK_FUNCTION(slot_set, ctx);
+            ADD_HOOK_FUNCTION(slot_clear, ctx);
+            ADD_HOOK_FUNCTION(slot_field_txt, ctx);
+            ADD_HOOK_FUNCTION(slot_field, ctx);
+            ADD_HOOK_FUNCTION(slot_id, ctx);
+            ADD_HOOK_FUNCTION(slot_type, ctx);
+            ADD_HOOK_FUNCTION(trace, ctx);
+            ADD_HOOK_FUNCTION(trace_slot, ctx);
+            ADD_HOOK_FUNCTION(trace_num, ctx);
 
             SSVM::AST::Limit TabLimit(10, 20);
             addHostTable("table", std::make_unique<SSVM::Runtime::Instance::TableInstance>(
@@ -283,67 +289,10 @@ namespace hook {
             SSVM::AST::Limit MemLimit(1, 1);
             addHostMemory("memory", std::make_unique<SSVM::Runtime::Instance::MemoryInstance>(MemLimit));
         }
+        virtual ~HookModule() = default;
     }
 
-
-    #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
-        (std::ceil( (double)state_count/(double)5.0 ))
-
-
-
-#define HOOK_SETUP()\
-    hook::HookContext& hookCtx = *((hook::HookContext*) wasmer_instance_context_data_get( wasm_ctx ));\
-    [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
-    [[maybe_unused]] auto& view = applyCtx.view();\
-    [[maybe_unused]] auto j = applyCtx.app.journal("View");\
-    const wasmer_memory_t* memory_ctx = wasmer_instance_context_memory( wasm_ctx, 0 );\
-    [[maybe_unused]] uint8_t* memory = wasmer_memory_data( memory_ctx );\
-    [[maybe_unused]] const uint64_t memory_length = wasmer_memory_data_length ( memory_ctx );
-
-
-#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
-        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
-    {int bytes_to_write = std::min(static_cast<int>(host_src_len), static_cast<int>(guest_dst_len));\
-    if (guest_dst_ptr + bytes_to_write > guest_memory_length) {\
-        JLOG(j.trace())\
-            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len <<\
-        " bytes past end of wasm memory";\
-        return OUT_OF_BOUNDS;\
-    }\
-    ::memcpy(host_memory_ptr + guest_dst_ptr, host_src_ptr, bytes_to_write);\
-    return bytes_to_write;}
-
-// ptr = pointer inside the wasm memory space
-#define NOT_IN_BOUNDS(ptr, len, memory_length)\
-    (ptr > memory_length || \
-     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
-
+}
 
 #endif
 
-}
-
-
-#ifndef RIPPLE_HOOK_H_TEMPLATES
-#define RIPPLE_HOOK_H_TEMPLATES
-// templates must be defined in the same file they are declared in, otherwise this would go in impl/Hook.cpp
-template <typename F>
-wasmer_import_t hook::functionImport (
-        F func, std::string_view call_name, std::initializer_list<wasmer_value_tag> func_params, int ret_type )
-{
-    return
-    {   .module_name = { .bytes = (const uint8_t *) "env", .bytes_len = 3 },
-        .import_name = { .bytes = (const uint8_t *) call_name.data(), .bytes_len = call_name.size() },
-        .tag = wasmer_import_export_kind::WASM_FUNCTION,
-        .value = { .func =
-            wasmer_import_func_new(
-                reinterpret_cast<void (*)(void*)>(func),
-                std::begin( func_params ),
-                func_params.size(),
-                (ret_type == 0 ? NULL : ( ret_type == 1 ? std::begin ( { WI32 } ) : std::begin( { WI64 } ))),
-                (ret_type == 0 ? 0 : 1)
-            )
-        }
-    };
-}
-#endif
