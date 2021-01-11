@@ -168,6 +168,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
 
+    // used by SetHook
     std::set<std::string> import_whitelist
     {
         "_",

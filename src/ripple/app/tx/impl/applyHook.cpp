@@ -78,7 +78,7 @@ using namespace ripple;
     SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)
 
 #define GET_HOOK_FUNCTION(n)\
-    hookCtx.module->getFuncs().get(#n).body
+    (*hookCtx.module->getFuncs().at(#n))
 
 #define CALL_HOOK_FUNCTION(n, ...)\
     (*(GET_HOOK_FUNCTION(n)(memoryCtx, __VA_ARGS__)).get())
