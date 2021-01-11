@@ -35,7 +35,12 @@
 #include <string>
 #include <ripple/app/tx/applyHook.h>
 #include <ripple/app/ledger/LedgerMaster.h>
-
+#include "common/value.h"
+#include "vm/configure.h"
+#include "vm/vm.h"
+#include "common/errcode.h"
+#include "runtime/hostfunc.h"
+#include "runtime/importobj.h"
 namespace ripple {
 
 // RH TODO deal with overflow on leb128
@@ -398,7 +403,7 @@ check_guard(
     if (mode == 1)
         return tesSUCCESS;
 
-    JLOG(ctx.j.trace()) 
+    JLOG(ctx.j.trace())
         << "Hook: (cg) Guard did not occur before end of loop / function. Codesec: " << codesec;
     return temMALFORMED;
 
@@ -446,7 +451,7 @@ SetHook::preflight(PreflightContext const& ctx)
         for (int i = 0; i < 8; ++i)
         {
             if (hook[i] != header[i])
-            {                
+            {
                 JLOG(ctx.j.trace())
                     << "Hook: Malformed transaction: Hook was not valid webassembly binary. " <<
                        "Missing magic number or version.";
@@ -476,7 +481,7 @@ SetHook::preflight(PreflightContext const& ctx)
             //int section_start = i;
 
             if (DEBUG_GUARD_CHECK)
-                printf("WASM binary analysis -- upto %d: section %d with length %d\n", 
+                printf("WASM binary analysis -- upto %d: section %d with length %d\n",
                         i, section_type, section_length);
 
             int next_section = i + section_length;
@@ -524,7 +529,7 @@ SetHook::preflight(PreflightContext const& ctx)
                         return temMALFORMED;
                     }
 
-                    std::string_view import_name { (const char*)(hook.data() + i), (size_t)name_length };
+                    std::string import_name { (const char*)(hook.data() + i), (size_t)name_length };
 
                     i += name_length; CHECK_SHORT_HOOK();
 
@@ -547,28 +552,12 @@ SetHook::preflight(PreflightContext const& ctx)
                     if (import_name == "_g")
                     {
                         guard_import_number = func_upto;
-                    } else
+                    } else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
                     {
-                        bool found_import = false;
-                        for (int k = 0; k < hook::imports_count; ++k)
-                        {
-                            std::string_view next_import_name {
-                                (const char*)(hook::imports[k].import_name.bytes),
-                                (size_t)(hook::imports[k].import_name.bytes_len)    };
-
-                            if (import_name == next_import_name)
-                            {
-                                found_import = true;
-                                break;
-                            }
-                        }
-                        if (!found_import)
-                        {
-                            JLOG(ctx.j.trace())
-                                << "Hook: Malformed transaction: Hook attempted to import a function that does not"
-                                    " appear in the hook_api function set: `" << import_name << "`\n";
-                            return temMALFORMED;
-                        }
+                        JLOG(ctx.j.trace())
+                            << "Hook: Malformed transaction: Hook attempted to import a function that does not"
+                                " appear in the hook_api function set: `" << import_name << "`\n";
+                        return temMALFORMED;
                     }
                     func_upto++;
                 }
@@ -662,7 +651,7 @@ SetHook::preflight(PreflightContext const& ctx)
                         parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                         if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                         {
-                            JLOG(ctx.j.trace()) << "Hook: Invalid local type. Codesec: " << j << 
+                            JLOG(ctx.j.trace()) << "Hook: Invalid local type. Codesec: " << j <<
                                 " Local: " << k << " Offset: " << i;
                             return temMALFORMED;
                         }
@@ -686,19 +675,21 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
         // execution to here means guards are installed correctly
-        
-        JLOG(ctx.j.trace()) << "Hook: Trying to wasmer_instantiate proposed hook size = " <<  hook.size() << "\n";
 
-        // check if wasmer can run it
-        wasmer_instance_t *instance = NULL;
-        if (wasmer_instantiate(
-            &instance, hook.data(), hook.size(), hook::imports, hook::imports_count)
-                != wasmer_result_t::WASMER_OK) {
-            JLOG(ctx.j.trace()) << "Hook: Tried to set a hook with invalid code.";
-            hook::printWasmerError(ctx.j.trace());
+        JLOG(ctx.j.trace()) << "Hook: Trying to wasm instantiate proposed hook size = " <<  hook.size() << "\n";
+
+        // check if wasm can be run
+        SSVM::VM::Configure cfg;
+        SSVM::VM::VM vm(cfg);
+        if (auto res = vm.loadWasm(SSVM::Span<const uint8_t>(hook.data(), hook.size())))
+        {
+            // do nothing
+        } else
+        {
+            uint32_t ssvm_error = static_cast<uint32_t>(res.error());
+            JLOG(ctx.j.trace()) << "Hook: Tried to set a hook with invalid code. SSVM error: " << ssvm_error << "\n";
             return temMALFORMED;
         }
-        wasmer_instance_destroy(instance);
 
     }
 
@@ -801,7 +792,7 @@ SetHook::setHook()
 {
 
     auto viewJ = ctx_.app.journal("View");
-    JLOG(viewJ.trace()) 
+    JLOG(viewJ.trace())
         << "Hook: SetHook for account " << toBase58(account_);
 
     const int blobMax = hook::maxHookStateDataSize();
@@ -824,7 +815,7 @@ SetHook::setHook()
     // get the new cost to store, if any
     int64_t newReserveUnits = std::ceil( (double)(hook_.size()) / (5.0 * (double)blobMax) );
 
-    JLOG(viewJ.trace()) << 
+    JLOG(viewJ.trace()) <<
         "Hook: SetHook CreateCode empty: " << ( hook_.empty() ? "yes" : "no" )  <<
         ", Existing hook on account: " << ( oldHook ? "yes" : "no" )  <<
         ", Existing hook CreateCode empty: " << ((oldHook) && oldHook->getFieldVL(sfCreateCode).empty() ? "yes" : "no");
@@ -853,7 +844,7 @@ SetHook::setHook()
     int64_t addedOwnerCount = newReserveUnits - previousReserveUnits;
 
 
-    JLOG(viewJ.trace()) << 
+    JLOG(viewJ.trace()) <<
         "Hook: New Reserve: " << newReserveUnits <<
         ", Old Reserve: " << previousReserveUnits <<
         ", Hook Size: " << hook_.size();

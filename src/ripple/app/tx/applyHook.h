@@ -85,6 +85,7 @@ namespace hook_api {
     const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
 
+    // RH TODO: consider replacing macros with templates
     #define DECLARE_HOOK_FUNCTION(R, F, ...)\
         class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
         {\
@@ -94,78 +95,121 @@ namespace hook_api {
             SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*, __VA_ARGS__);\
         }
 
+    #define DECLARE_HOOK_FUNCNARG(R, F)\
+        class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
+        {\
+            public:\
+            hook::HookContext& hookCtx;\
+            WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
+            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*);\
+        }
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
     // the "special" _() api allows every other api to be invoked by a number (crc32 of name)
     // instead of function name
-    DECLARE_HOOK_FUNCTION(int64_t, _sepcial, uint32_t api_no,
-                                           uint32_t a, uint32_t b, uint32_t c,
-                                           uint32_t d, uint32_t e, uint32_t f);
+    DECLARE_HOOK_FUNCTION(int64_t, special,  uint32_t api_no,
+                                             uint32_t a, uint32_t b, uint32_t c,
+                                             uint32_t d, uint32_t e, uint32_t f);
 
 
     DECLARE_HOOK_FUNCTION(int32_t,  _g,                 uint32_t guard_id, uint32_t maxiter );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	accept              uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    DECLARE_HOOK_FUNCTION(int64_t,	rollback            uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_raddr          uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	accept,             uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	rollback,           uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_raddr,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr, uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_accid          uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	util_accid,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr, uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_verify         uint32_t dread_ptr, uint32_t dread_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	util_verify,        uint32_t dread_ptr, uint32_t dread_len,
                                                         uint32_t sread_ptr, uint32_t sread_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_verify_sto     uint32_t tread_ptr, uint32_t tread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_sha512h        uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	util_verify_sto,    uint32_t tread_ptr, uint32_t tread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_sha512h,       uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield       uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray       uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_burden         );
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_details        uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base       uint32_t tx_byte_count);
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve        uint32_t count );
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_generation     );
-    DECLARE_HOOK_FUNCTION(int64_t,	emit                uint32_t read_ptr, uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	hook_account        uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	hook_hash           uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	fee_base            );
-    DECLARE_HOOK_FUNCTION(int64_t,	ledger_seq          );
-    DECLARE_HOOK_FUNCTION(int64_t,	nonce               uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_clear          uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_set            uint32_t read_ptr, uint32_t read_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield,      uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray,      uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
+    DECLARE_HOOK_FUNCNARG(int64_t,	etxn_burden         );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_details,       uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base,      uint32_t tx_byte_count);
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve,       uint32_t count );
+    DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
+    DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr, uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
+    DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
+    DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr, uint32_t read_len,
                                                         uint32_t slot_type, int32_t slot );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_field_txt      uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_field_txt,     uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t field_id, uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_field          uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_field,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t field_id, uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_id             uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_type           uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	state_set           uint32_t read_ptr,  uint32_t read_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	state_set,          uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	state               uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	state,              uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	state_foreign       uint32_t write_ptr, uint32_t write_len,
+    DECLARE_HOOK_FUNCTION(int64_t,	state_foreign,      uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t kread_ptr, uint32_t kread_len,
                                                         uint32_t aread_ptr, uint32_t aread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot          uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace               uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace_num           uint32_t read_ptr, uint32_t read_len, int64_t number );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_num,          uint32_t read_ptr, uint32_t read_len, int64_t number );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_burden         );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field          uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field_txt      uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_generation     );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_id             uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_type           );
+    DECLARE_HOOK_FUNCNARG(int64_t,	otxn_burden         );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field,         uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_field_txt,     uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCNARG(int64_t,	otxn_generation     );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
 
+    std::set<std::string> import_whitelist
+    {
+        "_",
+        "_g",
+        "accept",
+        "rollback",
+        "util_raddr",
+        "util_accid",
+        "util_verify",
+        "util_verify_sto",
+        "util_sha512h",
+        "util_subfield",
+        "util_subarray",
+        "etxn_details",
+        "etxn_fee_base",
+        "etxn_reserve",
+        "emit",
+        "hook_account",
+        "hook_hash",
+        "nonce",
+        "slot_clear",
+        "slot_set",
+        "slot_field_txt",
+        "slot_field",
+        "slot_id",
+        "slot_type",
+        "state_set",
+        "state",
+        "state_foreign",
+        "trace_slot",
+        "trace",
+        "trace_num",
+        "otxn_field",
+        "otxn_field_txt",
+        "otxn_id"
+    };    
+   
 } /* end namespace hook_api */
 
 namespace hook {
 
     bool canHook(ripple::TxType txType, uint64_t hookOn);
-
-    void printWasmError(beast::Journal::Stream const& x);
 
     struct HookResult;
 
@@ -194,6 +238,8 @@ namespace hook {
         std::string exitReason {""};
         int64_t exitCode {-1};
     };
+    
+    class HookModule;
 
     struct HookContext {
         ripple::ApplyContext& applyCtx;
@@ -211,6 +257,7 @@ namespace hook {
         int64_t fee_base = 0;
         std::map<uint32_t, uint32_t> guard_map; // iteration guard map <id -> upto_iteration>
         HookResult result;
+        const HookModule* module = 0;
     };
 
     // RH TODO: fetch this value from the hook sle
@@ -241,7 +288,8 @@ namespace hook {
 
         HookModule(HookContext& ctx) : SSVM::Runtime::ImportObject("env"), hookCtx(ctx)
         {
-            addHostFunc("_", std::make_unique<hook_api::WasmFunction__special(ctx));
+            //addHostFunc("_", std::make_unique<hook_api::WasmFunction_special(ctx));
+            ctx.module = this;
 
             ADD_HOOK_FUNCTION(_g, ctx);
             ADD_HOOK_FUNCTION(accept, ctx);
@@ -290,7 +338,7 @@ namespace hook {
             addHostMemory("memory", std::make_unique<SSVM::Runtime::Instance::MemoryInstance>(MemLimit));
         }
         virtual ~HookModule() = default;
-    }
+    };
 
 }
 

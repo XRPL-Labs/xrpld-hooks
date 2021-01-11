@@ -11,6 +11,7 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include "support/span.h"
 
 using namespace ripple;
 
@@ -21,7 +22,8 @@ using namespace ripple;
     [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
     [[maybe_unused]] auto& view = applyCtx.view();\
     [[maybe_unused]] auto j = applyCtx.app.journal("View");\
-    [[maybe_unused]] const uint64_t memory_length = memoryCtx.getDataPageSize() * memoryCtx.kPageSize;
+    [[maybe_unused]] unsigned char* memory = memoryCtx->getPointer<uint8_t*>(0);\
+    [[maybe_unused]] const uint64_t memory_length = memoryCtx->getDataPageSize() * memoryCtx->kPageSize;
 
 #define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
@@ -34,8 +36,7 @@ using namespace ripple;
             << " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
     }\
-//RH upto here, swap for memoryCtx.setBytes construct a std::span?
-    ::memcpy(host_memory_ptr + guest_dst_ptr, host_src_ptr, bytes_to_write);\
+    memoryCtx->setBytes(Span<const uint8_t>(host_src_ptr, host_src_len), guest_dst_ptr, 0, bytes_to_write);\
     return bytes_to_write;\
 }
 
@@ -76,6 +77,58 @@ using namespace ripple;
 #define HOOK_FUNCTION_NO_ARGS(R, F)\
     SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)
 
+#define GET_HOOK_FUNCTION(n)\
+    hookCtx.module->getFuncs().get(#n).body
+
+#define CALL_HOOK_FUNCTION(n, ...)\
+    (*(GET_HOOK_FUNCTION(n)(memoryCtx, __VA_ARGS__)).get())
+
+#define CALL_HOOK_FUNCTION_NO_ARGS(n)\
+    (*(GET_HOOK_FUNCTION(n).body(memoryCtx)).get())
+
+// RH TODO template solution?
+#define special(...) (CALL_HOOK_FUNCTION(special, __VA_ARGS__))
+#define _g(...) (CALL_HOOK_FUNCTION(_g, __VA_ARGS__))
+#define accept(...) (CALL_HOOK_FUNCTION(accept, __VA_ARGS__))
+#define rollback(...) (CALL_HOOK_FUNCTION(rollback, __VA_ARGS__))
+#define util_raddr(...) (CALL_HOOK_FUNCTION(util_raddr, __VA_ARGS__))
+#define util_accid(...) (CALL_HOOK_FUNCTION(util_accid, __VA_ARGS__))
+#define util_verify(...) (CALL_HOOK_FUNCTION(util_verify, __VA_ARGS__))
+#define util_verify_sto(...) (CALL_HOOK_FUNCTION(util_verify_sto, __VA_ARGS__))
+#define util_sha512h(...) (CALL_HOOK_FUNCTION(util_sha512h, __VA_ARGS__))
+#define util_subfield(...) (CALL_HOOK_FUNCTION(util_subfield, __VA_ARGS__))
+#define util_subarray(...) (CALL_HOOK_FUNCTION(util_subarray, __VA_ARGS__))
+#define emit(...) (CALL_HOOK_FUNCTION(emit, __VA_ARGS__))
+#define etxn_burden() (CALL_HOOK_FUNCTION_NO_ARGS(etxn_burden))
+#define etxn_fee_base(...) (CALL_HOOK_FUNCTION(etxn_fee_base, __VA_ARGS__))
+#define etxn_details(...) (CALL_HOOK_FUNCTION(etxn_details, __VA_ARGS__))
+#define etxn_reserve(...) (CALL_HOOK_FUNCTION(etxn_reserve, __VA_ARGS__))
+#define etxn_generation() (CALL_HOOK_FUNCTION_NO_ARGS(etxn_generation))
+#define otxn_burden() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_burden))
+#define otxn_generation() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_generation))
+#define otxn_field_txt(...) (CALL_HOOK_FUNCTION(otxn_field_txt, __VA_ARGS__))
+#define otxn_field(...) (CALL_HOOK_FUNCTION(otxn_field, __VA_ARGS__))
+#define otxn_id(...) (CALL_HOOK_FUNCTION(otxn_id, __VA_ARGS__))
+#define otxn_type() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_type))
+#define hook_account(...) (CALL_HOOK_FUNCTION(hook_account, __VA_ARGS__))
+#define hook_hash(...) (CALL_HOOK_FUNCTION(hook_hash, __VA_ARGS__))
+#define fee_base() (CALL_HOOK_FUNCTION_NO_ARGS(fee_base))
+#define ledger_seq(...) (CALL_HOOK_FUNCTION(ledger_seq, __VA_ARGS__))
+#define nonce(...) (CALL_HOOK_FUNCTION(nonce, __VA_ARGS__))
+#define state(...) (CALL_HOOK_FUNCTION(state, __VA_ARGS__))
+#define state_foreign(...) (CALL_HOOK_FUNCTION(state_foreign, __VA_ARGS__))
+#define state_set(...) (CALL_HOOK_FUNCTION(state_set, __VA_ARGS__))
+#define slot_set(...) (CALL_HOOK_FUNCTION(slot_set, __VA_ARGS__))
+#define slot_clear(...) (CALL_HOOK_FUNCTION(slot_clear, __VA_ARGS__))
+#define slot_field_txt(...) (CALL_HOOK_FUNCTION(slot_field_txt, __VA_ARGS__))
+#define slot_field(...) (CALL_HOOK_FUNCTION(slot_field, __VA_ARGS__))
+#define slot_id(...) (CALL_HOOK_FUNCTION(slot_id, __VA_ARGS__))
+#define slot_type(...) (CALL_HOOK_FUNCTION(slot_type, __VA_ARGS__))
+/*
+#define trace(...) (CALL_HOOK_FUNCTION(trace, __VA_ARGS__))
+#define trace_slot(...) (CALL_HOOK_FUNCTION(trace_slot, __VA_ARGS__))
+#define trace_num(...) (CALL_HOOK_FUNCTION(trace_num, __VA_ARGS__))
+*/
 
 /* returns true iff every even char is ascii and every odd char is 00
  * only a hueristic, may be inaccurate in edgecases */
@@ -232,15 +285,6 @@ hook::setHookState(
     return tesSUCCESS;
 }
 
-void hook::printWasmError(beast::Journal::Stream const& x)
-{
-  int error_len = wasmer_last_error_length();
-  char *error_str = (char*)malloc(error_len);
-  wasmer_last_error_message(error_str, error_len);
-  JLOG(x) << "Hook: Wasmer Error: " << error_str;
-  free(error_str);
-}
-
 hook::HookResult
     hook::apply(
         ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching */
@@ -267,33 +311,31 @@ hook::HookResult
     };
 
     auto const& j = applyCtx.app.journal("View");
-    wasmer_instance_t *instance = NULL;
 
-    JLOG(j.trace()) << "Hook: Creating wasmer instance for " << account << "\n";
-    if (wasmer_instantiate(&instance, hook.data(), hook.size(), imports, imports_count) !=
-            wasmer_result_t::WASMER_OK)
+    SSVM::VM::Configure cfg;
+    SSVM::VM::VM vm(cfg);
+    HookModule env(hookCtx);
+    vm.registerModule(env);
+    
+    std::vector<SSVM::ValVariant> params, results;
+    params.push_back(0UL);
+
+    JLOG(j.trace()) << "Hook: Creating wasm instance for " << account << "\n";
+    if (auto result = 
+            vm.runWasmFile(
+                SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
+        results = *result;
+    else 
     {
-        printWasmError(j.warn());
-        JLOG(j.warn()) << "Hook: Hook was malformed for " << account << "\n";
-        hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
-        return hookCtx.result;
+        uint32_t ssvm_error = static_cast<uint32_t>(result.error());
+        if (ssvm_error > 1) 
+        {
+            JLOG(j.warn()) << "Hook: Hook was malformed for " << account
+                << ", SSVM error code:" << ssvm_error << "\n";
+            hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
+            return hookCtx.result;
+        }
     }
-
-
-    wasmer_instance_context_data_set ( instance, &hookCtx );
-    DBG_PRINTF("Set HookContext: %lx\n", (void*)&hookCtx);
-
-    wasmer_value_t arguments[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
-    wasmer_value_t results[] = { { .tag = wasmer_value_tag::WASM_I64, .value = {.I64 = 0 } } };
-
-    wasmer_instance_call(
-        instance,
-        (!callback ? "hook" : "cbak"),
-        arguments,
-        1,
-        results,
-        1
-    ); // we don't check return value because all accept/rollback will fire a non-ok message despite being normal exec
 
     JLOG(j.trace()) <<
         "Hook: Exited with " <<
@@ -305,11 +347,8 @@ hook::HookResult
     if (hookCtx.result.exitType != hook_api::ExitType::ROLLBACK && callback) // callback auto-commits on non-rollback
         commitChangesToLedger(hookCtx.result, applyCtx);
 
-    // RH TODO possible memory leak here, destroy the imports, instance using a smart pointer?
-
     JLOG(j.trace()) <<
-        "Hook: Destroying instance for " << account << " Instance Ptr: " << instance << "\n";
-    wasmer_instance_destroy(instance);
+        "Hook: Destroying instance for " << account << "\n";
     return hookCtx.result;
 }
 
@@ -502,10 +541,10 @@ HOOK_FUNCTION(
     uint32_t write_ptr, uint32_t write_len,
     uint32_t kread_ptr, uint32_t kread_len )
 {
-    return hook_api::state_foreign( wasm_ctx,
-            write_ptr, write_len,
-            kread_ptr, kread_len,
-            0, 0);
+    return  state_foreign(
+                write_ptr, write_len,
+                kread_ptr, kread_len,
+                0, 0);
 }
 
 /* This api actually serves both local and foreign state requests
@@ -600,13 +639,6 @@ HOOK_FUNCTION(
         memory, memory_length);
 }
 
-/*inline int64_t _exit (
-        uint32_t read_ptr, uint32_t read_len,
-        int32_t error_code, hook_api::ExitType exitType )
-{
-
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-*/
 
 // Cause the originating transaction to go through, save state changes and emit emitted tx, exit hook
 HOOK_FUNCTION(
@@ -727,7 +759,7 @@ HOOK_FUNCTION_NO_ARGS(
         int64_t,
         etxn_generation)
 {
-    return hook_api::otxn_generation ( wasm_ctx ) + 1;
+    return otxn_generation() + 1;
 }
 
 
@@ -1061,7 +1093,7 @@ HOOK_FUNCTION(
     ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
     auto callback = emitDetails.getAccountID(sfEmitCallback);
 
-    uint32_t gen_proper = etxn_generation(wasm_ctx);
+    uint32_t gen_proper = etxn_generation();
 
     if (gen != gen_proper)
     {
@@ -1071,7 +1103,7 @@ HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
-    if (bur != etxn_burden(wasm_ctx))
+    if (bur != etxn_burden())
     {
         JLOG(j.trace())
             << "Hook: Emission failure: Burden provided in EmitDetails was not correct";
@@ -1127,7 +1159,7 @@ HOOK_FUNCTION(
     // rule 7 check the emitted txn pays the appropriate fee
 
     if (hookCtx.fee_base == 0)
-        hookCtx.fee_base = etxn_fee_base(wasm_ctx, read_len);
+        hookCtx.fee_base = etxn_fee_base(read_len);
 
     int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
     if (minfee < 0 || hookCtx.fee_base < 0)
@@ -1255,7 +1287,7 @@ HOOK_FUNCTION_NO_ARGS(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint64_t last_burden = (uint64_t)hook_api::otxn_burden(wasm_ctx); // always non-negative so cast is safe
+    uint64_t last_burden = (uint64_t)otxn_burden(); // always non-negative so cast is safe
 
     uint64_t burden = last_burden * hookCtx.expected_etxn_count;
     if (burden < last_burden) // this overflow will never happen but handle it anyway
@@ -1268,7 +1300,7 @@ HOOK_FUNCTION_NO_ARGS(
 // name... this is important for size in some cases
 HOOK_FUNCTION(
     int64_t,
-    _special,
+    special,
     uint32_t api_no,
     uint32_t a, uint32_t b, uint32_t c,
     uint32_t d, uint32_t e, uint32_t f )
@@ -1667,9 +1699,9 @@ HOOK_FUNCTION(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint64_t base_fee = (uint64_t)hook_api::fee_base(wasm_ctx); // will always return non-negative
+    uint64_t base_fee = (uint64_t)fee_base(); // will always return non-negative
 
-    int64_t burden = hook_api::etxn_burden(wasm_ctx);
+    int64_t burden = etxn_burden();
     if (burden < 1)
         return FEE_TOO_LARGE;
 
@@ -1698,9 +1730,9 @@ HOOK_FUNCTION(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint32_t generation = (uint32_t)(hook_api::etxn_generation(wasm_ctx)); // always non-negative so cast is safe
+    uint32_t generation = (uint32_t)(etxn_generation()); // always non-negative so cast is safe
 
-    int64_t burden = hook_api::etxn_burden(wasm_ctx);
+    int64_t burden = etxn_burden();
     if (burden < 1)
         return FEE_TOO_LARGE;
 
@@ -1723,16 +1755,16 @@ HOOK_FUNCTION(
     *out++ = ( burden >>  8 ) & 0xFFU;
     *out++ = ( burden >>  0 ) & 0xFFU;
     *out++ = 0x5A; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
-    if (hook_api::otxn_id(wasm_ctx, out - memory, 32) != 32)
+    if (otxn_id(out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x5B; // sfEmitNonce                                     /* upto =  49 | size = 33 */
-    if (hook_api::nonce(wasm_ctx, out - memory, 32) != 32)
+    if (nonce(out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x89; // sfEmitCallback preamble                         /* upto =  82 | size = 22 */
     *out++ = 0x14; // preamble cont
-    if (hook_api::hook_account(wasm_ctx, out - memory, 20) != 20)
+    if (hook_account(out - memory, 20) != 20)
         return INTERNAL_ERROR;
     out += 20;
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
@@ -1769,7 +1801,8 @@ HOOK_FUNCTION(
             JLOG(j.trace()) << "Hook: Guard violation. Src line: " << id <<
                 " Iterations: " << hookCtx.guard_map[id];
         }
-        rollback(wasm_ctx, 0, 0, GUARD_VIOLATION);
+
+        rollback(0, 0, GUARD_VIOLATION);
     }
     return 1;
 }
