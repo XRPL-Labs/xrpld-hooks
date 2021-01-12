@@ -1212,6 +1212,8 @@ DEFINE_HOOK_FUNCTION(
     etxn_reserve,
     uint32_t count )
 {
+    std::cout << "etxn_reserve called count: " << count << "\n";
+
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.expected_etxn_count > -1)
         return ALREADY_SET;
@@ -1220,6 +1222,8 @@ DEFINE_HOOK_FUNCTION(
         return TOO_BIG;
 
     hookCtx.expected_etxn_count = count;
+
+    std::cout << "etxn_reserve returning count: " << count << "\n";
     return count;
 }
 

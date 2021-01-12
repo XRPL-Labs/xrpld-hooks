@@ -127,7 +127,7 @@ namespace hook_api {
             SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx, __VA_ARGS__)\
             {\
                 R return_code = hook_api::F(hookCtx, *memoryCtx, STRIP_TYPES(__VA_ARGS__));\
-                if (return_code == ROLLBACK || return_code == ACCEPT)\
+                if (return_code == RC_ROLLBACK || return_code == RC_ACCEPT)\
                     return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
                 return return_code;\
             }\
@@ -143,7 +143,7 @@ namespace hook_api {
             SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)\
             {\
                 R return_code = hook_api::F(hookCtx, *memoryCtx);\
-                if (return_code == ROLLBACK || return_code == ACCEPT)\
+                if (return_code == RC_ROLLBACK || return_code == RC_ACCEPT)\
                     return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
                 return return_code;\
             }\
@@ -223,39 +223,45 @@ namespace hook_api {
     // used by SetHook
     std::set<std::string> import_whitelist
     {
-        "_",
-        "_g",
         "accept",
-        "rollback",
-        "util_raddr",
-        "util_accid",
-        "util_verify",
-        "util_verify_sto",
-        "util_sha512h",
-        "util_subfield",
-        "util_subarray",
+        "emit",
+        "etxn_burden",
         "etxn_details",
         "etxn_fee_base",
+        "etxn_generation",
         "etxn_reserve",
-        "emit",
+        "fee_base",
+        "_g",
         "hook_account",
         "hook_hash",
+        "ledger_seq",
         "nonce",
-        "slot_clear",
-        "slot_set",
-        "slot_field_txt",
-        "slot_field",
-        "slot_id",
-        "slot_type",
-        "state_set",
-        "state",
-        "state_foreign",
-        "trace_slot",
-        "trace",
-        "trace_num",
+        "otxn_burden",
         "otxn_field",
         "otxn_field_txt",
-        "otxn_id"
+        "otxn_generation",
+        "otxn_id",
+        "otxn_type",
+        "rollback",
+        "slot_clear",
+        "slot_field",
+        "slot_field_txt",
+        "slot_id",
+        "slot_set",
+        "slot_type",
+        "state",
+        "state_foreign",
+        "state_set",
+        "trace",
+        "trace_num",
+        "trace_slot",
+        "util_accid",
+        "util_raddr",
+        "util_sha512h",
+        "util_subarray",
+        "util_subfield",
+        "util_verify",
+        "util_verify_sto"
     };
 
 } /* end namespace hook_api */

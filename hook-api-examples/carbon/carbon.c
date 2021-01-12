@@ -9,14 +9,18 @@ int64_t cbak(int64_t reserved)
 
 int64_t hook(int64_t reserved ) {
 
+    trace(SBUF("Carbon: started"), 0);
     // before we start calling hook-api functions we should tell the hook how many tx we intend to create
     etxn_reserve(1); // we are going to emit 1 transaction
+
+    trace(SBUF("Carbon: 0"), 0);
 
     // this api fetches the AccountID of the account the hook currently executing is installed on
     // since hooks can be triggered by both incoming and ougoing transactions this is important to know
     unsigned char hook_accid[20];
     hook_account((uint32_t)hook_accid, 20);
 
+    trace(SBUF("Carbon: 1"), 0);
     // NB:
     //  almost all of the hook apis require a buffer pointer and buffer length to be supplied ... to make this a
     //  little easier to code a macro: `SBUF(your_buffer)` expands to `your_buffer, sizeof(your_buffer)`
@@ -29,6 +33,7 @@ int64_t hook(int64_t reserved ) {
         rollback(SBUF("Carbon: sfAccount field missing!!!"), 1);  // this code could never be hit in prod
                                                                   // but it's here for completeness
 
+    trace(SBUF("Carbon: 2"), 0);
     // compare the "From Account" (sfAccount) on the transaction with the account the hook is running on
     int equal = 0; BUFFER_EQUAL(equal, hook_accid, account_field, 20);
     if (!equal)
@@ -38,6 +43,7 @@ int64_t hook(int64_t reserved ) {
         accept(SBUF("Carbon: Incoming transaction"), 2);
     }
 
+    trace(SBUF("Carbon: 3"), 0);
     // execution to here means the user has sent a valid transaction FROM the account the hook is installed on
 
     // fetch the sent Amount
@@ -47,6 +53,7 @@ int64_t hook(int64_t reserved ) {
     int64_t drops_to_send = 1000; // this will be the default
 
 
+    trace(SBUF("Carbon: 4"), 0);
     if (amount_len != 8)
     {
         // you can trace the behaviour of your hook using the trace(buf, size, as_hex) api
