@@ -52,7 +52,9 @@ namespace hook_api {
         INVALID_ACCOUNT = -15,          // an api expected an account id but got something else
         GUARD_VIOLATION = -16,          // a guarded loop or function iterated over its maximum
         INVALID_FIELD = -17,            // the field requested is returning sfInvalid
-        PARSE_ERROR = -18               // hook asked hookapi to parse something the contents of which was invalid
+        PARSE_ERROR = -18,              // hook asked hookapi to parse something the contents of which was invalid
+        RC_ROLLBACK = -19,              // hook should terminate due to a rollback() call
+        RC_ACCEPT = -20                 // hook should temrinate due to an accept() call
     };
 
     // many datatypes can be encoded into an int64_t
@@ -85,24 +87,74 @@ namespace hook_api {
     const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
 
-    // RH TODO: consider replacing macros with templates
+    // RH TODO: consider replacing macros with templates, if SSVM compatible templates even exist
+
+    #define LPAREN (
+    #define RPAREN )
+    #define EXPAND(...) __VA_ARGS__
+    #define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
+    #define PRIMITIVE_CAT(a, ...) a ## __VA_ARGS__
+    #define SPLIT_1(D) EXPAND(CAT(SPLIT_, D))
+    #define SPLIT_uint32_t
+    #define SPLIT_int32_t
+    #define SPLIT_uint64_t
+    #define SPLIT_int64_t
+    #define SPLIT_2(a, b) SPLIT_1(a), SPLIT_1(b)
+    #define SPLIT_3(a, ...) SPLIT_1(a), SPLIT_2(__VA_ARGS__)
+    #define SPLIT_4(a, ...) SPLIT_1(a), SPLIT_3(__VA_ARGS__)
+    #define SPLIT_5(a, ...) SPLIT_1(a), SPLIT_4(__VA_ARGS__)
+    #define SPLIT_6(a, ...) SPLIT_1(a), SPLIT_5(__VA_ARGS__)
+    #define SPLIT_7(a, ...) SPLIT_1(a), SPLIT_6(__VA_ARGS__)
+    #define SPLIT_8(a, ...) SPLIT_1(a), SPLIT_7(__VA_ARGS__)
+    #define SPLIT_9(a, ...) SPLIT_1(a), SPLIT_8(__VA_ARGS__)
+    #define SPLIT_10(a, ...) SPLIT_1(a), SPLIT_9(__VA_ARGS__)
+    #define EMPTY()
+    #define DEFER(id) id EMPTY()
+    #define OBSTRUCT(...) __VA_ARGS__ DEFER(EMPTY)()
+    #define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
+    #define VA_NARGS(__drop, ...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+    #define STRIP_TYPES(...) DEFER(CAT(SPLIT_,VA_NARGS(NULL, __VA_ARGS__))CAT(LPAREN OBSTRUCT(__VA_ARGS__) RPAREN))
+
+    // The above macros allow types to be stripped off a pramater list, used below for proxying call through class
+
     #define DECLARE_HOOK_FUNCTION(R, F, ...)\
+        R F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx, __VA_ARGS__);\
         class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
         {\
             public:\
             hook::HookContext& hookCtx;\
             WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
-            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*, __VA_ARGS__);\
-        }
+            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx, __VA_ARGS__)\
+            {\
+                R return_code = hook_api::F(hookCtx, *memoryCtx, STRIP_TYPES(__VA_ARGS__));\
+                if (return_code == ROLLBACK || return_code == ACCEPT)\
+                    return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
+                return return_code;\
+            }\
+        };
 
     #define DECLARE_HOOK_FUNCNARG(R, F)\
+        R F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx);\
         class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
         {\
             public:\
             hook::HookContext& hookCtx;\
             WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
-            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance*);\
-        }
+            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)\
+            {\
+                R return_code = hook_api::F(hookCtx, *memoryCtx);\
+                if (return_code == ROLLBACK || return_code == ACCEPT)\
+                    return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
+                return return_code;\
+            }\
+        };
+
+    #define DEFINE_HOOK_FUNCTION(R, F, ...)\
+        R hook_api::F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx, __VA_ARGS__)
+
+    #define DEFINE_HOOK_FUNCNARG(R, F)\
+        R hook_api::F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx)
+
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
@@ -204,8 +256,8 @@ namespace hook_api {
         "otxn_field",
         "otxn_field_txt",
         "otxn_id"
-    };    
-   
+    };
+
 } /* end namespace hook_api */
 
 namespace hook {
@@ -239,7 +291,7 @@ namespace hook {
         std::string exitReason {""};
         int64_t exitCode {-1};
     };
-    
+
     class HookModule;
 
     struct HookContext {
@@ -283,7 +335,9 @@ namespace hook {
 
     class HookModule : public SSVM::Runtime::ImportObject
     {
-    
+   //RH TODO UPTO put the hook-api functions here!
+   //then wrap/proxy them with the appropriate DECLARE_HOOK classes
+   //and add those below. HookModule::otxn_id() ...
     public:
         HookContext hookCtx;
 

@@ -22,8 +22,8 @@ using namespace ripple;
     [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
     [[maybe_unused]] auto& view = applyCtx.view();\
     [[maybe_unused]] auto j = applyCtx.app.journal("View");\
-    [[maybe_unused]] unsigned char* memory = memoryCtx->getPointer<uint8_t*>(0);\
-    [[maybe_unused]] const uint64_t memory_length = memoryCtx->getDataPageSize() * memoryCtx->kPageSize;
+    [[maybe_unused]] unsigned char* memory = memoryCtx.getPointer<uint8_t*>(0);\
+    [[maybe_unused]] const uint64_t memory_length = memoryCtx.getDataPageSize() * memoryCtx.kPageSize;
 
 #define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
@@ -36,7 +36,8 @@ using namespace ripple;
             << " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
     }\
-    memoryCtx->setBytes(Span<const uint8_t>(host_src_ptr, host_src_len), guest_dst_ptr, 0, bytes_to_write);\
+    memoryCtx.setBytes(SSVM::Span<const uint8_t>((const uint8_t*)host_src_ptr, host_src_len), \
+            guest_dst_ptr, 0, bytes_to_write);\
     return bytes_to_write;\
 }
 
@@ -45,7 +46,7 @@ using namespace ripple;
     (ptr > memory_length || \
      static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
 
-#define HOOK_EXIT(read_ptr, read_len, error_code, exitType)\
+#define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
 {\
     if (read_len > 1024) read_len = 1024;\
     if (read_ptr) {\
@@ -66,69 +67,11 @@ using namespace ripple;
         } else\
             hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);\
     }\
-    hookCtx.result.exitType = exitType;\
+    hookCtx.result.exitType = exit_type;\
     hookCtx.result.exitCode = error_code;\
-    return SSVM::ErrCode::Terminated;\
+    return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
 }
 
-#define HOOK_FUNCTION(R, F, ...)\
-    SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx, __VA_ARGS__)
-
-#define HOOK_FUNCTION_NO_ARGS(R, F)\
-    SSVM::Expect<R> hook_api::WasmFunction_##F::body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)
-
-#define GET_HOOK_FUNCTION(n)\
-    (*hookCtx.module->getFuncs().at(#n))
-
-#define CALL_HOOK_FUNCTION(n, ...)\
-    (*(GET_HOOK_FUNCTION(n)(memoryCtx, __VA_ARGS__)).get())
-
-#define CALL_HOOK_FUNCTION_NO_ARGS(n)\
-    (*(GET_HOOK_FUNCTION(n).body(memoryCtx)).get())
-
-// RH TODO template solution?
-#define special(...) (CALL_HOOK_FUNCTION(special, __VA_ARGS__))
-#define _g(...) (CALL_HOOK_FUNCTION(_g, __VA_ARGS__))
-#define accept(...) (CALL_HOOK_FUNCTION(accept, __VA_ARGS__))
-#define rollback(...) (CALL_HOOK_FUNCTION(rollback, __VA_ARGS__))
-#define util_raddr(...) (CALL_HOOK_FUNCTION(util_raddr, __VA_ARGS__))
-#define util_accid(...) (CALL_HOOK_FUNCTION(util_accid, __VA_ARGS__))
-#define util_verify(...) (CALL_HOOK_FUNCTION(util_verify, __VA_ARGS__))
-#define util_verify_sto(...) (CALL_HOOK_FUNCTION(util_verify_sto, __VA_ARGS__))
-#define util_sha512h(...) (CALL_HOOK_FUNCTION(util_sha512h, __VA_ARGS__))
-#define util_subfield(...) (CALL_HOOK_FUNCTION(util_subfield, __VA_ARGS__))
-#define util_subarray(...) (CALL_HOOK_FUNCTION(util_subarray, __VA_ARGS__))
-#define emit(...) (CALL_HOOK_FUNCTION(emit, __VA_ARGS__))
-#define etxn_burden() (CALL_HOOK_FUNCTION_NO_ARGS(etxn_burden))
-#define etxn_fee_base(...) (CALL_HOOK_FUNCTION(etxn_fee_base, __VA_ARGS__))
-#define etxn_details(...) (CALL_HOOK_FUNCTION(etxn_details, __VA_ARGS__))
-#define etxn_reserve(...) (CALL_HOOK_FUNCTION(etxn_reserve, __VA_ARGS__))
-#define etxn_generation() (CALL_HOOK_FUNCTION_NO_ARGS(etxn_generation))
-#define otxn_burden() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_burden))
-#define otxn_generation() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_generation))
-#define otxn_field_txt(...) (CALL_HOOK_FUNCTION(otxn_field_txt, __VA_ARGS__))
-#define otxn_field(...) (CALL_HOOK_FUNCTION(otxn_field, __VA_ARGS__))
-#define otxn_id(...) (CALL_HOOK_FUNCTION(otxn_id, __VA_ARGS__))
-#define otxn_type() (CALL_HOOK_FUNCTION_NO_ARGS(otxn_type))
-#define hook_account(...) (CALL_HOOK_FUNCTION(hook_account, __VA_ARGS__))
-#define hook_hash(...) (CALL_HOOK_FUNCTION(hook_hash, __VA_ARGS__))
-#define fee_base() (CALL_HOOK_FUNCTION_NO_ARGS(fee_base))
-#define ledger_seq(...) (CALL_HOOK_FUNCTION(ledger_seq, __VA_ARGS__))
-#define nonce(...) (CALL_HOOK_FUNCTION(nonce, __VA_ARGS__))
-#define state(...) (CALL_HOOK_FUNCTION(state, __VA_ARGS__))
-#define state_foreign(...) (CALL_HOOK_FUNCTION(state_foreign, __VA_ARGS__))
-#define state_set(...) (CALL_HOOK_FUNCTION(state_set, __VA_ARGS__))
-#define slot_set(...) (CALL_HOOK_FUNCTION(slot_set, __VA_ARGS__))
-#define slot_clear(...) (CALL_HOOK_FUNCTION(slot_clear, __VA_ARGS__))
-#define slot_field_txt(...) (CALL_HOOK_FUNCTION(slot_field_txt, __VA_ARGS__))
-#define slot_field(...) (CALL_HOOK_FUNCTION(slot_field, __VA_ARGS__))
-#define slot_id(...) (CALL_HOOK_FUNCTION(slot_id, __VA_ARGS__))
-#define slot_type(...) (CALL_HOOK_FUNCTION(slot_type, __VA_ARGS__))
-/*
-#define trace(...) (CALL_HOOK_FUNCTION(trace, __VA_ARGS__))
-#define trace_slot(...) (CALL_HOOK_FUNCTION(trace_slot, __VA_ARGS__))
-#define trace_num(...) (CALL_HOOK_FUNCTION(trace_num, __VA_ARGS__))
-*/
 
 /* returns true iff every even char is ascii and every odd char is 00
  * only a hueristic, may be inaccurate in edgecases */
@@ -316,19 +259,19 @@ hook::HookResult
     SSVM::VM::VM vm(cfg);
     HookModule env(hookCtx);
     vm.registerModule(env);
-    
+
     std::vector<SSVM::ValVariant> params, results;
     params.push_back(0UL);
 
     JLOG(j.trace()) << "Hook: Creating wasm instance for " << account << "\n";
-    if (auto result = 
+    if (auto result =
             vm.runWasmFile(
                 SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
         results = *result;
-    else 
+    else
     {
         uint32_t ssvm_error = static_cast<uint32_t>(result.error());
-        if (ssvm_error > 1) 
+        if (ssvm_error > 1)
         {
             JLOG(j.warn()) << "Hook: Hook was malformed for " << account
                 << ", SSVM error code:" << ssvm_error << "\n";
@@ -354,7 +297,7 @@ hook::HookResult
 
 /* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
  * specifying both a string and an integer to output */
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     trace_num,
     uint32_t read_ptr, uint32_t read_len, int64_t number)
@@ -375,7 +318,7 @@ HOOK_FUNCTION(
 
 /* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
  * specifying as_hex dumps memory as hex */
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     trace,
     uint32_t read_ptr, uint32_t read_len, uint32_t as_hex )
@@ -452,7 +395,7 @@ make_state_key(
 // read_ptr = data to set, kread_ptr = key
 // RH NOTE passing 0 size causes a delete operation which is as-intended
 // RH TODO: check reserve
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     state_set,
     uint32_t read_ptr, uint32_t read_len,
@@ -535,13 +478,14 @@ void hook::commitChangesToLedger(
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     state,
     uint32_t write_ptr, uint32_t write_len,
     uint32_t kread_ptr, uint32_t kread_len )
 {
     return  state_foreign(
+                hookCtx, memoryCtx,
                 write_ptr, write_len,
                 kread_ptr, kread_len,
                 0, 0);
@@ -549,7 +493,7 @@ HOOK_FUNCTION(
 
 /* This api actually serves both local and foreign state requests
  * feeding aread_ptr = 0 and aread_len = 0 will cause it to read local */
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     state_foreign,
     uint32_t write_ptr, uint32_t write_len,
@@ -641,28 +585,30 @@ HOOK_FUNCTION(
 
 
 // Cause the originating transaction to go through, save state changes and emit emitted tx, exit hook
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     accept,
     uint32_t read_ptr, uint32_t read_len,
     int32_t error_code )
 {
+    HOOK_SETUP();
     HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
 }
 
 // Cause the originating transaction to be rejected, discard state changes and discard emitted tx, exit hook
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     rollback,
     uint32_t read_ptr, uint32_t read_len,
     int32_t error_code )
 {
+    HOOK_SETUP();
     HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ROLLBACK);
 }
 
 
 // Write the TxnID of the originating transaction into the write_ptr
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     otxn_id,
     uint32_t write_ptr, uint32_t write_len )
@@ -685,7 +631,7 @@ HOOK_FUNCTION(
 }
 
 // Return the tt (Transaction Type) numeric code of the originating transaction
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
         int64_t,
         otxn_type )
 {
@@ -696,7 +642,7 @@ HOOK_FUNCTION_NO_ARGS(
 
 // Return the burden of the originating transaction... this will be 1 unless the originating transaction
 // was itself an emitted transaction from a previous hook invocation
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
         int64_t,
         otxn_burden)
 {
@@ -724,7 +670,7 @@ HOOK_FUNCTION_NO_ARGS(
 
 // Return the generation of the originating transaction... this will be 1 unless the originating transaction
 // was itself an emitted transaction from a previous hook invocation
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
         int64_t,
         otxn_generation)
 {
@@ -755,16 +701,16 @@ HOOK_FUNCTION_NO_ARGS(
 }
 
 // Return the generation of a hypothetically emitted transaction from this hook
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
         int64_t,
         etxn_generation)
 {
-    return otxn_generation() + 1;
+    return otxn_generation(hookCtx, memoryCtx) + 1;
 }
 
 
 // Return the current ledger sequence number
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
         int64_t,
         ledger_seq)
 {
@@ -774,7 +720,7 @@ HOOK_FUNCTION_NO_ARGS(
 
 
 // Dump a field in 'full text' form into the hook's memory
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     otxn_field_txt,
     uint32_t write_ptr, uint32_t write_len,
@@ -809,7 +755,7 @@ HOOK_FUNCTION(
 }
 
 // Dump a field from the originating transaction into the hook's memory
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     otxn_field,
     uint32_t write_ptr, uint32_t write_len,
@@ -851,7 +797,7 @@ HOOK_FUNCTION(
 
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_clear,
     uint32_t slot_id )
@@ -873,7 +819,7 @@ HOOK_FUNCTION(
 }
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_set,
     uint32_t read_ptr, uint32_t read_len,
@@ -923,7 +869,7 @@ HOOK_FUNCTION(
 }
 
 // Slots unimplemented
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_field_txt,
     uint32_t write_ptr, uint32_t write_len,
@@ -933,7 +879,7 @@ HOOK_FUNCTION(
 }
 
 // Slots unimplemented
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_field,
     uint32_t write_ptr, uint32_t write_len,
@@ -944,7 +890,7 @@ HOOK_FUNCTION(
 
 
 // Slots unimplemented
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_id,
     uint32_t slot )
@@ -953,7 +899,7 @@ HOOK_FUNCTION(
 }
 
 // Slots unimplemented
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_type,
     uint32_t slot )
@@ -962,14 +908,14 @@ HOOK_FUNCTION(
 }
 
 // Slots unimplemented
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     slot,
-    uint32_t slot )
+    uint32_t trace_slot )
 {
 
-    return NOT_IMPLEMENTED;
-    /*
+//    return NOT_IMPLEMENTED;
+    
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot) == hookCtx.slot.end())
@@ -979,13 +925,13 @@ HOOK_FUNCTION(
     std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
 
     return slot;
-    */
+    
 }
 
 
 /* Emit a transaction from this hook. Transaction must be in STObject form, fully formed and valid.
  * XRPLD does not modify transactions it only checks them for validity. */
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     emit,
     uint32_t read_ptr, uint32_t read_len )
@@ -1093,7 +1039,7 @@ HOOK_FUNCTION(
     ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
     auto callback = emitDetails.getAccountID(sfEmitCallback);
 
-    uint32_t gen_proper = etxn_generation();
+    uint32_t gen_proper = etxn_generation(hookCtx, memoryCtx);
 
     if (gen != gen_proper)
     {
@@ -1103,7 +1049,7 @@ HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
-    if (bur != etxn_burden())
+    if (bur != etxn_burden(hookCtx, memoryCtx))
     {
         JLOG(j.trace())
             << "Hook: Emission failure: Burden provided in EmitDetails was not correct";
@@ -1159,7 +1105,7 @@ HOOK_FUNCTION(
     // rule 7 check the emitted txn pays the appropriate fee
 
     if (hookCtx.fee_base == 0)
-        hookCtx.fee_base = etxn_fee_base(read_len);
+        hookCtx.fee_base = etxn_fee_base(hookCtx, memoryCtx, read_len);
 
     int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
     if (minfee < 0 || hookCtx.fee_base < 0)
@@ -1199,7 +1145,7 @@ HOOK_FUNCTION(
 }
 
 // When implemented will return the hash of the current hook
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     hook_hash,
     uint32_t write_ptr, uint32_t ptr_len )
@@ -1209,7 +1155,7 @@ HOOK_FUNCTION(
 }
 
 // Write the account id that the running hook is installed on into write_ptr
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     hook_account,
     uint32_t write_ptr, uint32_t ptr_len )
@@ -1226,7 +1172,7 @@ HOOK_FUNCTION(
 
 // Deterministic nonces (can be called multiple times)
 // Writes nonce into the write_ptr
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     nonce,
     uint32_t write_ptr, uint32_t write_len )
@@ -1261,7 +1207,7 @@ HOOK_FUNCTION(
 }
 
 // Reserve one or more transactions for emission from the running hook
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     etxn_reserve,
     uint32_t count )
@@ -1278,7 +1224,7 @@ HOOK_FUNCTION(
 }
 
 // Compute the burden of an emitted transaction based on a number of factors
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
     int64_t,
     etxn_burden)
 {
@@ -1287,7 +1233,7 @@ HOOK_FUNCTION_NO_ARGS(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint64_t last_burden = (uint64_t)otxn_burden(); // always non-negative so cast is safe
+    uint64_t last_burden = (uint64_t)otxn_burden(hookCtx, memoryCtx); // always non-negative so cast is safe
 
     uint64_t burden = last_burden * hookCtx.expected_etxn_count;
     if (burden < last_burden) // this overflow will never happen but handle it anyway
@@ -1298,7 +1244,7 @@ HOOK_FUNCTION_NO_ARGS(
 
 // When implemented this function will allow all other hook api functions to be called by number instead of
 // name... this is important for size in some cases
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     special,
     uint32_t api_no,
@@ -1309,7 +1255,7 @@ HOOK_FUNCTION(
 }
 
 
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_sha512h,
     uint32_t write_ptr, uint32_t write_len,
@@ -1464,7 +1410,7 @@ inline int32_t get_stobject_length (
 // Given an serialized object in memory locate and return the offset and length of the payload of a subfield of that
 // object. Arrays are returned fully formed. If successful returns offset and length joined as int64_t.
 // Use SUB_OFFSET and SUB_LENGTH to extract.
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_subfield,
     uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
@@ -1515,7 +1461,7 @@ HOOK_FUNCTION(
 }
 
 // Same as subfield but indexes into a serialized array
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_subarray,
     uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
@@ -1563,7 +1509,7 @@ HOOK_FUNCTION(
 }
 
 // Convert an account ID into a base58-check encoded r-address
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_raddr,
     uint32_t write_ptr, uint32_t write_len,
@@ -1591,7 +1537,7 @@ HOOK_FUNCTION(
 }
 
 // Convert a base58-check encoded r-address into a 20 byte account id
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_accid,
     uint32_t write_ptr, uint32_t write_len,
@@ -1633,7 +1579,7 @@ HOOK_FUNCTION(
 }
 
 // when implemented this function will validate an st-object
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_verify_sto,
     uint32_t tread_ptr, uint32_t tread_len )
@@ -1658,7 +1604,7 @@ HOOK_FUNCTION(
 
 // Validate either an secp256k1 signature or an ed25519 signature, using the XRPLD convention for identifying
 // the key type. Pointer prefixes: d = data, s = signature, k = public key.
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     util_verify,
     uint32_t dread_ptr, uint32_t dread_len,
@@ -1680,7 +1626,7 @@ HOOK_FUNCTION(
 }
 
 // Return the current fee base of the current ledger (multiplied by a margin)
-HOOK_FUNCTION_NO_ARGS(
+DEFINE_HOOK_FUNCNARG(
     int64_t,
     fee_base)
 {
@@ -1689,7 +1635,7 @@ HOOK_FUNCTION_NO_ARGS(
 }
 
 // Return the fee base for a hypothetically emitted transaction from the current hook based on byte count
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     etxn_fee_base,
     uint32_t tx_byte_count )
@@ -1699,9 +1645,9 @@ HOOK_FUNCTION(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint64_t base_fee = (uint64_t)fee_base(); // will always return non-negative
+    uint64_t base_fee = (uint64_t)fee_base(hookCtx, memoryCtx); // will always return non-negative
 
-    int64_t burden = etxn_burden();
+    int64_t burden = etxn_burden(hookCtx, memoryCtx);
     if (burden < 1)
         return FEE_TOO_LARGE;
 
@@ -1715,7 +1661,7 @@ HOOK_FUNCTION(
 }
 
 // Populate an sfEmitDetails field in a soon-to-be emitted transaction
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int64_t,
     etxn_details,
     uint32_t write_ptr, uint32_t write_len )
@@ -1730,9 +1676,9 @@ HOOK_FUNCTION(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint32_t generation = (uint32_t)(etxn_generation()); // always non-negative so cast is safe
+    uint32_t generation = (uint32_t)(etxn_generation(hookCtx, memoryCtx)); // always non-negative so cast is safe
 
-    int64_t burden = etxn_burden();
+    int64_t burden = etxn_burden(hookCtx, memoryCtx);
     if (burden < 1)
         return FEE_TOO_LARGE;
 
@@ -1755,16 +1701,16 @@ HOOK_FUNCTION(
     *out++ = ( burden >>  8 ) & 0xFFU;
     *out++ = ( burden >>  0 ) & 0xFFU;
     *out++ = 0x5A; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
-    if (otxn_id(out - memory, 32) != 32)
+    if (otxn_id(hookCtx, memoryCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x5B; // sfEmitNonce                                     /* upto =  49 | size = 33 */
-    if (nonce(out - memory, 32) != 32)
+    if (nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x89; // sfEmitCallback preamble                         /* upto =  82 | size = 22 */
     *out++ = 0x14; // preamble cont
-    if (hook_account(out - memory, 20) != 20)
+    if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
         return INTERNAL_ERROR;
     out += 20;
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
@@ -1778,7 +1724,7 @@ HOOK_FUNCTION(
 // Guard function... very important. Enforced on SetHook transaction, keeps track of how many times a
 // runtime loop iterates and terminates the hook if the iteration count rises above a preset number of iterations
 // as determined by the hook developer
-HOOK_FUNCTION(
+DEFINE_HOOK_FUNCTION(
     int32_t,
     _g,
     uint32_t id, uint32_t maxitr )
@@ -1802,7 +1748,7 @@ HOOK_FUNCTION(
                 " Iterations: " << hookCtx.guard_map[id];
         }
 
-        rollback(0, 0, GUARD_VIOLATION);
+        return rollback(hookCtx, memoryCtx, 0, 0, GUARD_VIOLATION);
     }
     return 1;
 }

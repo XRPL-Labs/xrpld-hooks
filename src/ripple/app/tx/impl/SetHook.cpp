@@ -49,7 +49,6 @@ inline uint64_t
 parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
 {
     uint64_t val = 0, shift = 0, i = start_offset;
-
     while (i < buf.size())
     {
         int b = (int)(buf[i]);
@@ -63,6 +62,7 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
         *end_offset = i;
         return val;
     }
+    return 0;
 }
 
 // this macro will return temMALFORMED if i ever exceeds the end of the hook
