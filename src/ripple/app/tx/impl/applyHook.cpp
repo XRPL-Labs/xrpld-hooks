@@ -910,12 +910,12 @@ DEFINE_HOOK_FUNCTION(
 // Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    slot,
-    uint32_t trace_slot )
+    trace_slot,
+    uint32_t slot )
 {
 
-//    return NOT_IMPLEMENTED;
-    
+    return NOT_IMPLEMENTED;
+/*    
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot) == hookCtx.slot.end())
@@ -925,7 +925,7 @@ DEFINE_HOOK_FUNCTION(
     std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
 
     return slot;
-    
+  */  
 }
 
 
