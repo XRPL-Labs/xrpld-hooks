@@ -76,6 +76,54 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     }\
 }
 
+// RH TODO find a better home for this or a better solution?
+const std::set<std::string> import_whitelist
+{
+    "accept",
+    "emit",
+    "etxn_burden",
+    "etxn_details",
+    "etxn_fee_base",
+    "etxn_generation",
+    "etxn_reserve",
+    "fee_base",
+    "_g",
+    "hook_account",
+    "hook_hash",
+    "ledger_seq",
+    "nonce",
+    "otxn_burden",
+    "otxn_field",
+    "otxn_field_txt",
+    "otxn_generation",
+    "otxn_id",
+    "otxn_type",
+    "rollback",
+    "slot",
+    "slot_clear",
+    "slot_count",
+    "slot_id",
+    "slot_set",
+    "slot_size",
+    "slot_subarray",
+    "slot_subfield",
+    "slot_type",
+    "state",
+    "state_foreign",
+    "state_set",
+    "trace",
+    "trace_num",
+    "trace_slot",
+    "util_accid",
+    "util_raddr",
+    "util_sha512h",
+    "util_subarray",
+    "util_subfield",
+    "util_verify",
+    "util_sto",
+    "util_keylet"
+};
+
 #define DEBUG_GUARD_CHECK 0
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
@@ -552,7 +600,7 @@ SetHook::preflight(PreflightContext const& ctx)
                     if (import_name == "_g")
                     {
                         guard_import_number = func_upto;
-                    } else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
+                    } else if (import_whitelist.find(import_name) == import_whitelist.end())
                     {
                         JLOG(ctx.j.trace())
                             << "Hook: Malformed transaction: Hook attempted to import a function that does not"
@@ -889,7 +937,8 @@ SetHook::setHook()
     JLOG(viewJ.trace())
         << "Hook: Added owner count for " << toBase58(account_) << " after SetHook: " << addedOwnerCount;
 
-    adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
+    if (addedOwnerCount != 0)
+        adjustOwnerCount(view(), sle, addedOwnerCount, viewJ);
     return tesSUCCESS;
 }
 

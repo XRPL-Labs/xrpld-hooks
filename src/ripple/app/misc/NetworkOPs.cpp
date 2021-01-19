@@ -94,7 +94,7 @@ class NetworkOPsImp final : public NetworkOPs
             FailHard f)
             : transaction(t), admin(a), local(l), hook(h), failType(f)
         {
-            assert(local || failType == FailHard::no);
+            assert(local || hook || failType == FailHard::no);
         }
     };
 

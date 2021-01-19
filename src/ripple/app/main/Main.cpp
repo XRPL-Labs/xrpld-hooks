@@ -33,8 +33,8 @@
 #include <ripple/resource/Fees.h>
 #include <ripple/rpc/RPCHandler.h>
 
-#include <beast/unit_test/match.hpp>
-#include <test/unit_test/multi_runner.h>
+//#include <beast/unit_test/match.hpp>
+//#include <test/unit_test/multi_runner.h>
 
 #include <google/protobuf/stubs/common.h>
 
@@ -184,7 +184,6 @@ printHelp(const po::options_description& desc)
 
 /* simple unit test selector that allows a comma separated list
  * of selectors
- */
 class multi_selector
 {
 private:
@@ -298,6 +297,7 @@ runUnitTests(
     }
 }
 
+ */
 //------------------------------------------------------------------------------
 
 int
@@ -459,7 +459,7 @@ run(int argc, char** argv)
     // Run the unit tests if requested.
     // The unit tests will exit the application with an appropriate return code.
     //
-    if (vm.count("unittest"))
+/*    if (vm.count("unittest"))
     {
         std::string argument;
 
@@ -495,7 +495,7 @@ run(int argc, char** argv)
             return 1;
         }
     }
-
+*/
     auto config = std::make_unique<Config>();
 
     auto configFile =

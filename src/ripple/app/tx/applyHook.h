@@ -7,17 +7,13 @@
 #include <optional>
 #include <any>
 #include <memory>
-
+#include <ripple/protocol/digest.h>
 #include "common/value.h"
 #include "vm/configure.h"
 #include "vm/vm.h"
 #include "common/errcode.h"
 #include "runtime/hostfunc.h"
 #include "runtime/importobj.h"
-
-
-#ifndef RIPPLE_HOOK_H_INCLUDED
-#define RIPPLE_HOOK_H_INCLUDED
 
 namespace hook {
     struct HookContext;
@@ -33,7 +29,33 @@ namespace hook_api {
 #define DBG_PRINTF if (0) printf
 #define DBG_FPRINTF if (0) fprintf
 
-    enum api_return_code {
+    namespace keylet_code {
+    enum keylet_code : uint32_t {
+            HOOK = 1,
+            HOOK_STATE = 2,
+            ACCOUNT = 3,
+            AMENDMENTS = 4,
+            CHILD = 5,
+            SKIP = 6,
+            FEES = 7,
+            NEGATIVE_UNL = 8,
+            LINE = 9,
+            OFFER = 10,
+            QUALITY = 11,
+            NEXT = 12,
+            TICKET = 13,
+            SIGNERS = 14,
+            CHECK = 15,
+            DEPOSIT_PREAUTH = 16,
+            UNCHECKED = 17,
+            OWNER_DIR = 18,
+            PAGE = 19,
+            ESCROW = 20,
+            PAYCHAN = 21
+    };
+    }
+
+    enum hook_return_code : int64_t {
         SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success"
         OUT_OF_BOUNDS = -1,             // could not read or write to a pointer to provided by hook
         INTERNAL_ERROR = -2,            // eg directory is corrupt
@@ -54,24 +76,9 @@ namespace hook_api {
         INVALID_FIELD = -17,            // the field requested is returning sfInvalid
         PARSE_ERROR = -18,              // hook asked hookapi to parse something the contents of which was invalid
         RC_ROLLBACK = -19,              // hook should terminate due to a rollback() call
-        RC_ACCEPT = -20                 // hook should temrinate due to an accept() call
+        RC_ACCEPT = -20,                // hook should temrinate due to an accept() call
+        NO_SUCH_KEYLET = 21             // invalid keylet or keylet type
     };
-
-    // many datatypes can be encoded into an int64_t
-    int64_t data_as_int64(
-            void* ptr_raw,
-            uint32_t len)
-    {
-        unsigned char* ptr = reinterpret_cast<unsigned char*>(ptr_raw);
-        if (len > 8)
-            return TOO_BIG;
-        uint64_t output = 0;
-        for (int i = 0, j = (len-1)*8; i < len; ++i, j-=8)
-            output += (((uint64_t)ptr[i]) << j);
-        if ((1ULL<<63) & output)
-            return TOO_BIG;
-        return output;
-    }
 
     enum ExitType : int8_t {
         UNSET = -2,
@@ -158,50 +165,49 @@ namespace hook_api {
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
-    // the "special" _() api allows every other api to be invoked by a number (crc32 of name)
-    // instead of function name
-    DECLARE_HOOK_FUNCTION(int64_t, special,  uint32_t api_no,
-                                             uint32_t a, uint32_t b, uint32_t c,
-                                             uint32_t d, uint32_t e, uint32_t f);
-
 
     DECLARE_HOOK_FUNCTION(int32_t,  _g,                 uint32_t guard_id, uint32_t maxiter );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	accept,             uint32_t read_ptr, uint32_t read_len, int32_t error_code );
-    DECLARE_HOOK_FUNCTION(int64_t,	rollback,           uint32_t read_ptr, uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	accept,             uint32_t read_ptr,  uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	rollback,           uint32_t read_ptr,  uint32_t read_len, int32_t error_code );
     DECLARE_HOOK_FUNCTION(int64_t,	util_raddr,         uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t read_ptr, uint32_t read_len );
+                                                        uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,	util_accid,         uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t read_ptr, uint32_t read_len );
+                                                        uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,	util_verify,        uint32_t dread_ptr, uint32_t dread_len,
                                                         uint32_t sread_ptr, uint32_t sread_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_verify_sto,    uint32_t tread_ptr, uint32_t tread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_sto,           uint32_t tread_ptr, uint32_t tread_len );
     DECLARE_HOOK_FUNCTION(int64_t,	util_sha512h,       uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield,      uint32_t read_ptr, uint32_t read_len, uint32_t field_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray,      uint32_t read_ptr, uint32_t read_len, uint32_t array_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield,      uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray,      uint32_t read_ptr,  uint32_t read_len,  uint32_t array_id );
+    DECLARE_HOOK_FUNCTION(int64_t,  util_keylet,        uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
+                                                        uint32_t a,         uint32_t b,         uint32_t c,
+                                                        uint32_t d,         uint32_t e,         uint32_t f );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_burden         );
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_details,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base,      uint32_t tx_byte_count);
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve,       uint32_t count );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
-    DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr, uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
     DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr, uint32_t read_len,
-                                                        uint32_t slot_type, int32_t slot );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_field_txt,     uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t field_id, uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_field,         uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t field_id, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t writelen, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len,
+                                                        uint32_t slot_type, int32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_subfield,      uint32_t parent_slot, uint32_t field_id, uint32_t new_slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot );
+
     DECLARE_HOOK_FUNCTION(int64_t,	state_set,          uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
     DECLARE_HOOK_FUNCTION(int64_t,	state,              uint32_t write_ptr, uint32_t write_len,
@@ -220,49 +226,6 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
 
-    // used by SetHook
-    std::set<std::string> import_whitelist
-    {
-        "accept",
-        "emit",
-        "etxn_burden",
-        "etxn_details",
-        "etxn_fee_base",
-        "etxn_generation",
-        "etxn_reserve",
-        "fee_base",
-        "_g",
-        "hook_account",
-        "hook_hash",
-        "ledger_seq",
-        "nonce",
-        "otxn_burden",
-        "otxn_field",
-        "otxn_field_txt",
-        "otxn_generation",
-        "otxn_id",
-        "otxn_type",
-        "rollback",
-        "slot_clear",
-        "slot_field",
-        "slot_field_txt",
-        "slot_id",
-        "slot_set",
-        "slot_type",
-        "state",
-        "state_foreign",
-        "state_set",
-        "trace",
-        "trace_num",
-        "trace_slot",
-        "util_accid",
-        "util_raddr",
-        "util_sha512h",
-        "util_subarray",
-        "util_subfield",
-        "util_verify",
-        "util_verify_sto"
-    };
 
 } /* end namespace hook_api */
 
@@ -290,7 +253,7 @@ namespace hook {
         ripple::Keylet ownerDirKeylet;
         ripple::Keylet hookKeylet;
         ripple::AccountID account;
-        std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn; // etx stored here until accept/rollback
+        std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
         // uint256 key -> [ has_been_modified, current_state ]
         std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
         hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
@@ -305,24 +268,20 @@ namespace hook {
         // slots are used up by requesting objects from inside the hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
         // keep the underlying object alive for the duration of the hook's execution
-        std::map<int, std::pair<std::string_view, std::any>> slot;
+        std::map<int, std::pair<std::string_view, std::any>> slot {};
         int slot_counter { 1 };
         std::queue<int> slot_free {};
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
         int nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
-        std::map<ripple::uint256, bool> nonce_used;
+        std::map<ripple::uint256, bool> nonce_used {};
         uint32_t generation = 0; // used for caching, only generated when txn_generation is called
         int64_t burden = 0;      // used for caching, only generated when txn_burden is called
         int64_t fee_base = 0;
-        std::map<uint32_t, uint32_t> guard_map; // iteration guard map <id -> upto_iteration>
+        std::map<uint32_t, uint32_t> guard_map {}; // iteration guard map <id -> upto_iteration>
         HookResult result;
         const HookModule* module = 0;
     };
 
-    // RH TODO: fetch this value from the hook sle
-    int maxHookStateDataSize(void) {
-        return 128;
-    }
 
     ripple::TER
     setHookState(
@@ -349,7 +308,6 @@ namespace hook {
 
         HookModule(HookContext& ctx) : SSVM::Runtime::ImportObject("env"), hookCtx(ctx)
         {
-            //addHostFunc("_", std::make_unique<hook_api::WasmFunction_special(ctx));
             ctx.module = this;
 
             ADD_HOOK_FUNCTION(_g, ctx);
@@ -358,10 +316,12 @@ namespace hook {
             ADD_HOOK_FUNCTION(util_raddr, ctx);
             ADD_HOOK_FUNCTION(util_accid, ctx);
             ADD_HOOK_FUNCTION(util_verify, ctx);
-            ADD_HOOK_FUNCTION(util_verify_sto, ctx);
+            ADD_HOOK_FUNCTION(util_sto, ctx);
             ADD_HOOK_FUNCTION(util_sha512h, ctx);
             ADD_HOOK_FUNCTION(util_subfield, ctx);
             ADD_HOOK_FUNCTION(util_subarray, ctx);
+            ADD_HOOK_FUNCTION(util_keylet, ctx);
+
             ADD_HOOK_FUNCTION(emit, ctx);
             ADD_HOOK_FUNCTION(etxn_burden, ctx);
             ADD_HOOK_FUNCTION(etxn_fee_base, ctx);
@@ -382,12 +342,17 @@ namespace hook {
             ADD_HOOK_FUNCTION(state, ctx);
             ADD_HOOK_FUNCTION(state_foreign, ctx);
             ADD_HOOK_FUNCTION(state_set, ctx);
-            ADD_HOOK_FUNCTION(slot_set, ctx);
+
+            ADD_HOOK_FUNCTION(slot, ctx);
             ADD_HOOK_FUNCTION(slot_clear, ctx);
-            ADD_HOOK_FUNCTION(slot_field_txt, ctx);
-            ADD_HOOK_FUNCTION(slot_field, ctx);
+            ADD_HOOK_FUNCTION(slot_count, ctx);
             ADD_HOOK_FUNCTION(slot_id, ctx);
+            ADD_HOOK_FUNCTION(slot_set, ctx);
+            ADD_HOOK_FUNCTION(slot_size, ctx);
+            ADD_HOOK_FUNCTION(slot_subarray, ctx);
+            ADD_HOOK_FUNCTION(slot_subfield, ctx);
             ADD_HOOK_FUNCTION(slot_type, ctx);
+
             ADD_HOOK_FUNCTION(trace, ctx);
             ADD_HOOK_FUNCTION(trace_slot, ctx);
             ADD_HOOK_FUNCTION(trace_num, ctx);
@@ -403,5 +368,4 @@ namespace hook {
 
 }
 
-#endif
 

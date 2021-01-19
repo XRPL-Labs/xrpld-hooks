@@ -72,6 +72,26 @@ using namespace ripple;
     return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
 }
 
+// RH TODO: fetch this value from the hook sle
+int hook::maxHookStateDataSize(void) {
+    return 128;
+}
+
+// many datatypes can be encoded into an int64_t
+inline int64_t data_as_int64(
+        void* ptr_raw,
+        uint32_t len)
+{
+    unsigned char* ptr = reinterpret_cast<unsigned char*>(ptr_raw);
+    if (len > 8)
+        return hook_api::hook_return_code::TOO_BIG;
+    uint64_t output = 0;
+    for (int i = 0, j = (len-1)*8; i < len; ++i, j-=8)
+        output += (((uint64_t)ptr[i]) << j);
+    if ((1ULL<<63) & output)
+        return hook_api::hook_return_code::TOO_BIG;
+    return output;
+}
 
 /* returns true iff every even char is ascii and every odd char is 00
  * only a hueristic, may be inaccurate in edgecases */
@@ -795,16 +815,22 @@ DEFINE_HOOK_FUNCTION(
         memory, memory_length);
 }
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    slot,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t slot )
+{
+    return NOT_IMPLEMENTED;
+}
 
-// RH NOTE: slot system is not yet implemented, but planned feature for prod
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_clear,
     uint32_t slot_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    return NOT_IMPLEMENTED;
-    /*
+
     if (slot_id > hook_api::max_slots)
         return TOO_BIG;
 
@@ -814,8 +840,25 @@ DEFINE_HOOK_FUNCTION(
     hookCtx.slot.erase(slot_id);
     hookCtx.slot_free.push(slot_id);
 
-    return slot_id;
-    */
+    return 1;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    slot_count,
+    uint32_t slot_id )
+{
+    return NOT_IMPLEMENTED;
+}
+
+
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    slot_id,
+    uint32_t slot )
+{
+    return NOT_IMPLEMENTED; // RH TODO
 }
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
@@ -868,37 +911,31 @@ DEFINE_HOOK_FUNCTION(
 
 }
 
-// Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    slot_field_txt,
-    uint32_t write_ptr, uint32_t write_len,
-    uint32_t field_id, uint32_t slot )
+    slot_size,
+    uint32_t slot_id )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    return NOT_IMPLEMENTED;
 }
 
-// Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    slot_field,
-    uint32_t write_ptr, uint32_t write_len,
-    uint32_t field_id, uint32_t slot )
+    slot_subarray,
+    uint32_t parent_slot, uint32_t array_id, uint32_t new_slot )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    return NOT_IMPLEMENTED;
 }
 
 
-// Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    slot_id,
-    uint32_t slot )
+    slot_subfield,
+    uint32_t parent_slot, uint32_t field_id, uint32_t new_slot )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    return NOT_IMPLEMENTED;
 }
 
-// Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_type,
@@ -907,7 +944,6 @@ DEFINE_HOOK_FUNCTION(
     return NOT_IMPLEMENTED; // RH TODO
 }
 
-// Slots unimplemented
 DEFINE_HOOK_FUNCTION(
     int64_t,
     trace_slot,
@@ -915,7 +951,7 @@ DEFINE_HOOK_FUNCTION(
 {
 
     return NOT_IMPLEMENTED;
-/*    
+/*
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (hookCtx.slot.find(slot) == hookCtx.slot.end())
@@ -925,7 +961,163 @@ DEFINE_HOOK_FUNCTION(
     std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
 
     return slot;
-  */  
+  */
+}
+
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    util_keylet,
+    uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
+    uint32_t a,         uint32_t b,         uint32_t c,
+    uint32_t d,         uint32_t e,         uint32_t f )
+{
+    HOOK_SETUP();
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (write_len < 34)
+        return TOO_SMALL;
+
+    if (keylet_type < 1 || keylet_type > 21)
+        return INVALID_ARGUMENT;
+
+ // TODO try catch the whole switch
+    switch (keylet_type)
+    {
+        case keylet_code::HOOK:
+        {
+            if (a == 0 || b == 0)
+               return INVALID_ARGUMENT;
+
+            if (c != 0 || d != 0 || e != 0 || f != 0)
+               return INVALID_ARGUMENT;
+
+            uint32_t read_ptr = a, read_len = b;
+
+            if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+               return OUT_OF_BOUNDS;
+
+            if (read_len != 20)
+                return INVALID_ARGUMENT;
+
+            ripple::Keylet kl =
+                ripple::keylet::hook(
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr));
+
+            memory[write_ptr + 0] = (kl.type >> 8) & 0xFFU;
+            memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
+
+            for (int i = 0; i < 32; ++i)
+                memory[write_ptr + 2] = kl.key.data()[i];
+
+            return 34;
+        }
+
+        case keylet_code::HOOK_STATE:
+        {
+            return 34;
+        }
+
+        case keylet_code::ACCOUNT:
+        {
+            return 34;
+        }
+
+        case keylet_code::AMENDMENTS:
+        {
+            return 34;
+        }
+
+        case keylet_code::CHILD:
+        {
+            return 34;
+        }
+
+        case keylet_code::SKIP:
+        {
+            return 34;
+        }
+
+        case keylet_code::FEES:
+        {
+            return 34;
+        }
+
+        case keylet_code::NEGATIVE_UNL:
+        {
+            return 34;
+        }
+
+        case keylet_code::LINE:
+        {
+            return 34;
+        }
+
+        case keylet_code::OFFER:
+        {
+            return 34;
+        }
+
+        case keylet_code::QUALITY:
+        {
+            return 34;
+        }
+
+        case keylet_code::NEXT:
+        {
+            return 34;
+        }
+
+        case keylet_code::TICKET:
+        {
+            return 34;
+        }
+
+        case keylet_code::SIGNERS:
+        {
+            return 34;
+        }
+
+        case keylet_code::CHECK:
+        {
+            return 34;
+        }
+
+        case keylet_code::DEPOSIT_PREAUTH:
+        {
+            return 34;
+        }
+
+        case keylet_code::UNCHECKED:
+        {
+            return 34;
+        }
+
+        case keylet_code::OWNER_DIR:
+        {
+            return 34;
+        }
+
+        case keylet_code::PAGE:
+        {
+            return 34;
+        }
+
+        case keylet_code::ESCROW:
+        {
+            return 34;
+        }
+
+        case keylet_code::PAYCHAN:
+        {
+            return 34;
+        }
+
+    }
+
+    return NO_SUCH_KEYLET;
 }
 
 
@@ -1245,19 +1437,6 @@ DEFINE_HOOK_FUNCNARG(
 
     return burden;
 }
-
-// When implemented this function will allow all other hook api functions to be called by number instead of
-// name... this is important for size in some cases
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    special,
-    uint32_t api_no,
-    uint32_t a, uint32_t b, uint32_t c,
-    uint32_t d, uint32_t e, uint32_t f )
-{
-    return NOT_IMPLEMENTED; // RH TODO
-}
-
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -1585,7 +1764,7 @@ DEFINE_HOOK_FUNCTION(
 // when implemented this function will validate an st-object
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    util_verify_sto,
+    util_sto,
     uint32_t tread_ptr, uint32_t tread_len )
 {
 

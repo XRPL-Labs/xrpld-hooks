@@ -2,16 +2,16 @@
    declare user options/settings
 #]===================================================================]
 
-option (assert "Enables asserts, even in release builds" OFF)
+option (assert "Enables asserts, even in release builds" ON)
 
-option (unity "Creates a build using UNITY support in cmake. This is the default" ON)
+option (unity "Creates a build using UNITY support in cmake. This is the default" OFF)
 if (unity)
   if (CMAKE_VERSION VERSION_LESS 3.16)
     message (WARNING "unity option only supported for with cmake 3.16+ (please upgrade)")
     set (unity OFF CACHE BOOL "unity only available for cmake 3.16+" FORCE)
   else ()
     if (NOT is_ci)
-      set (CMAKE_UNITY_BUILD_BATCH_SIZE 15 CACHE STRING "")
+      set (CMAKE_UNITY_BUILD_BATCH_SIZE 5 CACHE STRING "")
     endif ()
   endif ()
 endif ()
