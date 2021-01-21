@@ -77,7 +77,7 @@ namespace hook_api {
         PARSE_ERROR = -18,              // hook asked hookapi to parse something the contents of which was invalid
         RC_ROLLBACK = -19,              // hook should terminate due to a rollback() call
         RC_ACCEPT = -20,                // hook should temrinate due to an accept() call
-        NO_SUCH_KEYLET = 21             // invalid keylet or keylet type
+        NO_SUCH_KEYLET = -21            // invalid keylet or keylet type
     };
 
     enum ExitType : int8_t {
@@ -197,7 +197,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
     DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t writelen, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t slot );

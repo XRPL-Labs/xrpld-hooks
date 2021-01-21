@@ -77,6 +77,10 @@ extern int64_t util_accid          (uint32_t write_ptr, uint32_t write_len,
 extern int64_t util_verify         (uint32_t dread_ptr, uint32_t dread_len,
                                     uint32_t sread_ptr, uint32_t sread_len,
                                     uint32_t kread_ptr, uint32_t kread_len);
+
+// RH TODO comment function
+extern int64_t util_sto            (uint32_t tread_ptr, uint32_t tread_len);
+
 /**
  * Compute the first half of a SHA512 checksum.
  * @param write_ptr The buffer to write the checksum into. Must be at least 32 bytes.
@@ -111,7 +115,12 @@ extern int64_t util_subfield       (uint32_t read_ptr,  uint32_t read_len, uint3
  *         to read_ptr and the low-word (least significant 4 bytes) is its length. MSB is sign bit, if set (negative)
  *         return value indicates error (typically error means could not find.)
  */
-extern int64_t util_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32_t array_id );
+extern int64_t util_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32_t array_id);
+
+
+extern int64_t util_keylet         (uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
+                                    uint32_t a,         uint32_t b,         uint32_t c,
+                                    uint32_t d,         uint32_t e,         uint32_t f);
 
 /**
  * Compute burden for an emitted transaction.
@@ -194,14 +203,16 @@ extern int64_t nonce               (uint32_t write_ptr,  uint32_t write_len);
 /**
  * Slot functions have not been implemented yet and the api for them is subject to change
  */
+
+extern int64_t slot                (uint32_t write_ptr, uint32_t write_len, uint32_t slot);
 extern int64_t slot_clear          (uint32_t slot);
+extern int64_t slot_count          (uint32_t slot);
+extern int64_t slot_id             (uint32_t slot);
 extern int64_t slot_set            (uint32_t read_ptr,   uint32_t read_len,
                                     uint32_t slot_type,  int32_t  slot);
-extern int64_t slot_field_txt      (uint32_t write_ptr,  uint32_t write_len,
-                                    uint32_t field_id,   uint32_t slot);
-extern int64_t slot_field          (uint32_t write_ptr,  uint32_t write_len,
-                                    uint32_t field_id,   uint32_t slot);
-extern int64_t slot_id             (uint32_t slot);
+extern int64_t slot_size           (uint32_t slot);
+extern int64_t slot_subarray       (uint32_t parent_slot, uint32_t array_id, uint32_t new_slot);
+extern int64_t slot_subfield       (uint32_t parent_slot, uint32_t field_id, uint32_t new_slot);
 extern int64_t slot_type           (uint32_t slot);
 extern int64_t trace_slot          (uint32_t slot);
 
@@ -325,6 +336,31 @@ extern int64_t otxn_type           (void);
 #define GUARD_VIOLATION  -16        // a guarded loop or function iterated over its maximum
 #define INVALID_FIELD  -17          // the field requested is returning sfInvalid
 #define PARSE_ERROR  -18            // hook asked hookapi to parse something the contents of which was invalid
+#define RC_ROLLBACK -19             // used internally by hook api to indicate a rollback
+#define RC_ACCEPT -20               // used internally by hook api to indicate an accept
+#define NO_SUCH_KEYLET -21          // the specified keylet or keylet type does not exist or could not be computed
+
+#define KEYLET_HOOK 1                                                                                                  
+#define KEYLET_HOOK_STATE 2                                                                                            
+#define KEYLET_ACCOUNT 3                                                                                               
+#define KEYLET_AMENDMENTS 4                                                                                            
+#define KEYLET_CHILD 5                                                                                                 
+#define KEYLET_SKIP 6                                                                                                  
+#define KEYLET_FEES 7                                                                                                  
+#define KEYLET_NEGATIVE_UNL 8                                                                                          
+#define KEYLET_LINE 9                                                                                                  
+#define KEYLET_OFFER 10                                                                                                
+#define KEYLET_QUALITY 11                                                                                              
+#define KEYLET_NEXT 12                                                                                                 
+#define KEYLET_TICKET 13                                                                                               
+#define KEYLET_SIGNERS 14                                                                                              
+#define KEYLET_CHECK 15                                                                                                
+#define KEYLET_DEPOSIT_PREAUTH 16                                                                                      
+#define KEYLET_UNCHECKED 17                                                                                            
+#define KEYLET_OWNER_DIR 18                                                                                            
+#define KEYLET_PAGE 19                                                                                                 
+#define KEYLET_ESCROW 20                                                                                               
+#define KEYLET_PAYCHAN 21 
 
 
 #include "sfcodes.h"

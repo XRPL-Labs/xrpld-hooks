@@ -476,6 +476,9 @@ void hook::commitChangesToLedger(
         }
     }
 
+    if (!applyCtx.view().can_emit())
+        return;
+
     DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
 
     auto const& j = applyCtx.app.journal("View");
@@ -964,6 +967,22 @@ DEFINE_HOOK_FUNCTION(
   */
 }
 
+inline int64_t
+serialize_keylet(
+        ripple::Keylet& kl, 
+        uint8_t* memory, uint32_t write_ptr, uint32_t write_len)
+{
+    if (write_len < 34)
+        return hook_api::TOO_SMALL;
+
+    memory[write_ptr + 0] = (kl.type >> 8) & 0xFFU;
+    memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
+
+    for (int i = 0; i < 32; ++i)
+        memory[write_ptr + 2] = kl.key.data()[i];
+
+    return 34;
+}
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -986,6 +1005,7 @@ DEFINE_HOOK_FUNCTION(
  // TODO try catch the whole switch
     switch (keylet_type)
     {
+        case keylet_code::ACCOUNT:
         case keylet_code::HOOK:
         {
             if (a == 0 || b == 0)
@@ -1002,28 +1022,41 @@ DEFINE_HOOK_FUNCTION(
             if (read_len != 20)
                 return INVALID_ARGUMENT;
 
+            ripple::AccountID id = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
             ripple::Keylet kl =
-                ripple::keylet::hook(
-                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr));
+                keylet_type == keylet_code::HOOK ?
+                    ripple::keylet::hook(id) :
+                    ripple::keylet::account(id);
 
-            memory[write_ptr + 0] = (kl.type >> 8) & 0xFFU;
-            memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
-
-            for (int i = 0; i < 32; ++i)
-                memory[write_ptr + 2] = kl.key.data()[i];
-
-            return 34;
+            return serialize_keylet(kl, memory, write_ptr, write_len);
         }
 
         case keylet_code::HOOK_STATE:
         {
-            return 34;
+            if (a == 0 || b == 0 || c == 0 || d == 0)
+               return INVALID_ARGUMENT;
+
+            if (e != 0 || f != 0)
+               return INVALID_ARGUMENT;
+
+            uint32_t aread_ptr = a, aread_len = b, kread_ptr = c, kread_len = d;
+
+            if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+                NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+               return OUT_OF_BOUNDS;
+
+            if (aread_len != 20 || kread_len != 32)
+                return INVALID_ARGUMENT;
+
+            ripple::Keylet kl =
+                ripple::keylet::hook_state(
+                        ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr),
+                        ripple::base_uint<256>::fromVoid(memory + kread_ptr));
+
+
+            return serialize_keylet(kl, memory, write_ptr, write_len);
         }
 
-        case keylet_code::ACCOUNT:
-        {
-            return 34;
-        }
 
         case keylet_code::AMENDMENTS:
         {
@@ -1167,7 +1200,7 @@ DEFINE_HOOK_FUNCTION(
      * 3. sfEmitDetails present and valid
      * 4. No sfSignature
      * 5. LastLedgerSeq > current ledger, > firstledgerseq
-     * 6. FirstLedgerSeq > current ledger, if present
+     * 6. FirstLedgerSeq > current ledger
      * 7. Fee must be correctly high
      */
 
@@ -1286,10 +1319,10 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // rule 6
-    if (stpTrans->isFieldPresent(sfFirstLedgerSequence) &&
+    if (!stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
-        JLOG(j.trace()) << "Hook: Emission failure: FirstLedgerSequence > LastLedgerSequence.";
+        JLOG(j.trace()) << "Hook: Emission failure: FirstLedgerSequence must be present and >= LastLedgerSequence.";
         return EMISSION_FAILURE;
     }
 
@@ -1382,7 +1415,7 @@ DEFINE_HOOK_FUNCTION(
 
     auto hash = ripple::sha512Half(
             ripple::HashPrefix::emitTxnNonce,
-            view.info().seq,
+//            view.info().seq,
             applyCtx.tx.getTransactionID(),
             hookCtx.nonce_counter++,
             hookCtx.result.account

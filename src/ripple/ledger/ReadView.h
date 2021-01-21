@@ -244,6 +244,13 @@ public:
     virtual bool
     open() const = 0;
 
+    /** Returns true if hooks fired by applying tx on this ledger can emit transactions to the live TxQ **/
+    virtual bool
+    can_emit()
+    {
+        return false;
+    }
+
     /** Returns the close time of the previous ledger. */
     NetClock::time_point
     parentCloseTime() const

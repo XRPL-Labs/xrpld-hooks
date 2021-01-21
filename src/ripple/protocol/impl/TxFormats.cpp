@@ -41,6 +41,7 @@ TxFormats::TxFormats()
         {sfTxnSignature, soeOPTIONAL},
         {sfSigners, soeOPTIONAL},  // submit_multisigned
         {sfEmitDetails, soeOPTIONAL},
+        {sfFirstLedgerSequence, soeOPTIONAL},
     };
 
     add(jss::AccountSet,

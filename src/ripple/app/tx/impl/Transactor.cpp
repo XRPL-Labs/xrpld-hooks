@@ -248,14 +248,25 @@ Transactor::checkSeq(PreclaimContext const& ctx)
     std::uint32_t const t_seq = ctx.tx.getSequence();
     std::uint32_t const a_seq = sle->getFieldU32(sfSequence);
 
+
+    // pass all emitted tx provided their seq is 0
+    if ( ctx.flags & ApplyFlags::tapEMIT ||
+         ctx.tx.isFieldPresent(sfEmitDetails))
+    {
+        // this is more strictly enforced in the emit() hook api
+        // here this is only acting as a sanity check in case of bugs
+        if (!ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+            return tefINTERNAL;
+
+        return tesSUCCESS;
+    }
+
+    // reserved for emitted tx only at this time
+    if (ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+        return tefINTERNAL;
+
     if (t_seq != a_seq)
     {
-
-        // pass all emitted tx provided their seq is 0
-        if ( ctx.flags & ApplyFlags::tapEMIT ||
-             ctx.tx.isFieldPresent(sfEmitDetails))
-            return tesSUCCESS;
-
         if (a_seq < t_seq)
         {
             JLOG(ctx.j.trace())
@@ -280,6 +291,7 @@ Transactor::checkSeq(PreclaimContext const& ctx)
     if (ctx.tx.isFieldPresent(sfLastLedgerSequence) &&
         (ctx.view.seq() > ctx.tx.getFieldU32(sfLastLedgerSequence)))
         return tefMAX_LEDGER;
+    
 
     return tesSUCCESS;
 }

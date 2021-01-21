@@ -353,6 +353,12 @@ int out_len = 0;\
 #define _02_27_ENCODE_LLS(buf_out, lls )\
     ENCODE_LLS(buf_out, lls );
 
+#define ENCODE_FLS_SIZE 6U
+#define ENCODE_FLS(buf_out, fls )\
+    ENCODE_UINT32_UNCOMMON(buf_out, fls, 0x1A );
+#define _02_26_ENCODE_FLS(buf_out, fls )\
+    ENCODE_FLS(buf_out, fls );
+
 #define ENCODE_TAG_SRC_SIZE 5
 #define ENCODE_TAG_SRC(buf_out, tag )\
     ENCODE_UINT32_COMMON(buf_out, tag, 0x3U );
@@ -409,7 +415,7 @@ int out_len = 0;\
     ENCODE_SIGNING_PUBKEY_NULL(buf_out );
 
 
-#define PREPARE_PAYMENT_SIMPLE_SIZE 231
+#define PREPARE_PAYMENT_SIMPLE_SIZE 237
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount_raw, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
@@ -418,13 +424,15 @@ int out_len = 0;\
         uint64_t drops_fee = (drops_fee_raw);\
         uint32_t dest_tag = (dest_tag_raw);\
         uint32_t src_tag = (src_tag_raw);\
+        uint32_t cls = (uint32_t)ledger_seq();\
         hook_account(SBUF(acc));\
         _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
         _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \
         _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size   5 */ \
         _02_04_ENCODE_SEQUENCE             (buf_out, 0                              );      /* uint32  | size   5 */ \
         _02_14_ENCODE_TAG_DST              (buf_out, dest_tag                       );      /* uint32  | size   5 */ \
-        _02_27_ENCODE_LLS                  (buf_out, ledger_seq() + 5           );          /* uint32  | size   6 */ \
+        _02_26_ENCODE_FLS                  (buf_out, cls + 1                        );      /* uint32  | size   6 */ \
+        _02_27_ENCODE_LLS                  (buf_out, cls + 5                        );      /* uint32  | size   6 */ \
         _06_01_ENCODE_DROPS_AMOUNT         (buf_out, drops_amount                   );      /* amount  | size   9 */ \
         _06_08_ENCODE_DROPS_FEE            (buf_out, drops_fee                      );      /* amount  | size   9 */ \
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \

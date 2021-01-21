@@ -61,6 +61,14 @@ getLastLedgerSequence(STTx const& tx)
     return tx.getFieldU32(sfLastLedgerSequence);
 }
 
+static boost::optional<LedgerIndex>
+getFirstLedgerSequence(STTx const& tx)
+{
+    if (!tx.isFieldPresent(sfFirstLedgerSequence))
+        return boost::none;
+    return tx.getFieldU32(sfFirstLedgerSequence);
+}
+
 static FeeLevel64
 increase(FeeLevel64 level, std::uint32_t increasePercent)
 {
@@ -255,7 +263,8 @@ TxQ::MaybeTx::MaybeTx(
     , flags(flags_)
     , pfresult(pfresult_)
 {
-    lastValid = getLastLedgerSequence(*txn);
+    firstValid = getFirstLedgerSequence(*txn);
+    lastValid  = getLastLedgerSequence(*txn);
 
     if (txn->isFieldPresent(sfAccountTxnID))
         priorTxID = txn->getFieldH256(sfAccountTxnID);
@@ -954,6 +963,7 @@ TxQ::apply(
         feeLevelPaid > requiredFeeLevel && requiredFeeLevel > baseLevel &&
         baseFee != 0)
     {
+
         OpenView sandbox(open_ledger, &view, view.rules());
 
         auto result = tryClearAccountQueue(

@@ -314,6 +314,7 @@ public:
      *
      * @param transaction Transaction object
      * @param bUnlimited Whether a privileged client connection submitted it.
+     * @param bHook Whether a Hook emitted it.
      * @param failType fail_hard setting from transaction submission.
      */
     void

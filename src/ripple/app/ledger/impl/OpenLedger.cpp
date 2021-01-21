@@ -64,6 +64,7 @@ OpenLedger::modify(modify_type const& f)
 {
     std::lock_guard lock1(modify_mutex_);
     auto next = std::make_shared<OpenView>(*current_);
+    next->no_emit_ = false; // RH TODO make a constructor for this
     auto const changed = f(*next, j_);
     if (changed)
     {

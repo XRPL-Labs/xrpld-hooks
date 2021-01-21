@@ -78,6 +78,19 @@ private:
     bool open_ = true;
 
 public:
+
+    //RH TODO protect no_emit_ and use constructors
+    bool no_emit_ = true;
+
+    /**
+     * Hook-emitted transactions affect global state in the form of injection into TxQ
+     * So if this is a sandbox view we must *simulate* but not actually emit tx from hooks
+     */
+    bool can_emit() override
+    {
+        return !no_emit_;
+    }
+
     OpenView() = delete;
     OpenView&
     operator=(OpenView&&) = delete;

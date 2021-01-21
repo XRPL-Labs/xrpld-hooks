@@ -116,6 +116,11 @@ public:
         return flags_ & ApplyFlags::tapEMIT || tx.isFieldPresent(sfEmitDetails);
     }
 
+    bool
+    can_emit()
+    {
+        return base_.can_emit();
+    }
 private:
     TER
     failInvariantCheck(TER const result);
