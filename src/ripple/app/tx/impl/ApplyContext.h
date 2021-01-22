@@ -119,8 +119,12 @@ public:
     bool
     can_emit()
     {
-        return base_.can_emit();
+        printf("ApplyContext.h can_emit() called (%s)\n", (can_emit_ ? "true" : "false"));
+        return can_emit_;
+    //    return base_.can_emit();
     }
+
+    bool can_emit_ = false;
 private:
     TER
     failInvariantCheck(TER const result);

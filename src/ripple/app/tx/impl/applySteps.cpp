@@ -517,6 +517,9 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
     {
         if (!preclaimResult.likelyToClaimFee)
             return {preclaimResult.ter, false};
+
+        printf("doApply: View is %s\n", ( view.open() ? "open" : "closed" )); 
+
         ApplyContext ctx(
             app,
             view,
@@ -525,6 +528,7 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
             calculateBaseFee(view, preclaimResult.tx),
             preclaimResult.flags,
             preclaimResult.j);
+        ctx.can_emit_ = !view.open();
         return invoke_apply(ctx);
     }
     catch (std::exception const& e)

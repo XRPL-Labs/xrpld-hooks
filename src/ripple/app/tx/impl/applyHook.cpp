@@ -476,17 +476,23 @@ void hook::commitChangesToLedger(
         }
     }
 
-    if (!applyCtx.view().can_emit())
-        return;
 
     DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
+
+    printf("applyHook.cpp calling can_emit\n");
+    bool can_emit = applyCtx.can_emit();
+    printf("applyHook.cpp called  can_emit\n");
+
+    printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
 
     auto const& j = applyCtx.app.journal("View");
     auto & netOps = applyCtx.app.getOPs();
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
         auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook: emitted tx: " << tpTrans->getID() << "\n";
+        JLOG(j.trace()) << "Hook: " << ( can_emit ? "" : "simulated " ) << "emitted tx: " << tpTrans->getID() << "\n";
+        if (!can_emit)
+            continue;
         try
         {
             netOps.processTransaction(
