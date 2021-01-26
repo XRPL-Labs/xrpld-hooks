@@ -20,7 +20,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: ""+ ( ~~(Date.now() / 1000) ),
         Destination: "r3Worx88zJEckYcifVdqMvucLS7PNBP76N",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
     api.prepareTransaction(j).then( (x)=> 

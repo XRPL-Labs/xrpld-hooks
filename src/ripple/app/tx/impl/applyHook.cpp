@@ -485,7 +485,36 @@ void hook::commitChangesToLedger(
 
     printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
 
+    auto const k = keylet::emitted();
+    SLE::pointer sle = applyCtx.view().peek(k);
+    if (!sle)
+    {
+        sle = std::make_shared<SLE>(k);
+        applyCtx.view().insert(sle);
+    }
+    
+    //RH TODO investigate whether this copy intensive method of updating EmittedTxns is really needed
     auto const& j = applyCtx.app.journal("View");
+    STArray emittedTxns;
+    if (sle->isFieldPresent(sfEmittedTxns))
+    {
+        auto const& old = sle->getFieldArray(sfEmittedTxns);
+        for (auto v: old)
+            emittedTxns.push_back(v);
+    }
+
+    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
+    {
+        auto& tpTrans = hookResult.emittedTxn.front();
+        JLOG(j.trace()) << "Hook: " << (can_emit ? "" : "Simulated") << " emitted tx: " <<
+                tpTrans->getID() << "\n";
+        emittedTxns.emplace_back(*tpTrans); //sfEmittedTxn);
+//        STObject& obj = emittedTxns.back();
+//        obj.set(tpTrans);
+    }
+    
+    sle->setFieldArray(sfEmittedTxns, emittedTxns);
+/*
     auto & netOps = applyCtx.app.getOPs();
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
@@ -503,7 +532,7 @@ void hook::commitChangesToLedger(
             JLOG(j.warn()) << "Hook: emitted tx failed to process: " << e.what() << "\n";
         }
     }
-
+*/
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
@@ -975,7 +1004,7 @@ DEFINE_HOOK_FUNCTION(
 
 inline int64_t
 serialize_keylet(
-        ripple::Keylet& kl, 
+        ripple::Keylet& kl,
         uint8_t* memory, uint32_t write_ptr, uint32_t write_len)
 {
     if (write_len < 34)

@@ -33,7 +33,6 @@ ssqTAPTFu7oiJEMPtnhCdYoMeUnQQ
         TransactionType: "Payment",
         Amount: "10000000000", // 1000 XRP
         Destination: "rNsA4VzfZZydhGAvfHX3gdpcQMMoJafd6v",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
 

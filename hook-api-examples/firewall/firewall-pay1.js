@@ -26,7 +26,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: "1000000000", // 1000 xrp
         Destination: "rENDKpJtubdd9R7vJiY5oJ1sKXbZifXgUT",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
     api.prepareTransaction(j).then( (x)=>

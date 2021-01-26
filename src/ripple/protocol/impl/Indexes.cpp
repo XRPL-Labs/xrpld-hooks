@@ -60,7 +60,8 @@ enum class LedgerNameSpace : std::uint16_t {
     DEPOSIT_PREAUTH = 'p',
     NEGATIVE_UNL = 'N',
     HOOK = 'H',
-    HOOK_STATE = 'v', 
+    HOOK_STATE = 'v',
+    EMITTED = 'e',
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.
@@ -118,6 +119,14 @@ getTicketIndex(AccountID const& account, std::uint32_t uSequence)
 //------------------------------------------------------------------------------
 
 namespace keylet {
+
+Keylet const&
+emitted() noexcept
+{
+    static Keylet const ret{
+        ltEMITTED, indexHash(LedgerNameSpace::EMITTED)};
+    return ret;
+}
 
 Keylet
 hook(AccountID const& id) noexcept

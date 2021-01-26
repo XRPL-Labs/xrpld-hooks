@@ -258,6 +258,13 @@ LedgerFormats::LedgerFormats()
             {sfNegativeUNLToReEnable, soeOPTIONAL},
         },
         commonFields);
+
+    add(jss::Emitted,
+        ltEMITTED,
+        {
+            {sfEmittedTxns, soeOPTIONAL}
+        },
+        commonFields);
     
 }
 

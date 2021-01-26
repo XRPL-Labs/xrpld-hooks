@@ -27,7 +27,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: "20000000000", // 20k xrp
         Destination: "rnZWXnfmQoRq9mHNB1f9xuWFDj32peHT2Z",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
     api.prepareTransaction(j).then( (x)=>
@@ -43,7 +42,6 @@ api.connect().then(() => {
                 TransactionType: "Payment",
                 Amount: "10000000000", // 10k xrp
                 Destination: "rENDKpJtubdd9R7vJiY5oJ1sKXbZifXgUT",
-                LastLedgerSequence: 20,
                 Fee: "100000"
             }
             api.prepareTransaction(j).then( (x)=>

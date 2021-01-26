@@ -79,7 +79,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: "100000",
         Destination: "rNsA4VzfZZydhGAvfHX3gdpcQMMoJafd6v",
-        LastLedgerSequence: 20,
         InvoiceID: blacklist_pubkey.slice(2),
         Fee: "100000",
         Memos: [

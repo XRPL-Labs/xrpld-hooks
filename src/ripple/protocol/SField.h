@@ -521,6 +521,7 @@ extern SField const sfSignerEntry;
 extern SField const sfSigner;
 extern SField const sfMajority;
 extern SField const sfNegativeUNLEntry;
+extern SField const sfEmittedTxn;
 
 // array of objects
 // ARRAY/1 is reserved for end of array
@@ -535,6 +536,7 @@ extern SField const sfMemos;
 extern SField const sfMajorities;
 extern SField const sfNegativeUNL;
 extern SField const sfEmitDetails;
+extern SField const sfEmittedTxns;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

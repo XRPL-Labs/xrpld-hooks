@@ -66,7 +66,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: "20000000000", // 20k xrp
         Destination: "rUz4tCjPFUobvHoafM5MFGycg4qRuqLxw3",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
     api.prepareTransaction(j).then( (x)=>
@@ -96,7 +95,6 @@ api.connect().then(() => {
                 TransactionType: "Payment",
                 Amount: "100000",
                 Destination: "rNsA4VzfZZydhGAvfHX3gdpcQMMoJafd6v",
-                LastLedgerSequence: 20,
                 InvoiceID: blacklist_pubkey.slice(2),
                 Fee: "100000",
                 Memos: [

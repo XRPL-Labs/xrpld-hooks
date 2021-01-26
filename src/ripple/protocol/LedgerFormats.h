@@ -91,6 +91,8 @@ enum LedgerEntryType {
     ltHOOK ='H',
     ltHOOK_STATE ='v',
 
+    ltEMITTED = 'e',
+
     // No longer used or supported. Left here to prevent accidental
     // reassignment of the ledger type.
     ltNICKNAME [[deprecated]] = 'n',
