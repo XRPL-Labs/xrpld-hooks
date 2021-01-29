@@ -487,15 +487,16 @@ void hook::commitChangesToLedger(
 
     auto const k = keylet::emitted();
     SLE::pointer sle = applyCtx.view().peek(k);
+    bool created = false;
     if (!sle)
     {
         sle = std::make_shared<SLE>(k);
-        applyCtx.view().insert(sle);
+        created = true;
     }
     
     //RH TODO investigate whether this copy intensive method of updating EmittedTxns is really needed
     auto const& j = applyCtx.app.journal("View");
-    STArray emittedTxns;
+    STArray emittedTxns { sfEmittedTxns } ;
     if (sle->isFieldPresent(sfEmittedTxns))
     {
         auto const& old = sle->getFieldArray(sfEmittedTxns);
@@ -508,12 +509,30 @@ void hook::commitChangesToLedger(
         auto& tpTrans = hookResult.emittedTxn.front();
         JLOG(j.trace()) << "Hook: " << (can_emit ? "" : "Simulated") << " emitted tx: " <<
                 tpTrans->getID() << "\n";
-        emittedTxns.emplace_back(*tpTrans); //sfEmittedTxn);
+        std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
+
+        ripple::Serializer s;
+        ptr->add(s);
+        SerialIter sit(s.slice());
+        emittedTxns.emplace_back(ripple::STObject(sit, sfEmittedTxn));
+        //emittedTxns.emplace_back(sfEmittedTxn);
+        //STObject& obj = emittedTxns.back();
+        //obj.set(dynamic_cast<const ripple::STObject&>(*ptr));
+        
+        //emittedTxns.emplace_back(ptr); //sfEmittedTxn);
 //        STObject& obj = emittedTxns.back();
 //        obj.set(tpTrans);
     }
     
     sle->setFieldArray(sfEmittedTxns, emittedTxns);
+    if (created)
+    {
+     //   applyCtx.view().insert(sle);
+        applyCtx.view().insert(sle);
+    } else
+    {
+        applyCtx.view().update(sle);
+    }
 /*
     auto & netOps = applyCtx.app.getOPs();
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())

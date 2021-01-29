@@ -61,7 +61,7 @@ enum class LedgerNameSpace : std::uint16_t {
     NEGATIVE_UNL = 'N',
     HOOK = 'H',
     HOOK_STATE = 'v',
-    EMITTED = 'e',
+    EMITTED = 'E',
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.

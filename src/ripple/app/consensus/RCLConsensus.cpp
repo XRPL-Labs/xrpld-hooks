@@ -43,6 +43,7 @@
 #include <ripple/protocol/BuildInfo.h>
 #include <ripple/protocol/Feature.h>
 #include <ripple/protocol/digest.h>
+#include <ripple/app/misc/Transaction.h> 
 
 #include <algorithm>
 #include <mutex>
@@ -160,6 +161,7 @@ RCLConsensus::Adaptor::share(RCLCxPeerPos const& peerPos)
     app_.overlay().relay(prop, peerPos.suppressionID());
 }
 
+//RH TODO: network bar here
 void
 RCLConsensus::Adaptor::share(RCLCxTx const& tx)
 {
@@ -620,6 +622,57 @@ RCLConsensus::Adaptor::doAccept(
         std::unique_lock sl{ledgerMaster_.peekMutex(), std::defer_lock};
         std::lock(lock, sl);
 
+        // circulate emitted txn into TxQ
+        auto const k = keylet::emitted();
+        auto const sle = built.ledger_->read(k);
+
+        if (sle)
+        {
+            STArray emittedTxns { sfEmittedTxns } ;
+            if (sle->isFieldPresent(sfEmittedTxns))
+            {
+                auto const& old = sle->getFieldArray(sfEmittedTxns);
+                for (auto v: old)
+                {
+
+                    JLOG(j_.trace()) << "Processing emitted tx: " << v << "\n";
+                    ripple::Serializer s;
+                    v.add(s);
+                    SerialIter sitTrans(s.slice()); // do we need slice?
+                    try
+                    {
+                        auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
+                        app_.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
+                        localTxs_.push_back(
+                            ledgerMaster_.getCurrentLedgerIndex(),
+                            stpTrans);
+                    }
+                    catch (std::exception& e)
+                    {
+                        JLOG(j_.warn()) << "Hook: sfEmittedTxn Process Failure: " << e.what() << "\n";
+                    }
+                }
+            }
+        }
+/*                    
+                    std::string reason { "emitted" };
+                    auto tpTrans = std::make_shared<ripple::Transaction>(stpTrans, reason, app_);
+                    if (tpTrans->getStatus() != 0)
+                        JLOG(j_.warn())
+                            << "Hook: Emission failure: tpTrans->getStatus() != NEW";
+                    else
+                        netOps.processTransaction(
+                            tpTrans, false, false, true, NetworkOPs::FailHard::yes);
+                }
+                catch (std::exception& e)
+                {
+                    JLOG(j_.warn()) << "Hook: sfEmittedTxn Process Failure: " << e.what() << "\n";
+                }
+            }
+        }
+    }
+*/
+
         auto const lastVal = ledgerMaster_.getValidatedLedger();
         boost::optional<Rules> rules;
         if (lastVal)
@@ -636,6 +689,12 @@ RCLConsensus::Adaptor::doAccept(
             tapNONE,
             "consensus",
             [&](OpenView& view, beast::Journal j) {
+                // remove any EmittedTxns block from the new ledger
+                auto const k = keylet::emitted();
+                auto sle = view.read(k);
+                if (sle)
+                    view.rawErase(std::make_shared<ripple::STLedgerEntry>(*sle));
+                
                 // Stuff the ledger with transactions from the queue.
                 return app_.getTxQ().accept(app_, view);
             });
@@ -744,6 +803,7 @@ RCLConsensus::Adaptor::buildLCL(
     std::chrono::milliseconds roundTime,
     std::set<TxID>& failedTxs)
 {
+    JLOG(j_.info()) << "=============> buildLCL()\n" ;
     std::shared_ptr<Ledger> built = [&]() {
         if (auto const replayData = ledgerMaster_.releaseReplay())
         {
@@ -760,6 +820,28 @@ RCLConsensus::Adaptor::buildLCL(
             failedTxs,
             j_);
     }();
+
+
+
+/*
+    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
+    {
+        auto& tpTrans = hookResult.emittedTxn.front();
+        JLOG(j.trace()) << "Hook: " << ( can_emit ? "" : "simulated " ) << "emitted tx: " << tpTrans->getID() << "\n";
+        if (!can_emit)
+            continue;
+        try
+        {
+            netOps.processTransaction(
+                tpTrans, false, false, true, NetworkOPs::FailHard::yes);
+        }
+        catch (std::exception& e)
+        {
+            JLOG(j.warn()) << "Hook: emitted tx failed to process: " << e.what() << "\n";
+        }
+    }
+*/
+
 
     // Update fee computations based on accepted txs
     using namespace std::chrono_literals;
