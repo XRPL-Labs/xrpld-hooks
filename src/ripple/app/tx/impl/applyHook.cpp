@@ -479,11 +479,12 @@ void hook::commitChangesToLedger(
 
     DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
 
-    printf("applyHook.cpp calling can_emit\n");
-    bool can_emit = applyCtx.can_emit();
-    printf("applyHook.cpp called  can_emit\n");
 
     printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
+
+    // closed views do not generate emitted tx
+    if (applyCtx.view().open())
+        return;
 
     auto const k = keylet::emitted();
     SLE::pointer sle = applyCtx.view().peek(k);
@@ -507,7 +508,7 @@ void hook::commitChangesToLedger(
     for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
     {
         auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook: " << (can_emit ? "" : "Simulated") << " emitted tx: " <<
+        JLOG(j.trace()) << "Hook: " << " emitted tx: " <<
                 tpTrans->getID() << "\n";
         std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
 
@@ -515,43 +516,16 @@ void hook::commitChangesToLedger(
         ptr->add(s);
         SerialIter sit(s.slice());
         emittedTxns.emplace_back(ripple::STObject(sit, sfEmittedTxn));
-        //emittedTxns.emplace_back(sfEmittedTxn);
-        //STObject& obj = emittedTxns.back();
-        //obj.set(dynamic_cast<const ripple::STObject&>(*ptr));
-        
-        //emittedTxns.emplace_back(ptr); //sfEmittedTxn);
-//        STObject& obj = emittedTxns.back();
-//        obj.set(tpTrans);
     }
     
     sle->setFieldArray(sfEmittedTxns, emittedTxns);
     if (created)
     {
-     //   applyCtx.view().insert(sle);
         applyCtx.view().insert(sle);
     } else
     {
         applyCtx.view().update(sle);
     }
-/*
-    auto & netOps = applyCtx.app.getOPs();
-    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
-    {
-        auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook: " << ( can_emit ? "" : "simulated " ) << "emitted tx: " << tpTrans->getID() << "\n";
-        if (!can_emit)
-            continue;
-        try
-        {
-            netOps.processTransaction(
-                tpTrans, false, false, true, NetworkOPs::FailHard::yes);
-        }
-        catch (std::exception& e)
-        {
-            JLOG(j.warn()) << "Hook: emitted tx failed to process: " << e.what() << "\n";
-        }
-    }
-*/
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */

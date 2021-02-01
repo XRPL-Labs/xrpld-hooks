@@ -528,7 +528,6 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
             calculateBaseFee(view, preclaimResult.tx),
             preclaimResult.flags,
             preclaimResult.j);
-        ctx.can_emit_ = !view.open();
         return invoke_apply(ctx);
     }
     catch (std::exception const& e)

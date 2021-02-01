@@ -640,8 +640,8 @@ RCLConsensus::Adaptor::doAccept(
             [&](OpenView& view, beast::Journal j) {
                 // circulate emitted txn into TxQ
                 auto const k = keylet::emitted();
-                //auto const sle = built.ledger_->read(k);
-                auto sle = view.read(k);
+                auto sle = built.ledger_->read(k);
+                //auto sle = view.read(k);
                 if (sle)
                 {
                     STArray heldOver { sfEmittedTxns } ; // held until their min ledger seq
@@ -695,6 +695,8 @@ RCLConsensus::Adaptor::doAccept(
 
                                 // if it can't be included in the first possible ledger it fails 
                                 //RH TODO: add submission failure logic?                               
+                                //RH TODO: for some reason the emitted txns are held for one extra ledger
+                                //fix this?
 
                             }
                             catch (std::exception& e)
@@ -828,7 +830,6 @@ RCLConsensus::Adaptor::buildLCL(
     std::chrono::milliseconds roundTime,
     std::set<TxID>& failedTxs)
 {
-    JLOG(j_.info()) << "=============> buildLCL()\n" ;
     std::shared_ptr<Ledger> built = [&]() {
         if (auto const replayData = ledgerMaster_.releaseReplay())
         {
@@ -845,27 +846,6 @@ RCLConsensus::Adaptor::buildLCL(
             failedTxs,
             j_);
     }();
-
-
-
-/*
-    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
-    {
-        auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook: " << ( can_emit ? "" : "simulated " ) << "emitted tx: " << tpTrans->getID() << "\n";
-        if (!can_emit)
-            continue;
-        try
-        {
-            netOps.processTransaction(
-                tpTrans, false, false, true, NetworkOPs::FailHard::yes);
-        }
-        catch (std::exception& e)
-        {
-            JLOG(j.warn()) << "Hook: emitted tx failed to process: " << e.what() << "\n";
-        }
-    }
-*/
 
 
     // Update fee computations based on accepted txs

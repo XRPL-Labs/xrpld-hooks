@@ -1472,6 +1472,12 @@ PeerImp::onMessage(std::shared_ptr<protocol::TMTransaction> const& m)
         auto stx = std::make_shared<STTx const>(sit);
         uint256 txID = stx->getTransactionID();
 
+        if (stx->isFieldPresent(sfEmitDetails))
+        {
+            JLOG(p_journal_.warn()) << "Ignoring Network relayed Tx containing sfEmitDetails.";
+            return;
+        }
+
         int flags;
         constexpr std::chrono::seconds tx_interval = 10s;
 
