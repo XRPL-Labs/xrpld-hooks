@@ -16,7 +16,6 @@ api.connect().then(() => {
         TransactionType: "Payment",
         Amount: ""+ ( ~~(Date.now() / 1000) ),
         Destination: "rfCarbonVNTuXckX6x2qTMFmFSnm6dEWGX",
-        LastLedgerSequence: 20,
         Fee: "100000"
     }
 
