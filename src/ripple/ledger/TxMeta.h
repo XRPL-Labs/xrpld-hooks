@@ -57,6 +57,7 @@ public:
     std::uint32_t
     getLgrSeq()
     {
+        std::cout << "getLgrSeq called on " << getTxID() << "\n";
         return mLedger;
     }
     int

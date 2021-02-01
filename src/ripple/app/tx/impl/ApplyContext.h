@@ -113,7 +113,10 @@ public:
     bool
     emitted()
     {
-        return flags_ & ApplyFlags::tapEMIT || tx.isFieldPresent(sfEmitDetails);
+        bool was_emitted = (flags_ & ApplyFlags::tapEMIT) || 
+            tx.isFieldPresent(sfEmitDetails);
+        std::cout << "was_emitted: " << was_emitted << "\n";
+        return was_emitted;
     }
 
     bool

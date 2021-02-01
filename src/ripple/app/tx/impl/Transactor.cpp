@@ -724,7 +724,7 @@ Transactor::operator()()
             if (fireSendingHook)
             {
                 // execute the hook on the sending account
-
+                std::cout << "=>>>>> EXECUTE HOOK ON SENDING ACCOUNT " << accountID << "\n";
                 hook_executed = true;
                 sendResult =
                     hook::apply(
@@ -745,6 +745,7 @@ Transactor::operator()()
                 if (hookReceiving &&
                     hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
                 {
+                    std::cout << "=>>>>> EXECUTE HOOK ON RECEIVING ACCOUNT " << destAccountID << "\n";
                     // execute the hook on the receiving account
                     hook_executed = true;
                     recvResult =
@@ -769,6 +770,8 @@ Transactor::operator()()
                         throw 0;
 
                     AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+
+                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << "\n";
 
                     hook_executed = true;
                     auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
