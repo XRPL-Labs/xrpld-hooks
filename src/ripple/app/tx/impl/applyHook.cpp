@@ -307,8 +307,16 @@ hook::HookResult
         ", Reason: '" <<  hookCtx.result.exitReason.c_str() << "', Exit Code: " << hookCtx.result.exitCode <<
         ", Ledger Seq: " << hookCtx.applyCtx.view().info().seq << "\n";
 
-    if (hookCtx.result.exitType != hook_api::ExitType::ROLLBACK && callback) // callback auto-commits on non-rollback
-        commitChangesToLedger(hookCtx.result, applyCtx);
+    // callback auto-commits on non-rollback
+    if (callback)
+    {
+        // importantly the callback always removes the entry from the ltEMITTED structure
+        uint8_t cclMode = hook::cclREMOVE;
+        // we will only apply changes from the callback if the callback accepted
+        if (hookCtx.result.exitType == hook_api::ExitType::ACCEPT)
+            cclMode |= hook::cclAPPLY;
+        commitChangesToLedger(hookCtx.result, applyCtx, cclMode);
+    }
 
     JLOG(j.trace()) <<
         "Hook: Destroying instance for " << account << "\n";
@@ -458,74 +466,141 @@ DEFINE_HOOK_FUNCTION(
 
 void hook::commitChangesToLedger(
         hook::HookResult& hookResult,
-        ripple::ApplyContext& applyCtx)
+        ripple::ApplyContext& applyCtx,
+        uint8_t cclMode = 0b11U) 
+    /* Mode: (Bits)
+     *  (MSB)      (LSB)
+     * ------------------------
+     * | cclRemove | cclApply |
+     * ------------------------
+     * | 1         | 1        |  Remove old ltEMITTED entry (where applicable) and apply state changes
+     * | 0         | 1        |  Apply but don't Remove
+     * | 1         | 0        |  Remove but don't Apply (used when rollback)
+     * | 0         | 0        |  Do nothing, invalid option
+     * ------------------------
+     */
 {
 
-    // first write all changes to state
-
-    for (const auto& cacheEntry : *(hookResult.changedState)) {
-        bool is_modified = cacheEntry.second.first;
-        const auto& key = cacheEntry.first;
-        const auto& blob = cacheEntry.second.second;
-        if (is_modified) {
-            // this entry isn't just cached, it was actually modified
-            auto HSKeylet = keylet::hook_state(hookResult.account, key);
-            auto slice = Slice(blob.data(), blob.size());
-            setHookState(hookResult, applyCtx, HSKeylet, key, slice);
-            // ^ should not fail... checks were done before map insert
+    auto const& j = applyCtx.app.journal("View");
+    if (cclMode == 0)
+    {
+        JLOG(j.warn()) <<
+            "commitChangesToLedger called with invalid mode (00)";
+        return;
+    }
+    
+    // are we in apply mode?
+    if (cclMode & cclAPPLY)
+    {
+        // write all changes to state, if in "apply" mode
+        for (const auto& cacheEntry : *(hookResult.changedState)) {
+            bool is_modified = cacheEntry.second.first;
+            const auto& key = cacheEntry.first;
+            const auto& blob = cacheEntry.second.second;
+            if (is_modified) {
+                // this entry isn't just cached, it was actually modified
+                auto HSKeylet = keylet::hook_state(hookResult.account, key);
+                auto slice = Slice(blob.data(), blob.size());
+                setHookState(hookResult, applyCtx, HSKeylet, key, slice);
+                // ^ should not fail... checks were done before map insert
+            }
         }
     }
-
-
-    DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
-
-
-    printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
-
-    // closed views do not generate emitted tx
+    
+    // closed views do not modify sleEmitted
     if (applyCtx.view().open())
         return;
 
-    auto const k = keylet::emitted();
-    SLE::pointer sle = applyCtx.view().peek(k);
+    // this is the ownerless ledger object that stores emitted transactions
+    auto const klEmitted = keylet::emitted();
+    SLE::pointer sleEmitted = applyCtx.view().peek(klEmitted);
     bool created = false;
-    if (!sle)
+    if (!sleEmitted)
     {
-        sle = std::make_shared<SLE>(k);
+        sleEmitted = std::make_shared<SLE>(klEmitted);
         created = true;
     }
     
-    //RH TODO investigate whether this copy intensive method of updating EmittedTxns is really needed
-    auto const& j = applyCtx.app.journal("View");
-    STArray emittedTxns { sfEmittedTxns } ;
-    if (sle->isFieldPresent(sfEmittedTxns))
-    {
-        auto const& old = sle->getFieldArray(sfEmittedTxns);
-        for (auto v: old)
-            emittedTxns.push_back(v);
-    }
-
-    for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
-    {
-        auto& tpTrans = hookResult.emittedTxn.front();
-        JLOG(j.trace()) << "Hook: " << " emitted tx: " <<
-                tpTrans->getID() << "\n";
-        std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
-
-        ripple::Serializer s;
-        ptr->add(s);
-        SerialIter sit(s.slice());
-        emittedTxns.emplace_back(ripple::STObject(sit, sfEmittedTxn));
-    }
+    STArray newEmittedTxns { sfEmittedTxns } ;
+    auto const& tx = applyCtx.tx;
+    auto const& old = sleEmitted->getFieldArray(sfEmittedTxns);
     
-    sle->setFieldArray(sfEmittedTxns, emittedTxns);
-    if (created)
+    // the transaction we are processing is itself the product of a hook
+    // so it may be present in the ltEMITTED structure, in which case it should remove itself
+    // but only if we are in "remove" mode 
+    if (tx.isFieldPresent(sfEmitDetails) &&
+        sleEmitted && sleEmitted->isFieldPresent(sfEmittedTxns) &&
+        cclMode & cclREMOVE)
     {
-        applyCtx.view().insert(sle);
-    } else
-    {
-        applyCtx.view().update(sle);
+        auto const& emitDetails = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
+        ripple::uint256 eTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
+        ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
+   
+        //uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
+
+        for (auto v: old)
+        {
+            if (!v.isFieldPresent(sfEmitDetails))
+            {
+                JLOG(j.warn()) << "sfEmitDetails missing from sleEmitted entry";
+                continue;    
+            }
+
+            if (!v.isFieldPresent(sfLastLedgerSequence))
+            {
+                JLOG(j.warn()) << "sfLastLedgerSequence missing from sleEmitted entry";
+                continue;
+            }
+
+            // RH TODO: move these pruning operations to the Change transaction to avoid attaching to unrelated tx
+/*
+            uint32_t tx_lls = v.getFieldU32(sfLastLedgerSequence);
+            if (tx_lls < ledgerSeq)
+            {
+                JLOG(j.trace()) << "sfLastLedgerSequence triggered ltEMITTED prune of etxn with nonce: " << nonce;
+                continue;
+            }
+*/
+            auto const& emitEntry = v.getField(sfEmitDetails).downcast<STObject>();
+            if (emitEntry.getFieldH256(sfEmitParentTxnID) == eTxnID &&
+                emitEntry.getFieldH256(sfEmitNonce) == nonce)
+            {
+                JLOG(j.trace()) << "hook: commitChanges pruned ltEMITTED of etxn with nonce: " << nonce;
+                continue;
+            }
+
+            newEmittedTxns.push_back(v);
+        }    
     }
+    else
+        for (auto v: old)
+            newEmittedTxns.push_back(v);
+
+    if (cclMode & cclAPPLY)
+    {
+        // add all newly emitted txn to the ltEMITTED structure
+        DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
+        printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
+        for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
+        {
+            auto& tpTrans = hookResult.emittedTxn.front();
+            JLOG(j.trace()) << "Hook: " << " emitted tx: " <<
+                    tpTrans->getID() << "\n";
+            std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
+
+            ripple::Serializer s;
+            ptr->add(s);
+            SerialIter sit(s.slice());
+            newEmittedTxns.emplace_back(ripple::STObject(sit, sfEmittedTxn));
+        }
+    }
+
+    sleEmitted->setFieldArray(sfEmittedTxns, newEmittedTxns);
+
+    if (created)
+        applyCtx.view().insert(sleEmitted);
+    else
+        applyCtx.view().update(sleEmitted);
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */

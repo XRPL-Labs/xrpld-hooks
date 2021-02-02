@@ -27,9 +27,9 @@ api.connect().then(() => {
     j = {
         Account: 'rGVvmYqMGwrNMz81wgcoxoCicU357zpAzK',
         TransactionType: "Payment",
-        Amount: "12345", // doubles to 24690
+        Amount: "12346", // doubles to 24690
         Destination: "rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh",
-        Fee: "100000"
+        Fee: "100"
     }
     api.prepareTransaction(j).then( (x)=> 
     {

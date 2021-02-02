@@ -775,6 +775,8 @@ Transactor::operator()()
 
                     hook_executed = true;
                     auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
+
+                    // this call will clean up ltEMITTED as well
                     hook::apply(
                             hookCallback->getFieldH256(sfHookSetTxnID),
                             hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
@@ -793,28 +795,24 @@ Transactor::operator()()
         }
         while (0); // do {} while(0) used to make above control flow easy
 
+
         // Three possible outcomes after execution: An error, a rollback or an accept
         if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
             (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
-        {
             // error condition
             result = temMALFORMED;
-        } else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
+        else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
                    (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
-        {
             // rollback condition
-            // do not apply state changes
             result = tecHOOK_REJECTED;
-        } else
+        else
+            // only apply ledger changes if we are not processing a rollback/error
         {
-            // no error or rollback however a hook may only have been present on one account
-            // if sending hook accepted commit changes
-            if (sendResult && sendResult->exitType == hook_api::ExitType::ACCEPT) // defensive
-                hook::commitChangesToLedger(*sendResult, ctx_);
+            if (sendResult)
+                hook::commitChangesToLedger(*sendResult, ctx_, hook::cclAPPLY);
 
-            // if recving hook accepted commit changes
-            if (recvResult && recvResult->exitType == hook_api::ExitType::ACCEPT)
-                hook::commitChangesToLedger(*recvResult, ctx_);
+            if (recvResult)
+                hook::commitChangesToLedger(*recvResult, ctx_, hook::cclAPPLY); 
         }
     }
 

@@ -231,6 +231,9 @@ namespace hook_api {
 
 namespace hook {
 
+
+
+
     bool canHook(ripple::TxType txType, uint64_t hookOn);
 
     struct HookResult;
@@ -292,8 +295,14 @@ namespace hook {
         ripple::Slice& data
     );
 
+    // commit changes to ledger flags
+    enum cclFlags : uint8_t {
+        cclREMOVE = 0b10U,
+        cclAPPLY  = 0b01U
+    };
+
     // finalize the changes the hook made to the ledger
-    void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext& );
+    void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext&, uint8_t );
 
     #define ADD_HOOK_FUNCTION(F, ctx)\
         addHostFunc(#F, std::make_unique<hook_api::WasmFunction_##F>(ctx))

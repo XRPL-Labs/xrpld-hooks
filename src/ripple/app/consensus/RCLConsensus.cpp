@@ -639,81 +639,64 @@ RCLConsensus::Adaptor::doAccept(
             "consensus",
             [&](OpenView& view, beast::Journal j) {
                 // circulate emitted txn into TxQ
-                auto const k = keylet::emitted();
-                auto sle = built.ledger_->read(k);
-                //auto sle = view.read(k);
-                if (sle)
+                auto sle = view.read(keylet::emitted());
+                if (sle && sle->isFieldPresent(sfEmittedTxns))
                 {
-                    STArray heldOver { sfEmittedTxns } ; // held until their min ledger seq
-                    if (sle->isFieldPresent(sfEmittedTxns))
+                    //RH TODO: do we need to reconstruct this object every time?
+
+                    auto const& old = sle->getFieldArray(sfEmittedTxns);
+                    for (auto v: old)
                     {
-                        //RH TODO: do we need to reconstruct this object every time?
-                        view.rawErase(std::make_shared<ripple::STLedgerEntry>(*sle));
 
-                        auto const& old = sle->getFieldArray(sfEmittedTxns);
-                        for (auto v: old)
+                        JLOG(j_.trace()) << "Processing emitted tx: " << v << "\n";
+                        auto s = std::make_shared<ripple::Serializer>();
+                        v.add(*s);
+                        SerialIter sitTrans(s->slice()); // do we need slice?
+                        try
                         {
+                            auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
 
-                            JLOG(j_.trace()) << "Processing emitted tx: " << v << "\n";
-                            auto s = std::make_shared<ripple::Serializer>();
-                            v.add(*s);
-                            SerialIter sitTrans(s->slice()); // do we need slice?
-                            try
+                            if (!stpTrans->isFieldPresent(sfEmitDetails) ||
+                                    !stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
+                                    !stpTrans->isFieldPresent(sfLastLedgerSequence))
                             {
-                                auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
-
-                                if (!stpTrans->isFieldPresent(sfEmitDetails) ||
-                                        !stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
-                                        !stpTrans->isFieldPresent(sfLastLedgerSequence))
-                                {
-                                    JLOG(j_.warn())
-                                        << "Hook: Emission failure: sfEmitDetails or sfFirst/LastLedgerSeq missing.";
-                                    continue;
-                                }
-                                if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
-                                {
-                                    JLOG(j_.warn())
-                                        << "Hook: Emitted transaction expired before it could be processed.";
-                                    continue;
-                                }
-
-                                auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
-                                if (fls > view.info().seq)
-                                {
-                                    JLOG(j_.info()) <<
-                                        "Holding TX " << stpTrans->getTransactionID() << " for future ledger.";
-                                    heldOver.emplace_back(v);
-                                    continue;
-                                }
-                                // execution to here means we are adding the tx to the local set
-
-                                if (fls == view.info().seq)
-                                {
-                                    app_.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
-                                    view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
-                                }
-
-                                // if it can't be included in the first possible ledger it fails 
-                                //RH TODO: add submission failure logic?                               
-                                //RH TODO: for some reason the emitted txns are held for one extra ledger
-                                //fix this?
-
+                                JLOG(j_.warn())
+                                    << "Hook: Emission failure: "
+                                    << "sfEmitDetails or sfFirst/LastLedgerSeq missing.";
+                                continue;
                             }
-                            catch (std::exception& e)
+                            if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
                             {
-                                JLOG(j_.warn()) << "Hook: sfEmittedTxn Process Failure: " << e.what() << "\n";
+                                JLOG(j_.warn())
+                                    << "Hook: Emitted transaction expired before it could be processed.";
+                                continue;
                             }
+
+                            auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
+                            if (fls > view.info().seq)
+                            {
+                                JLOG(j_.info()) <<
+                                    "Holding TX " << stpTrans->getTransactionID() << " for future ledger.";
+                                continue;
+                            }
+
+                            // execution to here means we are adding the tx to the local set
+                            if (fls >= view.info().seq)
+                            {
+                                app_.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
+                                view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
+                            }
+
                         }
-
-
-                        if (!heldOver.empty())
+                        catch (std::exception& e)
                         {
-                            auto sle = std::make_shared<SLE>(k);
-                            sle->setFieldArray(sfEmittedTxns, heldOver);
-                            view.rawInsert(sle);
+                            JLOG(j_.warn()) << "Hook: sfEmittedTxn Process Failure: " << e.what() << "\n";
                         }
                     }
+
+
                 }
+                //view.rawInsert(sle);
 
                 /*
                 // remove any EmittedTxns block from the new ledger
