@@ -536,7 +536,6 @@ extern SField const sfMemos;
 extern SField const sfMajorities;
 extern SField const sfNegativeUNL;
 extern SField const sfEmitDetails;
-extern SField const sfEmittedTxns;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

@@ -489,7 +489,7 @@ void hook::commitChangesToLedger(
         return;
     }
     
-    // are we in apply mode?
+    // write hook state changes, if we are allowed to
     if (cclMode & cclAPPLY)
     {
         // write all changes to state, if in "apply" mode
@@ -507,10 +507,97 @@ void hook::commitChangesToLedger(
         }
     }
     
-    // closed views do not modify sleEmitted
+    // closed views do not modify add/remove ledger entries
     if (applyCtx.view().open())
         return;
 
+    Keylet const emittedDirKeylet { keylet::emittedDir() };
+
+    // apply emitted transactions to the ledger (by adding them to the emitted directory) if we are allowed to
+    if (cclMode & cclAPPLY)
+    {
+        DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
+        printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
+        for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
+        {
+            auto& tpTrans = hookResult.emittedTxn.front();
+            auto& id = tpTrans->getID();
+            JLOG(j.trace()) 
+                << "Hook: " << " emitted tx: " << id << "\n";
+
+            std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
+
+            ripple::Serializer s;
+            ptr->add(s);
+            SerialIter sit(s.slice());
+
+            auto emittedId = keylet::emitted(id);
+
+            auto page = applyCtx.view().dirAppend(
+                emittedDirKeylet,
+                emittedId,
+                [&](SLE::ref sle) {
+                // RH TODO: should something be here?
+                });
+
+            auto sleEmitted = std::make_shared<SLE>(emittedId);
+            if (page)
+            {
+                (*sleEmitted)[sfOwnerNode] = *page;
+                sleEmitted->emplace_back(ripple::STObject(sit, sfEmittedTxn));
+                sleEmitted->setFieldU16(sfLedgerEntryType
+                applyCtx.view().insert(sleEmitted);
+            }
+            else
+            {
+                JLOG(j.warn())
+                    << "Hook: Emitted Directory full when trying to insert " << id;
+            }
+        }
+    }
+
+    // remove this (activating) transaction from the emitted directory if we were instructed to
+    if (cclMode & cclREMOVE)
+    {
+        auto const& tx = applyCtx.tx;
+        if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
+        {
+            JLOG(j.warn())
+                << "Hook: Tried to cclREMOVE on non-emitted tx";
+            return;
+        }
+
+        auto key = keylet::emitted(tx.getTransactionID());
+
+        auto const& sle = applyCtx.view().peek(key);
+
+        if (!sle)
+        {
+            JLOG(j.warn()) 
+                << "Hook: ccl tried to remove already removed emittedtxn";
+            return;
+        }
+        auto offerIndex = sle->key();
+        auto owner = sle->getAccountID(sfAccount);
+
+        if (!applyCtx.view().dirRemove(
+                keylet::emittedDir(),
+                sle->getFieldU64(sfOwnerNode),
+                key,
+                false))
+        {
+            JLOG(j.fatal())
+                << "Hook: ccl tefBAD_LEDGER";
+            return;
+        }
+    
+        applyCtx.view().erase(sle);
+        return;
+    }
+
+}
+
+/*    
     // this is the ownerless ledger object that stores emitted transactions
     auto const klEmitted = keylet::emitted();
     SLE::pointer sleEmitted = applyCtx.view().peek(klEmitted);
@@ -553,14 +640,13 @@ void hook::commitChangesToLedger(
             }
 
             // RH TODO: move these pruning operations to the Change transaction to avoid attaching to unrelated tx
-/*
-            uint32_t tx_lls = v.getFieldU32(sfLastLedgerSequence);
-            if (tx_lls < ledgerSeq)
-            {
-                JLOG(j.trace()) << "sfLastLedgerSequence triggered ltEMITTED prune of etxn with nonce: " << nonce;
-                continue;
-            }
-*/
+
+//            uint32_t tx_lls = v.getFieldU32(sfLastLedgerSequence);
+//            if (tx_lls < ledgerSeq)
+//            {
+//                JLOG(j.trace()) << "sfLastLedgerSequence triggered ltEMITTED prune of etxn with nonce: " << nonce;
+//                continue;
+//            }
             auto const& emitEntry = v.getField(sfEmitDetails).downcast<STObject>();
             if (emitEntry.getFieldH256(sfEmitParentTxnID) == eTxnID &&
                 emitEntry.getFieldH256(sfEmitNonce) == nonce)
@@ -576,33 +662,13 @@ void hook::commitChangesToLedger(
         for (auto v: old)
             newEmittedTxns.push_back(v);
 
-    if (cclMode & cclAPPLY)
-    {
-        // add all newly emitted txn to the ltEMITTED structure
-        DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
-        printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
-        for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
-        {
-            auto& tpTrans = hookResult.emittedTxn.front();
-            JLOG(j.trace()) << "Hook: " << " emitted tx: " <<
-                    tpTrans->getID() << "\n";
-            std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
-
-            ripple::Serializer s;
-            ptr->add(s);
-            SerialIter sit(s.slice());
-            newEmittedTxns.emplace_back(ripple::STObject(sit, sfEmittedTxn));
-        }
-    }
-
     sleEmitted->setFieldArray(sfEmittedTxns, newEmittedTxns);
 
     if (created)
         applyCtx.view().insert(sleEmitted);
     else
         applyCtx.view().update(sleEmitted);
-}
-
+*/
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
 DEFINE_HOOK_FUNCTION(
     int64_t,

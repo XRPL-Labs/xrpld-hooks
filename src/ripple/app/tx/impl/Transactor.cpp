@@ -776,7 +776,7 @@ Transactor::operator()()
                     hook_executed = true;
                     auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
 
-                    // this call will clean up ltEMITTED as well
+                    // this call will clean up ltEMITTED_NODE as well
                     hook::apply(
                             hookCallback->getFieldH256(sfHookSetTxnID),
                             hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);

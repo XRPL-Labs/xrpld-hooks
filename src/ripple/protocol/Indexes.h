@@ -50,7 +50,10 @@ namespace keylet {
 
 /** The (fixed) index of the object containing the emitted txns for the ledger. */
 Keylet const&
-emitted() noexcept;
+emittedDir() noexcept;
+
+Keylet const&
+emitted(uint256 const& id) noexcept;
 
 Keylet
 hook(AccountID const& id) noexcept;
