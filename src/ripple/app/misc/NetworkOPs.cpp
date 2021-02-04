@@ -38,6 +38,7 @@
 #include <ripple/app/misc/ValidatorList.h>
 #include <ripple/app/misc/impl/AccountTxPaging.h>
 #include <ripple/app/tx/apply.h>
+#include <ripple/app/tx/applyHook.h>
 #include <ripple/basics/PerfLog.h>
 #include <ripple/basics/UptimeClock.h>
 #include <ripple/basics/base64.h>
@@ -81,7 +82,6 @@ class NetworkOPsImp final : public NetworkOPs
         std::shared_ptr<Transaction> const transaction;
         bool const admin;
         bool const local;
-        bool const hook;
         FailHard const failType;
         bool applied = false;
         TER result;
@@ -90,11 +90,10 @@ class NetworkOPsImp final : public NetworkOPs
             std::shared_ptr<Transaction> t,
             bool a,
             bool l,
-            bool h,
             FailHard f)
-            : transaction(t), admin(a), local(l), hook(h), failType(f)
+            : transaction(t), admin(a), local(l), failType(f)
         {
-            assert(local || hook || failType == FailHard::no);
+            assert(local || failType == FailHard::no);
         }
     };
 
@@ -290,7 +289,6 @@ public:
         std::shared_ptr<Transaction>& transaction,
         bool bUnlimited,
         bool bLocal,
-        bool bHook,
         FailHard failType) override;
 
     /**
@@ -314,14 +312,12 @@ public:
      *
      * @param transaction Transaction object
      * @param bUnlimited Whether a privileged client connection submitted it.
-     * @param bHook Whether a Hook emitted it.
      * @param failType fail_hard setting from transaction submission.
      */
     void
     doTransactionAsync(
         std::shared_ptr<Transaction> transaction,
         bool bUnlimited,
-        bool bHook,
         FailHard failtype);
 
     /**
@@ -1102,6 +1098,7 @@ NetworkOPsImp::strOperatingMode(OperatingMode const mode, bool const admin)
     return states_[static_cast<std::size_t>(mode)];
 }
 
+
 void
 NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
 {
@@ -1111,13 +1108,16 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
         return;
     }
 
-    if (iTrans->isFieldPresent(sfEmitDetails))
+    auto const view = m_ledgerMaster.getCurrentLedger();
+
+    // Enforce Network bar for emitted txn
+    if (view->rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(*iTrans))
     {
         JLOG(m_journal.warn())
-            << "Submitted transaction invalid [contained sfEmitDetails]";
+            << "Submitted transaction invalid: EmitDetails present.";
         return;
     }
-
 
     // this is an asynchronous interface
     auto const trans = sterilize(*iTrans);
@@ -1159,7 +1159,7 @@ NetworkOPsImp::submitTransaction(std::shared_ptr<STTx const> const& iTrans)
 
     m_job_queue.addJob(jtTRANSACTION, "submitTxn", [this, tx](Job&) {
         auto t = tx;
-        processTransaction(t, false, false, false, FailHard::no);
+        processTransaction(t, false, false, FailHard::no);
     });
 }
 
@@ -1168,50 +1168,24 @@ NetworkOPsImp::processTransaction(
     std::shared_ptr<Transaction>& transaction,
     bool bUnlimited,
     bool bLocal,
-    bool bHook,
     FailHard failType)
 {
     auto ev = m_job_queue.makeLoadEvent(jtTXN_PROC, "ProcessTXN");
   
     auto const view = m_ledgerMaster.getCurrentLedger();
-    if (view->rules().enabled(featureHooks)) 
-    { 
-        // we bypass signature checking for valid hook-emitted transactions
-
-        /* Truth table for processing hook tx:
-         * +-----------------+------------+------------+
-         * |                 | !bHook     | bHook      |
-         * +-----------------+------------+------------+
-         * | !sfEmitDetails  | 1. normal  | 2. invalid |
-         * +-----------------+------------+------------+
-         * |  sfEmitDetails  | 3. invalid | 4. valid   |
-         * +-----------------+------------+------------+
-         */
-
-        bool hasEmitDetails = transaction->getSTransaction()->isFieldPresent(sfEmitDetails);
-
-        if (bHook && hasEmitDetails) // 4
-            app_.getHashRouter().setFlags(transaction->getID(), SF_PRIVATE2);
-        else if (hasEmitDetails || bHook) // 2, 3
-        {
-            // if we receive a transaction without sfEmitDetails from a hook
-            // we ignore it
-            // if we receive a transaction with sfEmitDetails
-            // other than from a hook we ignore it...
-            //   however we won't set it to bad in the hash router's cache
-            //   because this opens an attack vector whereby a malicious actor
-            //   could precompute emitted tx and send them to validators
-            //   and thereby cause hooks' legitimate emitted tx not to be processed 
-            return;
-        } else // 1
-        {
-            // not a hook related tx, continue as normal
-        }
-    } else if (bHook)
+    
+    // Enforce Network bar for emitted txn
+    if (view->rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(*transaction->getSTransaction()))
     {
-        JLOG(m_journal.info()) << "Hook-emitted txn detected but hooks not enabled\n";
-        // RH TODO this should probably be fatal...
+        JLOG(m_journal.warn())
+            << "Submitted transaction invalid: EmitDetails present.";
+        //RH NOTE: cannot set SF_BAD because if the tx will be generated by a hook we are about to execute
+        //then this would poison consensus for that emitted tx
+        //RH TODO: (severely) charge peer who sent
+        return;
     }
+
     auto const newFlags = app_.getHashRouter().getFlags(transaction->getID());
 
     if ((newFlags & SF_BAD) != 0)
@@ -1249,32 +1223,28 @@ NetworkOPsImp::processTransaction(
     if (bLocal)
         doTransactionSync(transaction, bUnlimited, failType);
     else 
-        doTransactionAsync(transaction, bUnlimited, bHook, failType);
+        doTransactionAsync(transaction, bUnlimited, failType);
 }
 
 void
 NetworkOPsImp::doTransactionAsync(
     std::shared_ptr<Transaction> transaction,
     bool bUnlimited,
-    bool bHook,
     FailHard failType)
 {
     std::lock_guard lock(mMutex);
     
     auto const view = m_ledgerMaster.getCurrentLedger();
-    if (!view->rules().enabled(featureHooks) && bHook)
-    {
-        JLOG(m_journal.warn())
-            << "doTransactionAsync transaction submitted with bHook=true but Hooks amendment not enabled\n";
-        return;
-    }
 
-    // RH this check might not be needed? but we don't want any route by which 
-    // sfEmitDetails can be queued other than by valid emission from a hook
-    if (!bHook && transaction->getSTransaction()->isFieldPresent(sfEmitDetails))
-    {   
-        JLOG(m_journal.warn())
-            << "doTransactionAsync transaction invalid [contained sfEmitDetails]";
+    // Enforce Network bar for emitted txn
+    if (view->rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(*transaction->getSTransaction()))
+    {
+        JLOG(m_journal.info())
+            << "Transaction received over network has EmitDetails, discarding.";
+        //RH NOTE: cannot set SF_BAD because if the tx will be generated by a hook we are about to execute
+        //then this would poison consensus for that emitted tx
+        //RH TODO: (severely) charge peer who sent
         return;
     }
 
@@ -1282,7 +1252,7 @@ NetworkOPsImp::doTransactionAsync(
         return;
 
     mTransactions.push_back(
-        TransactionStatus(transaction, bUnlimited, false, bHook, failType));
+        TransactionStatus(transaction, bUnlimited, false, failType));
     transaction->setApplying();
 
     if (mDispatchState == DispatchState::none)
@@ -1304,20 +1274,24 @@ NetworkOPsImp::doTransactionSync(
 {
     std::unique_lock<std::mutex> lock(mMutex);
 
-    // RH this check might not be needed? but we don't want any route by which 
-    // sfEmitDetails can be queued other than by valid emission from a hook
-    if (transaction->getSTransaction()->isFieldPresent(sfEmitDetails))
-    {   
-        JLOG(m_journal.warn())
-            << "doTransactionSync transaction invalid [contained sfEmitDetails]";
+    auto const view = m_ledgerMaster.getCurrentLedger();
+
+    // Enforce Network bar for emitted txn
+    if (view->rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(*transaction->getSTransaction()))
+    {
+        JLOG(m_journal.info())
+            << "Transaction received over network has EmitDetails, discarding.";
+        //RH NOTE: cannot set SF_BAD because if the tx will be generated by a hook we are about to execute
+        //then this would poison consensus for that emitted tx
+        //RH TODO: (severely) charge peer who sent
         return;
     }
-
 
     if (!transaction->getApplying())
     {
         mTransactions.push_back(
-            TransactionStatus(transaction, bUnlimited, true, false, failType));
+            TransactionStatus(transaction, bUnlimited, true, failType));
         transaction->setApplying();
     }
 
@@ -1393,10 +1367,6 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                     if (e.failType == FailHard::yes)
                         flags |= tapFAIL_HARD;
 
-                    // if the transaction was emitted by a hook we set this apply flag
-                    if (e.hook)
-                        flags |= tapEMIT;
-
                     auto const result = app_.getTxQ().apply(
                         app_, view, e.transaction->getSTransaction(), flags, j);
                     e.result = result.first;
@@ -1459,7 +1429,7 @@ NetworkOPsImp::apply(std::unique_lock<std::mutex>& batchLock)
                     std::string reason;
                     auto const trans = sterilize(*tx);
                     auto t = std::make_shared<Transaction>(trans, reason, app_);
-                    submit_held.emplace_back(t, false, false, false, FailHard::no);
+                    submit_held.emplace_back(t, false, false, FailHard::no);
                     t->setApplying();
                 }
             }

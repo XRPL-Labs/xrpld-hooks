@@ -2446,7 +2446,7 @@ PeerImp::checkTransaction(
 
         bool const trusted(flags & SF_TRUSTED);
         app_.getOPs().processTransaction(
-            tx, trusted, false, false, NetworkOPs::FailHard::no);
+            tx, trusted, false, NetworkOPs::FailHard::no);
     }
     catch (std::exception const&)
     {

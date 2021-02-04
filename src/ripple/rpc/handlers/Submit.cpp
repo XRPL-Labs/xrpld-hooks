@@ -132,7 +132,7 @@ doSubmit(RPC::JsonContext& context)
         auto const failType = getFailHard(context);
 
         context.netOps.processTransaction(
-            tpTrans, isUnlimited(context.role), true, false, failType);
+            tpTrans, isUnlimited(context.role), true, failType);
     }
     catch (std::exception& e)
     {
@@ -262,7 +262,7 @@ doSubmitGrpc(
 
         // submit to network
         context.netOps.processTransaction(
-            tpTrans, isUnlimited(context.role), true, false, failType);
+            tpTrans, isUnlimited(context.role), true, failType);
     }
     catch (std::exception& e)
     {

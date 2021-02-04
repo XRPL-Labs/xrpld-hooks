@@ -139,7 +139,6 @@ public:
         std::shared_ptr<Transaction>& transaction,
         bool bUnlimited,
         bool bLocal,
-        bool bHook,
         FailHard failType) = 0;
 
     //--------------------------------------------------------------------------

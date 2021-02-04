@@ -110,13 +110,9 @@ public:
     TER
     checkInvariants(TER const result, XRPAmount const fee);
 
-    bool
-    emitted()
+    bool emitted()
     {
-        bool was_emitted = (flags_ & ApplyFlags::tapEMIT) || 
-            tx.isFieldPresent(sfEmitDetails);
-        std::cout << "was_emitted: " << was_emitted << "\n";
-        return was_emitted;
+        return tx.isFieldPresent(sfEmitDetails);
     }
 
 private:

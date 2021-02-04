@@ -77,6 +77,10 @@ int hook::maxHookStateDataSize(void) {
     return 128;
 }
 
+bool hook::isEmittedTxn(ripple::STTx const& tx)
+{
+    return tx.isFieldPresent(ripple::sfEmitDetails);
+}
 // many datatypes can be encoded into an int64_t
 inline int64_t data_as_int64(
         void* ptr_raw,
@@ -545,7 +549,7 @@ void hook::commitChangesToLedger(
             {
                 (*sleEmitted)[sfOwnerNode] = *page;
                 sleEmitted->emplace_back(ripple::STObject(sit, sfEmittedTxn));
-                sleEmitted->setFieldU16(sfLedgerEntryType
+                sleEmitted->setFieldU16(sfLedgerEntryType, ltEMITTED);
                 applyCtx.view().insert(sleEmitted);
             }
             else

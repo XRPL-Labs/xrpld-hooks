@@ -78,7 +78,8 @@ preflight1(PreflightContext const& ctx)
     // if a hook emitted this transaction we bypass signature checks
     // there is a bar to circularing emitted transactions on the network
     // in their prevalidated form so this is safe
-    if (ctx.flags & ApplyFlags::tapEMIT || ctx.tx.isFieldPresent(sfEmitDetails))
+    if (ctx.rules.enabled(featureHooks) && 
+        hook::isEmittedTxn(ctx.tx))
         return tesSUCCESS;
 
     auto const spk = ctx.tx.getSigningPubKey();
@@ -250,14 +251,13 @@ Transactor::checkSeq(PreclaimContext const& ctx)
 
 
     // pass all emitted tx provided their seq is 0
-    if ( ctx.flags & ApplyFlags::tapEMIT ||
-         ctx.tx.isFieldPresent(sfEmitDetails))
+    if (ctx.view.rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(ctx.tx))
     {
         // this is more strictly enforced in the emit() hook api
         // here this is only acting as a sanity check in case of bugs
         if (!ctx.tx.isFieldPresent(sfFirstLedgerSequence))
             return tefINTERNAL;
-
         return tesSUCCESS;
     }
 
@@ -358,8 +358,8 @@ NotTEC
 Transactor::checkSign(PreclaimContext const& ctx)
 {
     // hook emitted transactions do not have signatures
-    if (ctx.flags & ApplyFlags::tapEMIT ||
-        ctx.tx.isFieldPresent(sfEmitDetails))
+    if (ctx.view.rules().enabled(featureHooks) && 
+        hook::isEmittedTxn(ctx.tx))
         return tesSUCCESS;
 
     // If the pk is empty, then we must be multi-signing.

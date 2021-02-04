@@ -3,6 +3,7 @@
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/app/misc/Transaction.h>
+#include <ripple/protocol/SField.h>
 #include <queue>
 #include <optional>
 #include <any>
@@ -17,6 +18,9 @@
 
 namespace hook {
     struct HookContext;
+
+    bool isEmittedTxn(ripple::STTx const& tx);
+
 }
 
 namespace hook_api {

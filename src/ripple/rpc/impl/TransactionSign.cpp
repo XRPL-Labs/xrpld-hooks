@@ -841,7 +841,7 @@ transactionSubmit(
     try
     {
         // FIXME: For performance, should use asynch interface
-        processTransaction(txn.second, isUnlimited(role), true, false, failType);
+        processTransaction(txn.second, isUnlimited(role), true, failType);
     }
     catch (std::exception&)
     {
@@ -1224,7 +1224,7 @@ transactionSubmitMultiSigned(
     try
     {
         // FIXME: For performance, should use asynch interface
-        processTransaction(txn.second, isUnlimited(role), true, false, failType);
+        processTransaction(txn.second, isUnlimited(role), true, failType);
     }
     catch (std::exception&)
     {
