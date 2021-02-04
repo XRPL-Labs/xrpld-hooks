@@ -515,8 +515,6 @@ void hook::commitChangesToLedger(
     if (applyCtx.view().open())
         return;
 
-    Keylet const emittedDirKeylet { keylet::emittedDir() };
-
     // apply emitted transactions to the ledger (by adding them to the emitted directory) if we are allowed to
     if (cclMode & cclAPPLY)
     {
@@ -537,25 +535,34 @@ void hook::commitChangesToLedger(
 
             auto emittedId = keylet::emitted(id);
 
-            auto page = applyCtx.view().dirAppend(
-                emittedDirKeylet,
-                emittedId,
-                [&](SLE::ref sle) {
-                // RH TODO: should something be here?
-                });
+            auto sleEmitted = applyCtx.view().peek(emittedId);
+            if (!sleEmitted)
+            {
+                JLOG(j.info())
+                    << "^^^^^^^^^^^^^^^^^ Creating sleEmitted";
+                sleEmitted = std::make_shared<SLE>(emittedId);
+                //sleEmitted->delField(sfEmittedTxn);
+                sleEmitted->emplace_back(
+                    ripple::STObject(sit, sfEmittedTxn) 
+                );
 
-            auto sleEmitted = std::make_shared<SLE>(emittedId);
-            if (page)
-            {
-                (*sleEmitted)[sfOwnerNode] = *page;
-                sleEmitted->emplace_back(ripple::STObject(sit, sfEmittedTxn));
-                sleEmitted->setFieldU16(sfLedgerEntryType, ltEMITTED);
-                applyCtx.view().insert(sleEmitted);
-            }
-            else
-            {
-                JLOG(j.warn())
-                    << "Hook: Emitted Directory full when trying to insert " << id;
+                auto page = applyCtx.view().dirAppend(
+                    keylet::emittedDir(),
+                    emittedId,
+                    [&](SLE::ref sle) {
+                    // RH TODO: should something be here?
+                    });
+
+                if (page)
+                {
+                    (*sleEmitted)[sfOwnerNode] = *page;
+                    applyCtx.view().insert(sleEmitted);
+                }
+                else
+                {
+                    JLOG(j.warn())
+                        << "Hook: Emitted Directory full when trying to insert " << id;
+                }
             }
         }
     }
@@ -581,8 +588,6 @@ void hook::commitChangesToLedger(
                 << "Hook: ccl tried to remove already removed emittedtxn";
             return;
         }
-        auto offerIndex = sle->key();
-        auto owner = sle->getAccountID(sfAccount);
 
         if (!applyCtx.view().dirRemove(
                 keylet::emittedDir(),

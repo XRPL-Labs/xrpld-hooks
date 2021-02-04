@@ -763,33 +763,49 @@ Transactor::operator()()
             // Finally check if there is a callback
             if (ctx_.tx.isFieldPresent(sfEmitDetails))
             {
-                try {
+                //try {
                     auto const& emitDetails =
                         const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
+
                     if (!emitDetails.isFieldPresent(sfEmitCallback))
-                        throw 0;
+                    {
+                        JLOG(j_.fatal()) << "Hook Callback Processing: Failure: sfEmitCallback missing\n";
+                        break;
+                    }
 
                     AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
 
-                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << "\n";
-
+                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << " TX: " 
+                        << ctx_.tx.getTransactionID() << "\n";
+            
                     hook_executed = true;
                     auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
 
                     // this call will clean up ltEMITTED_NODE as well
-                    hook::apply(
+                    try {
+                     hook::apply(
                             hookCallback->getFieldH256(sfHookSetTxnID),
                             hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
 
+                    }
+                    catch (std::exception& e)                                                                          
+                    {                                                                                                  
+                        JLOG(j_.fatal()) << "%%%%%%%%%Hook Callback Processing: Failure: " << e.what() << "\n";                     
+                    } 
                     // callback is unable to affect the application of an already Emitted Tx to the ledger
                     // so we're done
-
+                /*}
+                catch (std::exception& e)                                                                          
+                {                                                                                                  
+                    JLOG(j_.fatal()) << "Hook Callback Processing: Failure: " << e.what() << "\n";                     
+                } */
+                    /*
                 } catch ( ... )
                 {
                     if (auto stream = j_.fatal())
                         stream << "invalid emitDetails block in applied transaction";
                     assert(false);
-                }
+                }*/
             }
 
         }

@@ -683,6 +683,8 @@ RCLConsensus::Adaptor::doAccept(
                         return changed;
                     }
 
+                    JLOG(j.info()) << "Processing emitted txn: " << *sleItem;
+
                     auto const& emitted =
                         const_cast<ripple::STLedgerEntry&>(*sleItem).getField(sfEmittedTxn).downcast<STObject>();
 
@@ -702,12 +704,13 @@ RCLConsensus::Adaptor::doAccept(
                                 << "sfEmitDetails or sfFirst/LastLedgerSeq missing.";
                             continue;
                         }
-                        if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
+                        
+                        /*if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
                         {
                             JLOG(j_.warn())
                                 << "Hook: Emitted transaction expired before it could be processed.";
                             continue;
-                        }
+                        }*/
 
                         auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
                         if (fls > view.info().seq)
@@ -730,7 +733,6 @@ RCLConsensus::Adaptor::doAccept(
                     {
                         JLOG(j.fatal()) << "EmittedTxn Processing: Failure: " << e.what() << "\n";
                     }
-
 
                 } while (cdirNext(
                     view, emittedDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j));
