@@ -61,8 +61,7 @@ enum class LedgerNameSpace : std::uint16_t {
     NEGATIVE_UNL = 'N',
     HOOK = 'H',
     HOOK_STATE = 'v',
-    EMITTED_DIR = 'E',
-    EMITTED = 'F',
+    EMITTED = 'E',
 
     // No longer used or supported. Left here to reserve the space
     // to avoid accidental reuse.
@@ -125,7 +124,7 @@ Keylet const&
 emittedDir() noexcept
 {
     static Keylet const ret{
-        ltEMITTED_DIR, indexHash(LedgerNameSpace::EMITTED_DIR)};
+        ltDIR_NODE, indexHash(LedgerNameSpace::EMITTED)};
     return ret;
 }
 

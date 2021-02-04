@@ -91,8 +91,7 @@ enum LedgerEntryType {
     ltHOOK ='H',
     ltHOOK_STATE ='v',
 
-    ltEMITTED_DIR = 'E',
-    ltEMITTED = 'F',
+    ltEMITTED = 'E',
 
     // No longer used or supported. Left here to prevent accidental
     // reassignment of the ledger type.
