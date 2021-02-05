@@ -52,7 +52,7 @@ namespace keylet {
 Keylet const&
 emittedDir() noexcept;
 
-Keylet const&
+Keylet
 emitted(uint256 const& id) noexcept;
 
 Keylet

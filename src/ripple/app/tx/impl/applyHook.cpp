@@ -535,7 +535,8 @@ void hook::commitChangesToLedger(
 
             auto emittedId = keylet::emitted(id);
 
-            auto sleEmitted = applyCtx.view().peek(emittedId);
+            auto sleEmitted = applyCtx.view().peek(keylet::emitted(id));
+            JLOG(j.info()) << "sleEmittedId: " << emittedId.type << "|" << emittedId.key;
             if (!sleEmitted)
             {
                 JLOG(j.info())

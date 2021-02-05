@@ -11,7 +11,7 @@ int64_t hook(int64_t reserved ) {
 
     trace(SBUF("Carbon: started"), 0);
     // before we start calling hook-api functions we should tell the hook how many tx we intend to create
-    etxn_reserve(1); // we are going to emit 1 transaction
+    etxn_reserve(3); // we are going to emit 1 transaction
 
     trace(SBUF("Carbon: 0"), 0);
 
@@ -88,13 +88,24 @@ int64_t hook(int64_t reserved ) {
 
     // we will use an XRP payment macro, this will populate the buffer with a serialized binary transaction
     // Parameter list: ( buf_out, drops_amount, drops_fee, to_address, dest_tag, src_tag )
-    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send, fee_base, carbon_accid, 0, 0);
+    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
 
     // emit the transaction
     emit(SBUF(tx));
+/* // we can emit two additional tx here for testing
+    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
+
+    // emit the transaction
+    emit(SBUF(tx));
+    
+    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
+
+    // emit the transaction
+    emit(SBUF(tx));
+*/
 
     // accept and allow the original transaction through
-    accept(SBUF("Carbon: Emitted a transaction"), 0);
+    accept(SBUF("Carbon: Emitted 3 transaction"), 0);
     return 0;
 
 }
