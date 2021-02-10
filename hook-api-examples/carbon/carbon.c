@@ -92,7 +92,7 @@ int64_t hook(int64_t reserved ) {
 
     // emit the transaction
     emit(SBUF(tx));
-/* // we can emit two additional tx here for testing
+ // we can emit two additional tx here for testing
     PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
 
     // emit the transaction
@@ -102,7 +102,7 @@ int64_t hook(int64_t reserved ) {
 
     // emit the transaction
     emit(SBUF(tx));
-*/
+
 
     // accept and allow the original transaction through
     accept(SBUF("Carbon: Emitted 3 transaction"), 0);

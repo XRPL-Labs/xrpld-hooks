@@ -975,10 +975,13 @@ DEFINE_HOOK_FUNCTION(
     if (fieldType == sfInvalid)
         return INVALID_FIELD;
 
-    if (tx.getFieldIndex(fieldType) == -1)
+//    if (tx.getFieldIndex(fieldType) == -1)
+    if (!tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
+
+    printf("field_id: %lu\n", field_id);
 
     bool is_account = field.getSType() == STI_ACCOUNT; //RH TODO improve this hack
 
