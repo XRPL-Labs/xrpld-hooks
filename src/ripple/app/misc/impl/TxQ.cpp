@@ -23,6 +23,7 @@
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/tx/apply.h>
 #include <ripple/basics/mulDiv.h>
+#include <ripple/app/misc/HashRouter.h>
 #include <ripple/protocol/Feature.h>
 #include <ripple/protocol/jss.h>
 #include <ripple/protocol/st.h>
@@ -1217,6 +1218,105 @@ TxQ::accept(Application& app, OpenView& view)
     auto ledgerChanged = false;
 
     std::lock_guard lock(mutex_);
+
+    // inject emitted transactions if any
+    if (view.rules().enabled(featureHooks))
+    do { 
+        Keylet const emittedDirKeylet { keylet::emittedDir() };
+        if (dirIsEmpty(view, emittedDirKeylet))
+            break;
+
+        std::shared_ptr<SLE const> sleDirNode{};
+        unsigned int uDirEntry{0};
+        uint256 dirEntry{beast::zero};
+
+        if (!cdirFirst(
+                view,
+                emittedDirKeylet.key,
+                sleDirNode,
+                uDirEntry,
+                dirEntry,
+                j_))
+            break;
+
+        do
+        {
+            Keylet const itemKeylet{ltCHILD, dirEntry};
+            auto sleItem = view.read(itemKeylet);
+            if (!sleItem)
+            {
+                // Directory node has an invalid index.  Bail out.
+                JLOG(j_.fatal())
+                    << "EmittedTxn processing: directory node in ledger " << view.seq()
+                    << " has index to object that is missing: "
+                    << to_string(dirEntry);
+                break;
+            }
+
+            LedgerEntryType const nodeType{
+                safe_cast<LedgerEntryType>((*sleItem)[sfLedgerEntryType])};
+
+            if (nodeType != ltEMITTED)
+            {
+                JLOG(j_.fatal())
+                    << "EmittedTxn processing: emitted directory contained non ltEMITTED type";
+                break;
+            }
+
+            JLOG(j_.info()) << "Processing emitted txn: " << *sleItem;
+
+            auto const& emitted =
+                const_cast<ripple::STLedgerEntry&>(*sleItem).getField(sfEmittedTxn).downcast<STObject>();
+
+            auto s = std::make_shared<ripple::Serializer>();
+            emitted.add(*s);
+            SerialIter sitTrans(s->slice()); // do we need slice?
+            try
+            {
+                auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
+
+                if (!stpTrans->isFieldPresent(sfEmitDetails) ||
+                        !stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
+                        !stpTrans->isFieldPresent(sfLastLedgerSequence))
+                {
+                    JLOG(j_.warn())
+                        << "Hook: Emission failure: "
+                        << "sfEmitDetails or sfFirst/LastLedgerSeq missing.";
+                    continue;
+                }
+                
+                /*if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
+                {
+                    JLOG(j_.warn())
+                        << "Hook: Emitted transaction expired before it could be processed.";
+                    continue;
+                }*/
+
+                auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
+                if (fls > view.info().seq)
+                {
+                    JLOG(j_.info()) <<
+                        "Holding TX " << stpTrans->getTransactionID() << " for future ledger.";
+                    continue;
+                }
+
+                // execution to here means we are adding the tx to the local set
+                if (fls >= view.info().seq)
+                {
+                    app.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
+                    view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
+                    ledgerChanged = true;
+                }
+
+            }
+            catch (std::exception& e)
+            {
+                JLOG(j_.fatal()) << "EmittedTxn Processing: Failure: " << e.what() << "\n";
+            }
+
+        } while (cdirNext(view, emittedDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j_));
+
+    } while(0);
 
     auto const metricSnapshot = feeMetrics_.getSnapshot();
 

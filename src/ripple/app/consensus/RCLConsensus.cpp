@@ -161,10 +161,14 @@ RCLConsensus::Adaptor::share(RCLCxPeerPos const& peerPos)
     app_.overlay().relay(prop, peerPos.suppressionID());
 }
 
-//RH TODO: network bar here
 void
 RCLConsensus::Adaptor::share(RCLCxTx const& tx)
 {
+    //RH TODO: never broadcast emitted transactions
+    //fix below:
+    //if (tx.isFieldPresent(sfEmitDetails))
+    //    return;
+
     // If we didn't relay this transaction recently, relay it to all peers
     if (app_.getHashRouter().shouldRelay(tx.id()))
     {
@@ -638,184 +642,7 @@ RCLConsensus::Adaptor::doAccept(
             tapNONE,
             "consensus",
             [&](OpenView& view, beast::Journal j) {
-
-                bool changed =
-                    app_.getTxQ().accept(app_, view);
-
-                Keylet const emittedDirKeylet { keylet::emittedDir() };
-                if (dirIsEmpty(view, emittedDirKeylet))
-                    return changed;
-
-                std::shared_ptr<SLE const> sleDirNode{};
-                unsigned int uDirEntry{0};
-                uint256 dirEntry{beast::zero};
-
-                if (!cdirFirst(
-                        view,
-                        emittedDirKeylet.key,
-                        sleDirNode,
-                        uDirEntry,
-                        dirEntry,
-                        j))
-                    return changed;
-
-                do
-                {
-                    Keylet const itemKeylet{ltCHILD, dirEntry};
-                    auto sleItem = view.read(itemKeylet);
-                    if (!sleItem)
-                    {
-                        // Directory node has an invalid index.  Bail out.
-                        JLOG(j.fatal())
-                            << "EmittedTxn processing: directory node in ledger " << view.seq()
-                            << " has index to object that is missing: "
-                            << to_string(dirEntry);
-                        return changed;
-                    }
-
-                    LedgerEntryType const nodeType{
-                        safe_cast<LedgerEntryType>((*sleItem)[sfLedgerEntryType])};
-
-                    if (nodeType != ltEMITTED)
-                    {
-                        JLOG(j.fatal())
-                            << "EmittedTxn processing: emitted directory contained non ltEMITTED type";
-                        return changed;
-                    }
-
-                    JLOG(j.info()) << "Processing emitted txn: " << *sleItem;
-
-                    auto const& emitted =
-                        const_cast<ripple::STLedgerEntry&>(*sleItem).getField(sfEmittedTxn).downcast<STObject>();
-
-                    auto s = std::make_shared<ripple::Serializer>();
-                    emitted.add(*s);
-                    SerialIter sitTrans(s->slice()); // do we need slice?
-                    try
-                    {
-                        auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
-
-                        if (!stpTrans->isFieldPresent(sfEmitDetails) ||
-                                !stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
-                                !stpTrans->isFieldPresent(sfLastLedgerSequence))
-                        {
-                            JLOG(j_.warn())
-                                << "Hook: Emission failure: "
-                                << "sfEmitDetails or sfFirst/LastLedgerSeq missing.";
-                            continue;
-                        }
-                        
-                        /*if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
-                        {
-                            JLOG(j_.warn())
-                                << "Hook: Emitted transaction expired before it could be processed.";
-                            continue;
-                        }*/
-
-                        auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
-                        if (fls > view.info().seq)
-                        {
-                            JLOG(j_.info()) <<
-                                "Holding TX " << stpTrans->getTransactionID() << " for future ledger.";
-                            continue;
-                        }
-
-                        // execution to here means we are adding the tx to the local set
-                        if (fls >= view.info().seq)
-                        {
-                            app_.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
-                            view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
-                            changed = true;
-                        }
-
-                    }
-                    catch (std::exception& e)
-                    {
-                        JLOG(j.fatal()) << "EmittedTxn Processing: Failure: " << e.what() << "\n";
-                    }
-
-                } while (cdirNext(
-                    view, emittedDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j));
-
-
-
-
-
-                return changed;
-
-                // circulate emitted txn into TxQ
-
-
-//                auto emittedKeylet = view.read(keylet::emitted());
-
-/*
-                if (sle && sle->isFieldPresent(sfEmittedTxns))
-                {
-                    //RH TODO: do we need to reconstruct this object every time?
-
-                    auto const& old = sle->getFieldArray(sfEmittedTxns);
-                    for (auto v: old)
-                    {
-
-                        JLOG(j_.trace()) << "Processing emitted tx: " << v << "\n";
-                        auto s = std::make_shared<ripple::Serializer>();
-                        v.add(*s);
-                        SerialIter sitTrans(s->slice()); // do we need slice?
-                        try
-                        {
-                            auto const& stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
-
-                            if (!stpTrans->isFieldPresent(sfEmitDetails) ||
-                                    !stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
-                                    !stpTrans->isFieldPresent(sfLastLedgerSequence))
-                            {
-                                JLOG(j_.warn())
-                                    << "Hook: Emission failure: "
-                                    << "sfEmitDetails or sfFirst/LastLedgerSeq missing.";
-                                continue;
-                            }
-                            if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
-                            {
-                                JLOG(j_.warn())
-                                    << "Hook: Emitted transaction expired before it could be processed.";
-                                continue;
-                            }
-
-                            auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
-                            if (fls > view.info().seq)
-                            {
-                                JLOG(j_.info()) <<
-                                    "Holding TX " << stpTrans->getTransactionID() << " for future ledger.";
-                                continue;
-                            }
-
-                            // execution to here means we are adding the tx to the local set
-                            if (fls >= view.info().seq)
-                            {
-                                app_.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
-                                view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
-                            }
-
-                        }
-                        catch (std::exception& e)
-                        {
-                            JLOG(j_.warn()) << "Hook: sfEmittedTxn Process Failure: " << e.what() << "\n";
-                        }
-                    }
-
-
-                }
-                //view.rawInsert(sle);
-
-                // remove any EmittedTxns block from the new ledger
-                //auto const k = keylet::emitted();
-                //auto sle = view.read(k);
-                //if (sle)
-                //    view.rawErase(std::make_shared<ripple::STLedgerEntry>(*sle));
-                // Stuff the ledger with transactions from the queue.
-
-                */
-
+                return app_.getTxQ().accept(app_, view);
             });
 
         // Signal a potential fee change to subscribers after the open ledger

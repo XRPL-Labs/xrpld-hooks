@@ -939,7 +939,7 @@ DEFINE_HOOK_FUNCTION(
     if (fieldType == sfInvalid)
         return INVALID_FIELD;
 
-    if (tx.getFieldIndex(fieldType) == -1)
+    if (!tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
@@ -975,7 +975,6 @@ DEFINE_HOOK_FUNCTION(
     if (fieldType == sfInvalid)
         return INVALID_FIELD;
 
-//    if (tx.getFieldIndex(fieldType) == -1)
     if (!tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
