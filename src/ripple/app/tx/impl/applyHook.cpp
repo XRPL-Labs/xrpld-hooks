@@ -47,7 +47,7 @@ using namespace ripple;
     int64_t bytes_written = 0;\
     WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len, host_src_ptr,\
             host_src_len, host_memory_ptr, guest_memory_length);\
-    return bytes_to_write;\
+    return bytes_written;\
 }
 
 // ptr = pointer inside the wasm memory space
@@ -2020,9 +2020,66 @@ DEFINE_HOOK_FUNCTION(
         return TOO_BIG;
     
     // we must inject the field at the canonical location....
-    //
-    return NOT_IMPLEMENTED;
+    // so find that location
+    unsigned char* start = (unsigned char*)(memory + sread_ptr);
+    unsigned char* upto = start;
+    unsigned char* end = start + sread_len;
+    unsigned char* inject_start = start;
+    unsigned char* inject_end = start;
 
+    DBG_PRINTF("sto_erase called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+    for (int j = -5; j < 5; ++j)
+        DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
+    DBG_PRINTF("\n");
+
+
+    for (int i = 0; i < 1024 && upto < end; ++i)
+    {
+        int type = -1, field = -1, payload_start = -1, payload_length = -1;
+        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
+        if (length < 0)
+            return PARSE_ERROR;
+        if ((type << 16) + field == field_id)
+        {
+            inject_start = upto;
+            inject_end = upto + length;
+            break;
+        }
+        else if ((type << 16) + field > field_id)
+        {
+            inject_start = upto;
+            inject_end = upto;
+            break;
+        }
+        upto += length;
+    }
+
+    // upto is injection point
+    int64_t bytes_written = 0;
+
+    // part 1
+    if (inject_start - start > 0)
+    WRITE_WASM_MEMORY(
+        bytes_written,
+        write_ptr, write_len,
+        start, (inject_start - start),
+        memory, memory_length);
+
+    // write the field
+    WRITE_WASM_MEMORY(
+        bytes_written,
+        (write_ptr + bytes_written), (write_len - bytes_written),
+        fread_ptr, fread_len,
+        memory, memory_length);
+    
+    // part 2
+    if (end - inject_end > 0)
+    WRITE_WASM_MEMORY(
+        bytes_written,
+        (write_ptr + bytes_written), (write_len - bytes_written),
+        upto, (end - inject_end),
+        memory, memory_length);
+    return bytes_written;
 }
 
 /**
@@ -2080,13 +2137,19 @@ DEFINE_HOOK_FUNCTION(
     {
         // do erasure via selective copy
         int64_t bytes_written = 0;
+
         // part 1
+        if (erase_start - start > 0)
         WRITE_WASM_MEMORY(
             bytes_written,
             write_ptr, write_len,
             start, (erase_start - start),
             memory, memory_length);
+
         // skip the field we're erasing
+        
+        // part 2
+        if (end - erase_end > 0)
         WRITE_WASM_MEMORY(
             bytes_written,
             (write_ptr + bytes_written), (write_len - bytes_written),
@@ -2094,7 +2157,7 @@ DEFINE_HOOK_FUNCTION(
             memory, memory_length);
         return bytes_written;
     }
-    return DOES_NOT_EXIST;
+    return DOESNT_EXIST;
 
 }
 

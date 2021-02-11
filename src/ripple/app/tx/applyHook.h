@@ -340,7 +340,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(sto_subfield, ctx);
             ADD_HOOK_FUNCTION(sto_subarray, ctx);
             ADD_HOOK_FUNCTION(sto_emplace, ctx);
-            ADD_HOOK_FUNCTION(sto_erasey, ctx);
+            ADD_HOOK_FUNCTION(sto_erase, ctx);
             ADD_HOOK_FUNCTION(util_keylet, ctx);
 
             ADD_HOOK_FUNCTION(emit, ctx);
