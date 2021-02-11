@@ -181,11 +181,17 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	util_verify,        uint32_t dread_ptr, uint32_t dread_len,
                                                         uint32_t sread_ptr, uint32_t sread_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_sto,           uint32_t tread_ptr, uint32_t tread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	sto_validate,       uint32_t tread_ptr, uint32_t tread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	sto_subfield,       uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	sto_subarray,       uint32_t read_ptr,  uint32_t read_len,  uint32_t array_id );
+    DECLARE_HOOK_FUNCTION(int64_t,	sto_emplace,        uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t sread_ptr, uint32_t sread_len,
+                                                        uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id );
+    DECLARE_HOOK_FUNCTION(int64_t,  sto_erase,          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id );
+
     DECLARE_HOOK_FUNCTION(int64_t,	util_sha512h,       uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subfield,      uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id );
-    DECLARE_HOOK_FUNCTION(int64_t,	util_subarray,      uint32_t read_ptr,  uint32_t read_len,  uint32_t array_id );
     DECLARE_HOOK_FUNCTION(int64_t,  util_keylet,        uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
                                                         uint32_t a,         uint32_t b,         uint32_t c,
                                                         uint32_t d,         uint32_t e,         uint32_t f );
@@ -329,10 +335,12 @@ namespace hook {
             ADD_HOOK_FUNCTION(util_raddr, ctx);
             ADD_HOOK_FUNCTION(util_accid, ctx);
             ADD_HOOK_FUNCTION(util_verify, ctx);
-            ADD_HOOK_FUNCTION(util_sto, ctx);
             ADD_HOOK_FUNCTION(util_sha512h, ctx);
-            ADD_HOOK_FUNCTION(util_subfield, ctx);
-            ADD_HOOK_FUNCTION(util_subarray, ctx);
+            ADD_HOOK_FUNCTION(sto_validate, ctx);
+            ADD_HOOK_FUNCTION(sto_subfield, ctx);
+            ADD_HOOK_FUNCTION(sto_subarray, ctx);
+            ADD_HOOK_FUNCTION(sto_emplace, ctx);
+            ADD_HOOK_FUNCTION(sto_erasey, ctx);
             ADD_HOOK_FUNCTION(util_keylet, ctx);
 
             ADD_HOOK_FUNCTION(emit, ctx);

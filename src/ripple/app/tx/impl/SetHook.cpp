@@ -117,10 +117,12 @@ const std::set<std::string> import_whitelist
     "util_accid",
     "util_raddr",
     "util_sha512h",
-    "util_subarray",
-    "util_subfield",
     "util_verify",
-    "util_sto",
+    "sto_subarray",
+    "sto_subfield",
+    "sto_validate",
+    "sto_emplace",
+    "sto_erase",
     "util_keylet"
 };
 

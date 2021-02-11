@@ -25,7 +25,7 @@ using namespace ripple;
     [[maybe_unused]] unsigned char* memory = memoryCtx.getPointer<uint8_t*>(0);\
     [[maybe_unused]] const uint64_t memory_length = memoryCtx.getDataPageSize() * memoryCtx.kPageSize;
 
-#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
+#define WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len,\
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
 {\
     int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
@@ -38,6 +38,15 @@ using namespace ripple;
     }\
     memoryCtx.setBytes(SSVM::Span<const uint8_t>((const uint8_t*)host_src_ptr, host_src_len), \
             guest_dst_ptr, 0, bytes_to_write);\
+    bytes_written += bytes_to_write;\
+}
+
+#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
+        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+{\
+    int64_t bytes_written = 0;\
+    WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len, host_src_ptr,\
+            host_src_len, host_memory_ptr, guest_memory_length);\
     return bytes_to_write;\
 }
 
@@ -1809,7 +1818,7 @@ inline int32_t get_stobject_length (
 // Use SUB_OFFSET and SUB_LENGTH to extract.
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    util_subfield,
+    sto_subfield,
     uint32_t read_ptr, uint32_t read_len, uint32_t field_id )
 {
 
@@ -1824,7 +1833,7 @@ DEFINE_HOOK_FUNCTION(
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    DBG_PRINTF("util_subfield called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+    DBG_PRINTF("sto_subfield called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
     for (int j = -5; j < 5; ++j)
         DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
     DBG_PRINTF("\n");
@@ -1840,7 +1849,7 @@ DEFINE_HOOK_FUNCTION(
             return PARSE_ERROR;
         if ((type << 16) + field == field_id)
         {
-            DBG_PRINTF("util_subfield returned for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+            DBG_PRINTF("sto_subfield returned for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
             for (int j = -5; j < 5; ++j)
                 DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j));
             DBG_PRINTF("\n");
@@ -1860,7 +1869,7 @@ DEFINE_HOOK_FUNCTION(
 // Same as subfield but indexes into a serialized array
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    util_subarray,
+    sto_subarray,
     uint32_t read_ptr, uint32_t read_len, uint32_t index_id )
 {
 
@@ -1878,7 +1887,7 @@ DEFINE_HOOK_FUNCTION(
     if ((*upto & 0xF0) == 0xF0)
         upto++;
 
-    DBG_PRINTF("util_subarray called, looking for index %u\n", index_id);
+    DBG_PRINTF("sto_subarray called, looking for index %u\n", index_id);
     for (int j = -5; j < 5; ++j)
         printf(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
     DBG_PRINTF("\n");
@@ -1891,7 +1900,7 @@ DEFINE_HOOK_FUNCTION(
             return PARSE_ERROR;
         if (i == index_id)
         {
-            DBG_PRINTF("util_subarray returned for index %u\n", index_id);
+            DBG_PRINTF("sto_subarray returned for index %u\n", index_id);
             for (int j = -5; j < 5; ++j)
                 DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j + length));
             DBG_PRINTF("\n");
@@ -1975,10 +1984,127 @@ DEFINE_HOOK_FUNCTION(
         memory, memory_length);
 }
 
+
+/**
+ * Inject a field into an sto if there is sufficient space
+ * Field must be fully formed and wrapped (NOT JUST PAYLOAD)
+ * sread - source object
+ * fread - field to inject
+ */
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    sto_emplace,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t sread_ptr, uint32_t sread_len,
+    uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id )
+{
+    HOOK_SETUP();
+    
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (NOT_IN_BOUNDS(sread_ptr, sread_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (NOT_IN_BOUNDS(fread_ptr, fread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (write_len < sread_len + fread_len)
+        return TOO_SMALL;
+
+    // RH TODO: put these constants somewhere (votable?)
+    if (sread_len > 1024*16)
+        return TOO_BIG;
+
+    if (fread_len > 4096)
+        return TOO_BIG;
+    
+    // we must inject the field at the canonical location....
+    //
+    return NOT_IMPLEMENTED;
+
+}
+
+/**
+ * Remove a field from an sto if the field is present
+ */
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    sto_erase,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id )
+{
+    HOOK_SETUP();
+    
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    // RH TODO: constants
+    if (read_len > 16*1024)
+        return TOO_BIG;
+
+    if (write_len < read_len)
+        return TOO_SMALL;
+
+    unsigned char* start = (unsigned char*)(memory + read_ptr);
+    unsigned char* upto = start;
+    unsigned char* end = start + read_len;
+    unsigned char* erase_start = 0;
+    unsigned char* erase_end = 0;
+
+    DBG_PRINTF("sto_erase called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+    for (int j = -5; j < 5; ++j)
+        DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
+    DBG_PRINTF("\n");
+
+
+    for (int i = 0; i < 1024 && upto < end; ++i)
+    {
+        int type = -1, field = -1, payload_start = -1, payload_length = -1;
+        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
+        if (length < 0)
+            return PARSE_ERROR;
+        if ((type << 16) + field == field_id)
+        {
+            erase_start = upto;
+            erase_end = upto + length;
+        }
+        upto += length;
+    }
+
+                
+    if (erase_start >= start && erase_end >= start && erase_start <= end && erase_end <= end)
+    {
+        // do erasure via selective copy
+        int64_t bytes_written = 0;
+        // part 1
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            write_ptr, write_len,
+            start, (erase_start - start),
+            memory, memory_length);
+        // skip the field we're erasing
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            (write_ptr + bytes_written), (write_len - bytes_written),
+            erase_end, (end - erase_end),
+            memory, memory_length);
+        return bytes_written;
+    }
+    return DOES_NOT_EXIST;
+
+}
+
+
+
+
 // when implemented this function will validate an st-object
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    util_sto,
+    sto_validate,
     uint32_t tread_ptr, uint32_t tread_len )
 {
 
