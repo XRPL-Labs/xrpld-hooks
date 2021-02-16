@@ -33,7 +33,7 @@ sto_erase( ... sfSigningPubkey )
 sto_erase( ... sfSigners )
 */
 
-int64_t hook(int64_t reserved )
+int64_t hook(int64_t reserved)
 {
 
     // this api fetches the AccountID of the account the hook currently executing is installed on
@@ -57,14 +57,11 @@ int64_t hook(int64_t reserved )
     /**
      * Notary Modes of operation: 
      * ------------------------------
-     * All memos contain the mode of operation, hex encoded big endian as the memotype field.
-     *  1. New Tx  - tx containing memo: signed/payload+1: txblob, signed/signature+1, signed/publickey+1
+     *  1. New Tx  - 
      *               adds a new tx to the state for signature collection
-     *  2. Add Sig - tx containing memo: signed/payload+1: txhash, signed/signature+1, signed/publickey+1
+     *  2. Add Sig - 
      *               adds a signature to an existing tx already in state
-     *  3. Rem Sig - tx containing memo: signed/payload+1: txhash, signed/signature+1, signed/publickey+1
-     *               removes a signature from an existing tx already in state
-     *  4. Rem Old - tx containing memo: unsigned/payload+1: txhash
+     *  3. Rem Old - 
      *               removes an expired tx already in state (maxledgerseq passed)
      **/
 
@@ -72,135 +69,225 @@ int64_t hook(int64_t reserved )
     uint8_t memos[4096];
     int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
 
-    uint32_t payload_len = 0, signature_len = 0, publickey_len = 0;
-    uint8_t* payload_ptr = 0, *signature_ptr = 0, *publickey_ptr = 0;
+    uint32_t payload_len = 0;
+    uint8_t* payload_ptr = 0;
 
-    uint8_t  mode = 0;
-    uint8_t  found_unsigned_payload = 0; // for mode 4
     
     if (memos_len <= 0)
         accept(SBUF("Notary: Incoming transaction without a memo. Passing txn."), 0);
 
     /**
-     * 'Signed Memos' for hooks are supplied in triples in the following 'default' format as per XLS-14d:
-     * NB: The +1 identifies the payload, you may provide multiple payloads
-     * Memo: { MemoData: <app data>,   MemoFormat: "signed/payload+1",   MemoType: [application defined] }
-     * Memo: { MemoData: <signature>,  MemoFormat: "signed/signature+1", MemoType: [application defined] }
-     * Memo: { MemoData: <public_key>, MemoFormat: "signed/publickey+1", MemoType: [application defined] }
+     * Memo: { MemoData: <app data>,   MemoFormat: "unsigned/payload+1",   MemoType: <anything> }
      **/
 
+    // the memos are presented in an array object, which we must index into
+    int64_t memo_lookup = util_subarray(memos, memos_len, i);
 
-    // loop through the three memos (if 3 are even present) to parse out the relevant fields
-    for (int i = 0; GUARD(3), i < 3; ++i)
+    TRACEVAR(memo_lookup);
+    if (memo_lookup < 0)
+        break; // invalid or too few memos
+
+    // if the subfield/array lookup is successful we must extract the two pieces of returned data
+    // which are, respectively, the offset at which the field occurs and the field's length
+    uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
+    uint32_t  memo_len = SUB_LENGTH(memo_lookup);
+
+    trace(SBUF("MEMO:"), 0);
+    trace(memo_ptr, memo_len, 1);
+
+    // memos are nested inside an actual memo object, so we need to subfield
+    // equivalently in JSON this would look like memo_array[i]["Memo"]
+    memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
+    memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
+    memo_len = SUB_LENGTH(memo_lookup);
+
+    // now we lookup the subfields of the memo itself
+    // again, equivalently this would look like memo_array[i]["Memo"]["MemoData"], ... etc.
+    int64_t data_lookup     = util_subfield(memo_ptr, memo_len, sfMemoData);
+    int64_t format_lookup   = util_subfield(memo_ptr, memo_len, sfMemoFormat);
+
+    // if any of these lookups fail the request is malformed
+    if (data_lookup < 0 || format_lookup < 0)
+        break;
+
+    // care must be taken to add the correct pointer to an offset returned by sub_array or sub_field
+    // since we are working relative to the specific memo we must add memo_ptr, NOT memos or something else
+    uint8_t* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
+    uint32_t data_len = SUB_LENGTH(data_lookup);
+
+    uint8_t* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
+    uint32_t format_len = SUB_LENGTH(format_lookup);
+
+    int is_unsigned_payload = 0;
+    BUFFER_EQUAL_STR_GUARD(is_unsigned_payload, format_ptr, format_len,     "unsigned/payload+1",   1);
+    if (!is_unsigned_payload)
+        accept(SBUF("Notary: Memo is an invalid format. Passing txn."), 50);
+    
+    int64_t txhash_lookup      = util_subfield(payload_ptr, payload_len, sfTransactionHash);
+    int64_t txtype_lookup      = util_subfield(payload_ptr, payload_len, sfTransactionType);
+    int64_t signer_lookup      = util_subfield(payload_ptr, payload_len, sfSigner);
+
+    uint8_t* txhash_ptr = (txhash_lookup > 0 ? SUB_OFFSET(txhash_lookup) + payload_ptr : 0);
+    uint32_t txhash_len = (txhash_lookup > 0 ? SUB_LENGTH(txhash_lookup) : 0);
+
+    uint8_t* txtype_ptr = (txtype_lookup > 0 ? SUB_OFFSET(txtype_lookup) + payload_ptr : 0);
+    uint32_t txtype_len = (txtype_lookup > 0 ? SUB_LENGTH(txtype_lookup) : 0);
+
+    uint8_t* signer_ptr = (signer_lookup > 0 ? SUB_OFFSET(signer_lookup) + payload_ptr : 0);
+    uint32_t signer_len = (signer_lookup > 0 ? SUB_LENGTH(signer_lookup) : 0);
+
+    int64_t signer_acc_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfAccount) : 0);
+    int64_t signer_pub_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfSigningPubKey) : 0);
+    int64_t signer_sig_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfTxnSignature) : 0);
+    
+    // Notary MODE differentiation:
+    // A = txhash present, B = txtype present, C = signer present
+    // Mode 1 New Transaction   : !A &&  B &&  C
+    // Mode 2 Add Signature     :  A && !B &&  C
+    // Mode 3 Prune Expired     :  A && !B && !C
+    
+    if ( !txhash_ptr && txtype_ptr && signer_ptr ) 
     {
-        // the memos are presented in an array object, which we must index into
-        int64_t memo_lookup = util_subarray(memos, memos_len, i);
+        // mode 1 new transaction
+        // validate before continuing
+        int64_t lls_lookup = util_subfield(payload_ptr, payload_len, sfLastLedgerSequence);
+        int64_t fls_lookup = util_subfield(payload_ptr, payload_len, sfLastLedgerSequence);
+        if (fls_lookup >= 0)
+            rollback(SBUF("Notary: FirstLedgerSequence not supported."), 1);
+        if (lls_lookup < 0)
+            rollback(SBUF("Notary: Transaction lacked LastLedgerSequence."), 1);
 
-        TRACEVAR(memo_lookup);
-        if (memo_lookup < 0)
-            break; // invalid or too few memos
+        uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + payload_ptr;
+        uint32_t lls_len = SUB_LENGTH(lls_lookup);
 
-        // if the subfield/array lookup is successful we must extract the two pieces of returned data
-        // which are, respectively, the offset at which the field occurs and the field's length
-        uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
-        uint32_t  memo_len = SUB_LENGTH(memo_lookup);
+        if (lls_len != 4 || UINT32_FROM_BUF(lls_ptr) < ledger_seq() + 60)
+            rollback(SBUF("Notary: Will not accept tx with less than 60 ledgers to live."), 1);
 
-        trace(SBUF("MEMO:"), 0);
-        trace(memo_ptr, memo_len, 1);
-
-        // memos are nested inside an actual memo object, so we need to subfield
-        // equivalently in JSON this would look like memo_array[i]["Memo"]
-        memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
-        memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
-        memo_len = SUB_LENGTH(memo_lookup);
-
-        // now we lookup the subfields of the memo itself
-        // again, equivalently this would look like memo_array[i]["Memo"]["MemoData"], ... etc.
-        int64_t data_lookup     = util_subfield(memo_ptr, memo_len, sfMemoData);
-        int64_t format_lookup   = util_subfield(memo_ptr, memo_len, sfMemoFormat);
-        int64_t type_lookup     = util_subfield(memo_ptr, memo_len, sfMemoType);
-
-        // if any of these lookups fail the request is malformed
-        if (data_lookup < 0 || format_lookup < 0)
-            break;
-
-        // care must be taken to add the correct pointer to an offset returned by sub_array or sub_field
-        // since we are working relative to the specific memo we must add memo_ptr, NOT memos or something else
-        uint8_t* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
-        uint32_t data_len = SUB_LENGTH(data_lookup);
-
-        uint8_t* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
-        uint32_t format_len = SUB_LENGTH(format_lookup);
+        int64_t seq_lookup = util_subfield(payload_ptr, payload_len, sfSequence);
+        uint8_t* seq_ptr = SUB_OFFSET(seq_lookup) + payload_ptr;
+        uint32_t seq_len = SUB_LENGTH(seq_lookup);
+        if (seq_lookup < 0 || (seq_lookup >= 0 && (seq_len != 4 || UINT32_FROM_BUF(seq_ptr) != 0)))
+            rollback(SBUF("Notary: Will not accept txn without sfSequence = 0."), 1);
+   
+        // this lookup checks for sfTxnSignature on the top level transaction, as distinct from signer_sig_lookup
+        // which is the same field code/type but inside the sfSigner structure. the top level sfTxnSignature must
+        // be all 0's. 
+        int64_t sig_lookup = util_subfield(payload_ptr, payload_len, sfTxnSignature);
+        uint8_t* sig_ptr = SUB_OFFSET(sig_lookup) + payload_ptr;
+        uint32_t sig_len = SUB_LENGTH(sig_lookup);
+        // RH TODO: check more than just the first four bytes of sig_ptr are zero
+        if (sig_lookup < 0 || (sig_lookup >= 0 && (sig_len != 32 || UINT32_FROM_BUF(sig_ptr) != 0 )))
+            rollback(SBUF("Notary: Will not accept txn without sfTxnSignature = 0."), 1);
         
-        uint8_t* type_ptr = SUB_OFFSET(type_lookup) + memo_ptr;
-        uint32_t type_len = SUB_LENGTH(type_lookup);
 
-        if (type_len != 1)
-            accept(SBUF("Notary: Expecting single byte memo-type as mode. Passing txn."), 1);
+        
 
-        // we can use a helper macro to compare the format fields and determine which MemoData is assigned
-        // to each pointer. Note that the last parameter here tells the macro how many times we will hit this
-        // line so it in turn can correctly configure its GUARD(), otherwise we will get a guard violation
-        int is_payload = 0, is_signature = 0, is_publickey = 0, is_unsigned_payload = 0;
-        BUFFER_EQUAL_STR_GUARD(is_payload,          format_ptr, format_len,     "signed/payload+1",     3);
-        BUFFER_EQUAL_STR_GUARD(is_signature,        format_ptr, format_len,     "signed/signature+1",   3);
-        BUFFER_EQUAL_STR_GUARD(is_publickey,        format_ptr, format_len,     "signed/publickey+1",   3);
-        BUFFER_EQUAL_STR_GUARD(is_unsigned_payload, format_ptr, format_len,     "unsigned/payload+1",   3);
+        // we must enforce blank signingKey, force the txn to be submitted by 
+        uint8_t hash[32];
+        util_sha512h(SBUF(hash), payload_ptr, payload_len);
+    }
+    else if ( txhash_ptr && !txtype_ptr && signer_ptr )
+    {
+        // mode 2
 
-        // sanity check the MemoType for mode
-        if (mode == 0)
-            mode = *type_ptr;
-         
-        if (mode < 1 || mode > 4)
-            accept(SBUF("Notary: Invalid mode specified (in MemoType) please use 01 ... 04."), 2);
+    }
+    else if ( txhash_ptr && !txtype_ptr && !signer_ptr ) 
+    {
+        // mode 3
 
-        if (mode != *type_ptr)
-            accept(
-                SBUF("Notary: MemoType should be same for all attached memos and specify mode 01 ... 04."), 3);
-
-        if (is_unsigned_payload)
-            found_unsigned_payload = 1;
-     
-        // assign the pointers according to the detected MemoFormat
-        if (is_payload || is_unsigned_payload)
-        {
-            payload_ptr = data_ptr;
-            payload_len = data_len;
-        } else if (is_signature)
-        {
-            signature_ptr = data_ptr;
-            signature_len = data_len;
-        } else if (is_publickey)
-        {
-            publickey_ptr = data_ptr;
-            publickey_len = data_len;
-        }
+    }
+    else
+    {
+        // invalid mode
+        rollback(SBUF("Notary: Invalid mode."), 1);
     }
 
 
-    if (!(payload_ptr && signature_ptr && publickey_ptr) && )
-        accept(SBUF("Notary: Memo is an invalid format. Passing txn."), 50);
+    uint8_t* pubkey_ptr = SUB_OFFSET(pubkey_lookup) + payload_ptr;
+    uint32_t pubkey_len = SUB_LENGTH(pubkey_lookup);
+
+    if (txhash_lookup > 0)
+    {
+        // mode 2 add signature
+        uint8_t* txhash_ptr = SUB_OFFSET(txhash_lookup) + payload_ptr;
+        uint32_t txhash_len = SUB_LENGTH(txhash_lookup);
+
+
+
+    }
+
 
     // execution to here means they are actually trying to interact with the hook so we will begin rolling back
     // on error instead of passing txns
 
+    // remove expired mode 3
+    /*
+    {
+        // the user should have passed exactly 32 bytes as an unsigned payload to prompt the hook to lookup and
+        // remove a potentially expired transaction from its state
+        if (payload_len != 32)
+            rollback(SBUF("Notary: Provided unsigned payload must be 32 bytes (tx hash)"), 1);
+        
+        // erase the last nibble of the transaction hash
+        payload_ptr[31] &= 0xF0U;
+
+        // set the last nibble to F to refer to the tx blob's state key
+        payload_ptr[31] |= 0x0FU;
+
+        // RH TODO: review max tx size limit
+        uint8_t tx_ptr[MAX_MEMO_SIZE];
+        int64_t tx_len = state(SBUF(tx_ptr), payload_ptr, payload_len);
+
+        if (tx_len < 1)
+            rollback(SBUF("Notary: No tx by that hash currently recorded."), 100);
+
+        // the transaction exists in our state but we will need to parse the sfLastLedgerSequence out of it
+        int64_t expiry_lookup = util_subfield(tx_ptr, tx_len, sfLastLedgerSequence);
+        if (expiry_lookup > 0)
+        {
+            uint8_t* expiry_ptr = SUB_OFFSET(expiry_lookup) + tx_ptr;
+            uint32_t expiry_len = SUB_LENGTH(expiry_lookup);
+            if (expiry_len == 4 &&
+                    UINT32_FROM_BUF(expiry_ptr) > ledger_seq())
+               rollback(SBUF("Notary: That tx has not yet expired"), 1);
+        }
+
+        // execution to here means the tx did expire or is somehow otherwise invalid, so remove it
+
+        // to remove we simply pass 0,0 as the ptr and len
+        if (state_set(0, 0, payload_ptr, payload_len) < 0)
+            rollback(SBUF("Notary: Failed to remove expired txn"), 1);
+
+        // additionally remove any signatures which were submitted
+        for (uint8_t i = 0; GUARD(8), i < 8; ++i)
+        {
+            // erase the last nibble of the transaction hash
+            payload_ptr[31] &= 0xF0U;
+            // set the last nibble to i
+            payload_ptr[31] |= i;
+            state_set(0, 0, payload_ptr, payload_len); // we don't care if this fails or succeeds
+        }
+
+        // done!
+        accept(SBUF("Notary: Removed expired txn"), 1);
+        return 0;
+    }
+    */
+
+    // execution to here means they are either submitting a new txn (mode 1) or adding a signature (mode 2)
+
     // check the signature is valid
+    /*
     if (!util_verify(payload_ptr,    payload_len,
                      signature_ptr,  signature_len,
                      publickey_ptr,  publickey_len))
         rollback(SBUF("Notary: Invalid signature in memo."), 60);
+    */
 
-    // execution to here means that BUFFER<payload_ptr,payload_len> contains a validly signed object
-
-    int64_t lookup_tt      = util_subfield(payload_ptr, payload_len, sfTransactionType);
-
-    if (lookup_tt < 0 && mode == 1)
-       rollback(SBUF("Notary: Validly signed memo in 'New Tx mode' was not a valid tx."), 70);
-
-    if (lookup_tt > 0 && mode != 1)
-       rollback(SBUF("Notary: Validly signed memo was not a tx hash when it should have been."), 70);
 
     // RH UPTO HERE
+
+    
 
     /*
 
