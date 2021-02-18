@@ -11,6 +11,8 @@
 #include <memory>
 #include <string>
 #include <optional>
+#include <any>
+#include <vector>
 #include "support/span.h"
 
 using namespace ripple;
@@ -80,6 +82,36 @@ using namespace ripple;
     hookCtx.result.exitCode = error_code;\
     return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
 }
+inline int64_t
+serialize_keylet(
+        ripple::Keylet& kl,
+        uint8_t* memory, uint32_t write_ptr, uint32_t write_len)
+{
+    if (write_len < 34)
+        return hook_api::TOO_SMALL;
+
+    memory[write_ptr + 0] = (kl.type >> 8) & 0xFFU;
+    memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
+
+    for (int i = 0; i < 32; ++i)
+        memory[write_ptr + 2] = kl.key.data()[i];
+
+    return 34;
+}
+
+std::optional<ripple::Keylet>
+unserialize_keylet(uint8_t* ptr, uint32_t len)
+{
+    if (len != 34)
+        return std::nullopt;
+    
+    uint16_t ktype = 
+        ((uint16_t)ptr[0] << 8) +
+        ((uint16_t)ptr[1]);
+
+    return ripple::Keylet { (ripple::LedgerEntryType)ktype, ripple::uint256::fromVoid(ptr + 2) };
+}
+
 
 // RH TODO: fetch this value from the hook sle
 int hook::maxHookStateDataSize(void) {
@@ -1058,19 +1090,80 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_set,
-    uint32_t read_ptr, uint32_t read_len,
-    uint32_t slot_type, int32_t slot_into )
+    uint32_t read_ptr, uint32_t read_len,   // readptr is a keylet
+    int32_t slot_into /* providing 0 allocates a slot to you */ )
 {
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
 
-    return NOT_IMPLEMENTED;
+    if ((read_len != 32 && read_len != 34) || slot_into < 0 || slot_into > hook_api::max_slots)
+        return INVALID_ARGUMENT;
+
+    // check if we can emplace the object to a slot
+    if (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0)
+        return NO_FREE_SLOTS;
+
+    std::vector<uint8_t> slot_key { memory + read_ptr, memory + read_ptr + read_len };
+    std::any slot_value;
+
+    if (read_len == 34)
+    {
+        std::optional<ripple::Keylet> kl = unserialize_keylet(memory + read_ptr, read_len);
+        if (!kl)
+            return DOESNT_EXIST;
+        auto sle = applyCtx.view().peek(*kl);
+        if (!sle)
+            return DOESNT_EXIST;
+
+        slot_value = sle;
+    }
+    else if (read_len == 32)
+    {
+        
+        uint256 hash;
+        if (!hash.SetHexExact((const char*)(memory + read_ptr)))
+            return INVALID_ARGUMENT;
+
+        ripple::error_code_i ec { ripple::error_code_i::rpcUNKNOWN };
+        std::shared_ptr<ripple::Transaction> hTx = applyCtx.app.getMasterTransaction().fetch(hash, ec);
+        if (!hTx)
+            return DOESNT_EXIST;
+
+        slot_value = hTx;
+    }
+    else
+        return DOESNT_EXIST;
+
+    if (!slot_value.has_value())
+        return DOESNT_EXIST;
+
+    if (slot_into == 0)
+    {
+        // allocate a slot
+        if (hookCtx.slot_free.size() > 0)
+        {
+            slot_into = hookCtx.slot_free.front();
+            hookCtx.slot_free.pop();
+        }
+
+        // no slots were available in the queue so increment slot counter
+        if (slot_into == 0)
+            slot_into = hookCtx.slot_counter++;
+    }
+
+    hookCtx.slot.emplace(
+            std::pair<int, std::pair<std::vector<uint8_t>, std::any>>
+            {slot_into, 
+            std::pair<std::vector<uint8_t>, std::any>
+            {slot_key, slot_value}});
+//            std::pair<int, std::pair<std::vector<uint8_t>, std::any>>
+    return slot_into;
     /*
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    // check if we can emplace the object to a slot
-    if (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0)
-        return NO_FREE_SLOTS;
 
     if (slot_type != 0)
         return INVALID_ARGUMENT; // RH TODO, add more slot types, slot type 0 means "load by hash"
@@ -1157,23 +1250,6 @@ DEFINE_HOOK_FUNCTION(
   */
 }
 
-inline int64_t
-serialize_keylet(
-        ripple::Keylet& kl,
-        uint8_t* memory, uint32_t write_ptr, uint32_t write_len)
-{
-    if (write_len < 34)
-        return hook_api::TOO_SMALL;
-
-    memory[write_ptr + 0] = (kl.type >> 8) & 0xFFU;
-    memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
-
-    for (int i = 0; i < 32; ++i)
-        memory[write_ptr + 2] = kl.key.data()[i];
-
-    return 34;
-}
-
 DEFINE_HOOK_FUNCTION(
     int64_t,
     util_keylet,
@@ -1195,6 +1271,8 @@ DEFINE_HOOK_FUNCTION(
  // TODO try catch the whole switch
     switch (keylet_type)
     {
+        case keylet_code::OWNER_DIR:
+        case keylet_code::SIGNERS:
         case keylet_code::ACCOUNT:
         case keylet_code::HOOK:
         {
@@ -1214,9 +1292,10 @@ DEFINE_HOOK_FUNCTION(
 
             ripple::AccountID id = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
             ripple::Keylet kl =
-                keylet_type == keylet_code::HOOK ?
-                    ripple::keylet::hook(id) :
-                    ripple::keylet::account(id);
+                keylet_type == keylet_code::HOOK        ? ripple::keylet::hook(id)      :
+                keylet_type == keylet_code::SIGNERS     ? ripple::keylet::signers(id)   :
+                keylet_type == keylet_code::OWNER_DIR   ? ripple::keylet::ownerDir(id)  :
+                ripple::keylet::account(id);
 
             return serialize_keylet(kl, memory, write_ptr, write_len);
         }
@@ -1298,11 +1377,6 @@ DEFINE_HOOK_FUNCTION(
             return 34;
         }
 
-        case keylet_code::SIGNERS:
-        {
-            return 34;
-        }
-
         case keylet_code::CHECK:
         {
             return 34;
@@ -1314,11 +1388,6 @@ DEFINE_HOOK_FUNCTION(
         }
 
         case keylet_code::UNCHECKED:
-        {
-            return 34;
-        }
-
-        case keylet_code::OWNER_DIR:
         {
             return 34;
         }

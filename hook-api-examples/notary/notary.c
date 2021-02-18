@@ -54,17 +54,24 @@ int64_t hook(int64_t reserved)
     if (equal)
         accept(SBUF("Notary: Outgoing transaction"), 20);
 
+    // TODO: Slots: get signerlist
+    // for each 1 drop payment sent by an account to the hook as per the below modes of operation
+    // add a memory of that signature
+    // when signerlist is satisfied by 1 drop payments, 
+
     /**
      * Notary Modes of operation: 
      * ------------------------------
-     *  1. New Tx  - 
+     *  1. New Tx  - Txn Blob in Memo unsigned/payload+1
      *               adds a new tx to the state for signature collection
-     *  2. Add Sig - 
-     *               adds a signature to an existing tx already in state
-     *  3. Rem Old - 
-     *               removes an expired tx already in state (maxledgerseq passed)
+     *  2. Add Sig - Txn Hash in Invoice ID
+     *               adds a signature to an existing tx already in state, or if the subject txn has expired removes it
      **/
 
+    int64_t invoice_id_len = otxn_field(SBUF(user_pubkey), sfInvoiceID);
+
+    // ensure the invoice id can be used as a lookup key (if it has been provided)
+    if (invoice_id_len == 32)
     // check for the presence of a memo
     uint8_t memos[4096];
     int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
@@ -125,7 +132,6 @@ int64_t hook(int64_t reserved)
     
     int64_t txhash_lookup      = util_subfield(payload_ptr, payload_len, sfTransactionHash);
     int64_t txtype_lookup      = util_subfield(payload_ptr, payload_len, sfTransactionType);
-    int64_t signer_lookup      = util_subfield(payload_ptr, payload_len, sfSigner);
 
     uint8_t* txhash_ptr = (txhash_lookup > 0 ? SUB_OFFSET(txhash_lookup) + payload_ptr : 0);
     uint32_t txhash_len = (txhash_lookup > 0 ? SUB_LENGTH(txhash_lookup) : 0);
@@ -133,13 +139,6 @@ int64_t hook(int64_t reserved)
     uint8_t* txtype_ptr = (txtype_lookup > 0 ? SUB_OFFSET(txtype_lookup) + payload_ptr : 0);
     uint32_t txtype_len = (txtype_lookup > 0 ? SUB_LENGTH(txtype_lookup) : 0);
 
-    uint8_t* signer_ptr = (signer_lookup > 0 ? SUB_OFFSET(signer_lookup) + payload_ptr : 0);
-    uint32_t signer_len = (signer_lookup > 0 ? SUB_LENGTH(signer_lookup) : 0);
-
-    int64_t signer_acc_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfAccount) : 0);
-    int64_t signer_pub_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfSigningPubKey) : 0);
-    int64_t signer_sig_lookup    = (signer_lookup > 0 ? util_subfield(signer_ptr, signer_len, sfTxnSignature) : 0);
-    
     // Notary MODE differentiation:
     // A = txhash present, B = txtype present, C = signer present
     // Mode 1 New Transaction   : !A &&  B &&  C

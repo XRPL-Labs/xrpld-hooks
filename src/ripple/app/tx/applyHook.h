@@ -211,8 +211,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len,
-                                                        uint32_t slot_type, int32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len, int32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subfield,      uint32_t parent_slot, uint32_t field_id, uint32_t new_slot );
@@ -281,7 +280,8 @@ namespace hook {
         // slots are used up by requesting objects from inside the hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
         // keep the underlying object alive for the duration of the hook's execution
-        std::map<int, std::pair<std::string_view, std::any>> slot {};
+        //  keylet or hash -> object
+        std::map<int, std::pair<std::vector<uint8_t>, std::any>> slot {};
         int slot_counter { 1 };
         std::queue<int> slot_free {};
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
