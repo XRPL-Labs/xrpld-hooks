@@ -18,8 +18,7 @@ api.connect().then(() => {
  * Secret
  *  ssxdewtczG1DU63wWHfEJ4q5a6Dik
  */
-    // first activate the lite account address
-    var activate_carbon = {
+    var activate = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
         Amount: "10000000000", // 1000 XRP
@@ -28,7 +27,7 @@ api.connect().then(() => {
         Fee: "100000"
     }
 
-    api.prepareTransaction(activate_carbon).then((x)=> 
+    api.prepareTransaction(activate).then((x)=> 
     {
         s = api.sign(x.txJSON, 'snoPBrXtMeMyMHUVTgbuqAfg1SUTb')
         console.log(s)

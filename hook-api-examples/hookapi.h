@@ -208,8 +208,7 @@ extern int64_t slot                (uint32_t write_ptr, uint32_t write_len, uint
 extern int64_t slot_clear          (uint32_t slot);
 extern int64_t slot_count          (uint32_t slot);
 extern int64_t slot_id             (uint32_t slot);
-extern int64_t slot_set            (uint32_t read_ptr,   uint32_t read_len,
-                                    uint32_t slot_type,  int32_t  slot);
+extern int64_t slot_set            (uint32_t read_ptr,   uint32_t read_len, int32_t  slot);
 extern int64_t slot_size           (uint32_t slot);
 extern int64_t slot_subarray       (uint32_t parent_slot, uint32_t array_id, uint32_t new_slot);
 extern int64_t slot_subfield       (uint32_t parent_slot, uint32_t field_id, uint32_t new_slot);
