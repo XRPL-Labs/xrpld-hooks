@@ -54,11 +54,18 @@ int64_t hook(int64_t reserved)
     if (equal)
         accept(SBUF("Notary: Outgoing transaction"), 20);
 
+    TRACEHEX(account_field);
+
     uint8_t keylet[34];
-    if (util_keylet(SBUF(keylet), KEYLET_SIGNERS, SBUF(account_field), 0, 0, 0, 0) != 34)
+    CLEARBUF(keylet);
+    if (util_keylet(SBUF(keylet), KEYLET_SIGNERS, SBUF(hook_accid), 0, 0, 0, 0) != 34)
         rollback(SBUF("Notary: Internal error, could not generate keylet"), 10);
 
-    if (slot_set(SBUF(keylet), 0) < 0)
+    TRACEHEX(keylet);
+
+    int64_t result = slot_set(SBUF(keylet), 0);
+    TRACEVAR(result);
+    if (result < 0)
         rollback(SBUF("Notary: Could not set keylet in slot"), 10);
 
     accept(SBUF("Notary: Slot success"), 0);

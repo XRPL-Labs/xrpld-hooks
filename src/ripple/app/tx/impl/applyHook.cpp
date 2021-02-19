@@ -94,7 +94,7 @@ serialize_keylet(
     memory[write_ptr + 1] = (kl.type >> 0) & 0xFFU;
 
     for (int i = 0; i < 32; ++i)
-        memory[write_ptr + 2] = kl.key.data()[i];
+        memory[write_ptr + 2 + i] = kl.key.data()[i];
 
     return 34;
 }
@@ -109,7 +109,15 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
         ((uint16_t)ptr[0] << 8) +
         ((uint16_t)ptr[1]);
 
-    return ripple::Keylet { (ripple::LedgerEntryType)ktype, ripple::uint256::fromVoid(ptr + 2) };
+    ripple::Keylet reconstructed { (ripple::LedgerEntryType)ktype, ripple::uint256::fromVoid(ptr + 2) };
+
+
+    printf("unserialize_keylet: type: %d key: ", reconstructed.type);
+    for (int i = 0; i < 32; ++i)
+        printf("%02X", reconstructed.key.data()[i]);
+
+    printf("\n");
+    return reconstructed;
 }
 
 
@@ -1112,6 +1120,7 @@ DEFINE_HOOK_FUNCTION(
         std::optional<ripple::Keylet> kl = unserialize_keylet(memory + read_ptr, read_len);
         if (!kl)
             return DOESNT_EXIST;
+
         auto sle = applyCtx.view().peek(*kl);
         if (!sle)
             return DOESNT_EXIST;
@@ -1135,8 +1144,12 @@ DEFINE_HOOK_FUNCTION(
     else
         return DOESNT_EXIST;
 
+    std::cout << "slot_set: checking has_value...\n";
     if (!slot_value.has_value())
+    {
+        std::cout << "slot_set: !has_value...\n";
         return DOESNT_EXIST;
+    }
 
     if (slot_into == 0)
     {
@@ -1291,6 +1304,8 @@ DEFINE_HOOK_FUNCTION(
                 return INVALID_ARGUMENT;
 
             ripple::AccountID id = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
+
+            std::cout << "util_keylet: account(" << id << ")\n";
             ripple::Keylet kl =
                 keylet_type == keylet_code::HOOK        ? ripple::keylet::hook(id)      :
                 keylet_type == keylet_code::SIGNERS     ? ripple::keylet::signers(id)   :
