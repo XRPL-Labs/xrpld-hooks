@@ -68,6 +68,8 @@ int64_t hook(int64_t reserved)
     if (result < 0)
         rollback(SBUF("Notary: Could not set keylet in slot"), 10);
 
+    result = slot_count(result);
+    TRACEVAR(result);
     accept(SBUF("Notary: Slot success"), 0);
     return 0;
 }

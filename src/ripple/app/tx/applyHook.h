@@ -81,7 +81,8 @@ namespace hook_api {
         PARSE_ERROR = -18,              // hook asked hookapi to parse something the contents of which was invalid
         RC_ROLLBACK = -19,              // hook should terminate due to a rollback() call
         RC_ACCEPT = -20,                // hook should temrinate due to an accept() call
-        NO_SUCH_KEYLET = -21            // invalid keylet or keylet type
+        NO_SUCH_KEYLET = -21,           // invalid keylet or keylet type
+        NOT_AN_ARRAY = -22              // if a count of an sle is requested but its not STI_ARRAY
     };
 
     enum ExitType : int8_t {
@@ -210,7 +211,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len, int32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );

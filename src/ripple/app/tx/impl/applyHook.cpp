@@ -1079,9 +1079,21 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_count,
-    uint32_t slot_id )
+    uint32_t slot_no )
 {
-    return NOT_IMPLEMENTED;
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+    auto const& outer = hookCtx.slot[slot_no].second;
+    std::cout << "slot_count / 0\n";
+    if (auto const& inner = std::any_cast<std::shared_ptr<ripple::STLedgerEntry>>(outer))
+    {
+        std::cout << "slot_count / 1 " << inner->getSType() << "\n";
+        if (inner->getSType() != STI_ARRAY)
+            return NOT_AN_ARRAY;
+        auto const& array = inner->downcast<ripple::STArray>();
+        return array.size();
+    } else return NOT_AN_ARRAY;
 }
 
 
@@ -1089,9 +1101,23 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_id,
-    uint32_t slot )
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t slot_no )
 {
-    return NOT_IMPLEMENTED; // RH TODO
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+    auto const& key = hookCtx.slot[slot_no].first;
+
+    if (key.size() > write_len)
+        return TOO_SMALL;
+    
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, key.size(),
+        key.data(), key.size(),
+        memory, memory_length);
 }
 
 // RH NOTE: slot system is not yet implemented, but planned feature for prod
