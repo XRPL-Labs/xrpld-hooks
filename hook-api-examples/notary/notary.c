@@ -63,10 +63,12 @@ int64_t hook(int64_t reserved)
 
     TRACEHEX(keylet);
 
-    int64_t result = slot_set(SBUF(keylet), 0);
-    TRACEVAR(result);
-    if (result < 0)
+    int64_t slot_no = slot_set(SBUF(keylet), 0);
+    TRACEVAR(slot_no);
+    if (slot_no < 0)
         rollback(SBUF("Notary: Could not set keylet in slot"), 10);
+
+    int64_t result = slot_subfield(slot_no, sfSigners, slot_no);
 
     result = slot_count(result);
     TRACEVAR(result);
