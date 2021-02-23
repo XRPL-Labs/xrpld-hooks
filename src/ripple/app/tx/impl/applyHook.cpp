@@ -1084,16 +1084,14 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
-    auto const& outer = hookCtx.slot[slot_no].second;
-    std::cout << "slot_count / 0\n";
-    if (auto const& inner = std::any_cast<std::shared_ptr<ripple::STLedgerEntry>>(outer))
-    {
-        std::cout << "slot_count / 1 " << inner->getSType() << "\n";
-        if (inner->getSType() != STI_ARRAY)
-            return NOT_AN_ARRAY;
-        auto const& array = inner->downcast<ripple::STArray>();
-        return array.size();
-    } else return NOT_AN_ARRAY;
+
+    if (hookCtx.slot[slot_no].entry->getSType() != STI_ARRAY)
+        return NOT_AN_ARRAY;
+
+    if (hookCtx.slot[slot_no].entry == 0)
+        return INTERNAL_ERROR;
+
+    return hookCtx.slot[slot_no].entry->downcast<ripple::STArray>().size();
 }
 
 
@@ -1105,6 +1103,7 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+/*
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
@@ -1118,6 +1117,8 @@ DEFINE_HOOK_FUNCTION(
         write_ptr, key.size(),
         key.data(), key.size(),
         memory, memory_length);
+        */
+    return NOT_IMPLEMENTED;
 }
 
 inline
@@ -1166,7 +1167,7 @@ DEFINE_HOOK_FUNCTION(
         return NO_FREE_SLOTS;
 
     std::vector<uint8_t> slot_key { memory + read_ptr, memory + read_ptr + read_len };
-    std::any slot_value;
+    std::optional<std::shared_ptr<const ripple::STObject>> slot_value = std::nullopt;
 
     if (read_len == 34)
     {
@@ -1192,7 +1193,7 @@ DEFINE_HOOK_FUNCTION(
         if (!hTx)
             return DOESNT_EXIST;
 
-        slot_value = hTx;
+        slot_value = hTx->getSTransaction();
     }
     else
         return DOESNT_EXIST;
@@ -1207,13 +1208,15 @@ DEFINE_HOOK_FUNCTION(
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
-    hookCtx.slot.emplace(
-            std::pair<int, std::pair<std::vector<uint8_t>, std::any>>
-            {slot_into, 
-            std::pair<std::vector<uint8_t>, std::any>
-            {slot_key, slot_value}});
-    return slot_into;
 
+    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+            .id = slot_key,
+            .storage = *slot_value,
+            .entry = 0
+    }});
+    hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
+
+    return slot_into;
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -1240,55 +1243,52 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    std::cout << "slot_subfield 1\n";
     if (hookCtx.slot.find(parent_slot) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
     if (new_slot == 0 && no_free_slots(hookCtx))
         return NO_FREE_SLOTS;
 
-    SField const& fieldType = ripple::SField::getField( field_id );
+    SField const& fieldCode = ripple::SField::getField( field_id );
 
-    if (fieldType == sfInvalid)
+    if (fieldCode == sfInvalid)
         return INVALID_FIELD;
 
+    bool copied = false;
 
-    std::pair<std::vector<uint8_t>, std::any> const& entry = hookCtx.slot[parent_slot];
+    try
+    {
+        ripple::STObject& parent_obj = 
+            const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STObject>();
 
-    //RH TODO: figure out how the parent object is stored (if at all) and therefore whether or not
-    //a deep copy is to be used each time...
-    #define slot_subfield_inner(x)\
-    {\
-        auto const& y = (x);\
-        if (!y.isFieldPresent(fieldType))\
-            return DOESNT_EXIST;\
-        hookCtx.slot[new_slot == 0 ? get_free_slot(hookCtx) : new_slot] =\
-             std::pair<std::vector<uint8_t>, std::any>\
-                {std::vector<uint8_t>{}, std::make_shared<ripple::STObject>(y.getField(fieldType)};\
-        return 1;\
-    }
-
-    if (entry.second.type() == typeid(std::shared_ptr<ripple::Transaction> ))
-    {
-        // transaction
-        auto const& tx = std::any_cast<std::shared_ptr<ripple::Transaction>>(entry.second);
-        auto const& ptr = const_cast<ripple::STTx&>(*tx->getSTransaction());
-        slot_subfield_inner(ptr);   
-    }
-    else if (entry.second.type == typeid(std::shared_ptr<ripple::STLedgerEntry>)
-    {
-        // ledger entry
-        auto const& sle = std::any_cast<std::shared_ptr<ripple::STLedgerEntry>>(entry.second);
-        slot_subfield_inner(*sle);
-    }
-    else
-    {
-        // other object
-        auto const& obj = std::any_cast<std::shared_ptr<ripple::STObject>>(entry.second);
-        slot_subfield_inner(*obj);
-    }
+        std::cout << "slot_subfield 2\n";
+        if (!parent_obj.isFieldPresent(fieldCode))
+            return DOESNT_EXIST;
     
+        new_slot = ( new_slot == 0 ? get_free_slot(hookCtx) : new_slot );
 
-    return INTERNAL_ERROR; 
+        // copy
+        if (new_slot != parent_slot)
+        {
+            copied = true;
+            hookCtx.slot[new_slot] = hookCtx.slot[parent_slot];
+        }
+
+        hookCtx.slot[new_slot].entry = &(parent_obj.getField(fieldCode));
+        return 1;
+    }
+    catch (const std::bad_cast& e)
+    {
+        if (copied)
+        {
+            hookCtx.slot.erase(new_slot);
+            hookCtx.slot_free.push(new_slot);
+        }
+        std::cout << "slot_subfield 3\n";
+        return NOT_AN_OBJECT;
+    }
+
 }
 
 DEFINE_HOOK_FUNCTION(

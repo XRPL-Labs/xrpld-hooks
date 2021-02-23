@@ -68,7 +68,8 @@ int64_t hook(int64_t reserved)
     if (slot_no < 0)
         rollback(SBUF("Notary: Could not set keylet in slot"), 10);
 
-    int64_t result = slot_subfield(slot_no, sfSigners, slot_no);
+    int64_t result = slot_subfield(slot_no, sfSignerEntries, slot_no);
+    TRACEVAR(result);
 
     result = slot_count(result);
     TRACEVAR(result);

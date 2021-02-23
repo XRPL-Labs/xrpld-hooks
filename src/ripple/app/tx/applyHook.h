@@ -82,7 +82,8 @@ namespace hook_api {
         RC_ROLLBACK = -19,              // hook should terminate due to a rollback() call
         RC_ACCEPT = -20,                // hook should temrinate due to an accept() call
         NO_SUCH_KEYLET = -21,           // invalid keylet or keylet type
-        NOT_AN_ARRAY = -22              // if a count of an sle is requested but its not STI_ARRAY
+        NOT_AN_ARRAY = -22,             // if a count of an sle is requested but its not STI_ARRAY
+        NOT_AN_OBJECT = -23             // if a subfield is requested from something that isn't an object
     };
 
     enum ExitType : int8_t {
@@ -276,13 +277,20 @@ namespace hook {
 
     class HookModule;
 
+    struct SlotEntry
+    {
+        std::vector<uint8_t> id;
+        std::shared_ptr<const ripple::STObject> storage;
+        const ripple::STBase* entry; // raw pointer into the storage, that can be freely pointed around inside
+    };
+
     struct HookContext {
         ripple::ApplyContext& applyCtx;
         // slots are used up by requesting objects from inside the hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
         // keep the underlying object alive for the duration of the hook's execution
-        //  keylet or hash -> object
-        std::map<int, std::pair<std::vector<uint8_t>, std::any>> slot {};
+        // slot number -> { keylet or hash, { pointer to current object, storage for that object } }
+        std::map<int, SlotEntry> slot {};
         int slot_counter { 1 };
         std::queue<int> slot_free {};
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
