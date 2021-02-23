@@ -73,6 +73,14 @@ int64_t hook(int64_t reserved)
 
     result = slot_count(result);
     TRACEVAR(result);
+
+    result = slot_subarray(slot_no, 0, 0);
+    TRACEVAR(result);
+
+    uint8_t data[1024];
+    result = slot(SBUF(data),result);
+    TRACEVAR(result);
+    TRACEHEX(data);
     accept(SBUF("Notary: Slot success"), 0);
     return 0;
 }

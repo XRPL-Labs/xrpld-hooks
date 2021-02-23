@@ -1052,9 +1052,39 @@ DEFINE_HOOK_FUNCTION(
     int64_t,
     slot,
     uint32_t write_ptr, uint32_t write_len,
-    uint32_t slot )
+    uint32_t slot_no )
 {
-    return NOT_IMPLEMENTED;
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    
+    if (!(write_ptr == 0 && write_len == 0) &&
+        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (write_ptr != 0 && write_len == 0)
+        return TOO_SMALL;
+
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+    
+    if (hookCtx.slot[slot_no].entry == 0)
+        return INTERNAL_ERROR;
+
+    Serializer s;
+    hookCtx.slot[slot_no].entry->add(s);
+
+    if (write_ptr == 0)
+        return data_as_int64(s.getDataPtr(), s.getDataLength());
+
+    bool is_account = hookCtx.slot[slot_no].entry->getSType() == STI_ACCOUNT; //RH TODO improve this hack
+
+    if (s.getDataLength() - (is_account ? 1 : 0) > write_len)
+        return TOO_SMALL;
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, write_len,
+        (unsigned char*)(s.getDataPtr()) + (is_account ? 1 : 0), s.getDataLength() - (is_account ? 1 : 0),
+        memory, memory_length);
+
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -1063,9 +1093,6 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_id )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
-    if (slot_id > hook_api::max_slots)
-        return TOO_BIG;
 
     if (hookCtx.slot.find(slot_id) == hookCtx.slot.end())
         return DOESNT_EXIST;
@@ -1232,7 +1259,48 @@ DEFINE_HOOK_FUNCTION(
     slot_subarray,
     uint32_t parent_slot, uint32_t array_id, uint32_t new_slot )
 {
-    return NOT_IMPLEMENTED;
+    if (hookCtx.slot.find(parent_slot) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+
+    if (hookCtx.slot[parent_slot].entry->getSType() != STI_ARRAY)
+        return NOT_AN_ARRAY;
+
+    if (hookCtx.slot[parent_slot].entry == 0)
+        return INTERNAL_ERROR;
+
+    if (new_slot == 0 && no_free_slots(hookCtx))
+        return NO_FREE_SLOTS;
+
+    bool copied = false;
+    try
+    {
+        ripple::STArray& parent_obj = 
+            const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STArray>();
+        
+        std::cout << "slot_subarray 1 :: " << parent_obj.size() << "\n";
+        if (parent_obj.size() <= array_id)
+        return DOESNT_EXIST;
+        new_slot = ( new_slot == 0 ? get_free_slot(hookCtx) : new_slot );
+
+        // copy
+        if (new_slot != parent_slot)
+        {
+            copied = true;
+            hookCtx.slot[new_slot] = hookCtx.slot[parent_slot];
+        }
+        hookCtx.slot[new_slot].entry = &(parent_obj[array_id]);
+        return new_slot;
+    }
+    catch (const std::bad_cast& e)
+    {
+        if (copied)
+        {
+            hookCtx.slot.erase(new_slot);
+            hookCtx.slot_free.push(new_slot);
+        }
+        std::cout << "slot_subarray 2\n";
+        return NOT_AN_ARRAY;
+    }
 }
 
 
@@ -1276,7 +1344,7 @@ DEFINE_HOOK_FUNCTION(
         }
 
         hookCtx.slot[new_slot].entry = &(parent_obj.getField(fieldCode));
-        return 1;
+        return new_slot;
     }
     catch (const std::bad_cast& e)
     {
