@@ -245,7 +245,8 @@ int64_t hook(int64_t reserved)
     // record the signature
     invoice_id[31] = ( invoice_id[31] & 0xF0U ) + found;
     
-    if (state_set(&signer_weight, 2, SBUF(invoice_id)) != 2)
+    UINT16_TO_BUF(buf, signer_weight);
+    if (state_set(buf, 2, SBUF(invoice_id)) != 2)
         rollback(SBUF("Notary: Could not write signature to hook state."), 7);
 
     // check if we have managed to achieve a quorum
@@ -295,14 +296,20 @@ int64_t hook(int64_t reserved)
     // we need to correctly set sfFirstLedgerSequence
 
     // first do the erasure, this can fail if there is no such sfSigner field, so swap buffers to immitate success
+    
     uint8_t  buffer[MAX_MEMO_SIZE];
     uint8_t* buffer2 = buffer;
     uint8_t* buffer1 = tx_blob;
+
+    trace(buffer1, tx_len, 1);
+
     result = sto_erase(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, sfSigners);
     if (result > 0)
         tx_len = result;
     else
         BUFFER_SWAP(buffer1, buffer2);
+
+    trace(buffer2, tx_len, 1);
 
     // next zero sfSequence
     uint8_t zeroed[6];
@@ -313,30 +320,59 @@ int64_t hook(int64_t reserved)
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfSequence failed."), 1);
 
-    // next set sfSigningPubKey to 0
-    zeroed[0] = 0x73U;  // this is the lead byte for sfSigningPubkey, note that the next byte is 0 which is the length
-    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfSigningPubKey);
-    if (tx_len <= 0)
-        rollback(SBUF("Notary: Emplacing sfSigningPubKey failed."), 1);
+
+    trace(buffer1, tx_len, 1);
 
     // next set sfTxnSignature to 0
     zeroed[0] = 0x74U; // lead byte for sfTxnSignature, next byte is length which is 0
-    tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, zeroed, 2, sfTxnSignature);
-    
+    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfTxnSignature);
+    TRACEVAR(tx_len);
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfTxnSignature failed."), 1);
     
+    trace(buffer2, tx_len, 1);
+
+    // next set sfSigningPubKey to 0
+    zeroed[0] = 0x73U;  // this is the lead byte for sfSigningPubkey, note that the next byte is 0 which is the length
+    tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, zeroed, 2, sfSigningPubKey);
+    TRACEVAR(tx_len);
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfSigningPubKey failed."), 1);
+
+    trace(buffer1, tx_len, 1);
+
     // finally set FirstLedgerSeq appropriately
     uint32_t fls = ledger_seq() + 1;
     zeroed[0] = 0x20U;
     zeroed[1] = 0x1AU;
     UINT32_TO_BUF(zeroed + 2, fls);
-    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfFirstLedgerSequence);
+    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 6, sfFirstLedgerSequence);
     
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfFirstLedgerSequence failed."), 1);
 
-    emit(buffer2, tx_len);     
+    
+    trace(buffer2, tx_len, 1);
+
+    // finally add emit details
+    uint8_t emitdet[105];
+    result = etxn_details(emitdet, 105);
+
+
+    TRACEVAR(result);
+    trace(emitdet, 105, 1);
+
+    if (result < 0)
+        rollback(SBUF("Notary: EmitDetails failed to generate."), 1);
+
+    tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, SBUF(emitdet), sfEmitDetails);
+    if (tx_len < 0)
+        rollback(SBUF("Notary: Emplacing sfEmitDetails failed."), 1);
+
+    trace(buffer1, tx_len, 1);
+
+    if (emit(buffer1, tx_len) < 0)
+        accept(SBUF("Notary: All conditions met but emission failed: proposed txn was malformed."), 1);
 
     accept(SBUF("Notary: Emitted multisigned txn"), 0);
     return 0;

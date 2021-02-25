@@ -31,6 +31,7 @@ using namespace ripple;
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
 {\
     int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
+    std::cout << "write wasm mem bytes: " << bytes_to_write << "\n";\
     if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
     {\
         JLOG(j.trace())\
@@ -1619,7 +1620,7 @@ DEFINE_HOOK_FUNCTION(
     }
 
     auto const pk = stpTrans->getSigningPubKey();
-    if (pk.size() != 33)
+    if (pk.size() != 33 && pk.size() != 0)
     {
         JLOG(j.trace())
             << "Hook: Emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.";
@@ -1965,7 +1966,7 @@ inline int32_t get_stobject_length (
     if (is_vl)
     {
         length = *upto++;
-        if (length == 0 || upto >= end)
+        if (upto >= end)
             return -1;
 
         if (length < 193)
@@ -2250,8 +2251,8 @@ DEFINE_HOOK_FUNCTION(
     unsigned char* start = (unsigned char*)(memory + sread_ptr);
     unsigned char* upto = start;
     unsigned char* end = start + sread_len;
-    unsigned char* inject_start = start;
-    unsigned char* inject_end = start;
+    unsigned char* inject_start = end;
+    unsigned char* inject_end = end;
 
     DBG_PRINTF("sto_emplace called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
     for (int j = -5; j < 5; ++j)
@@ -2285,26 +2286,42 @@ DEFINE_HOOK_FUNCTION(
 
     // part 1
     if (inject_start - start > 0)
-    WRITE_WASM_MEMORY(
-        bytes_written,
-        write_ptr, write_len,
-        start, (inject_start - start),
-        memory, memory_length);
+    {
+        std::cout << "inject_start: " << (inject_start - start) << "\n";
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            write_ptr, write_len,
+            start, (inject_start - start),
+            memory, memory_length);
+        std::cout << "bytes_written: " << bytes_written << "\n";
+    }
+
+    std::cout << "writing the field at: " << (write_ptr + bytes_written) << ", "
+        << (write_len - bytes_written) << "\n";
+
+    std::cout << "field: " << (fread_ptr) << ", "
+        << (fread_len) << "\n";
 
     // write the field
     WRITE_WASM_MEMORY(
         bytes_written,
         (write_ptr + bytes_written), (write_len - bytes_written),
-        fread_ptr, fread_len,
+        memory + fread_ptr, fread_len,
         memory, memory_length);
+    
+
     
     // part 2
     if (end - inject_end > 0)
-    WRITE_WASM_MEMORY(
-        bytes_written,
-        (write_ptr + bytes_written), (write_len - bytes_written),
-        upto, (end - inject_end),
-        memory, memory_length);
+    {
+        std::cout << "writing the end at: " << (write_ptr + bytes_written) << ", "
+            << (write_len - bytes_written) << "\n";
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            (write_ptr + bytes_written), (write_len - bytes_written),
+            upto, (end - inject_end),
+            memory, memory_length);
+    }
     return bytes_written;
 }
 

@@ -30,8 +30,8 @@ namespace hook_api {
 
 
 // for debugging if you want a lot of output change these to if (1)
-#define DBG_PRINTF if (0) printf
-#define DBG_FPRINTF if (0) fprintf
+#define DBG_PRINTF if (1) printf
+#define DBG_FPRINTF if (1) fprintf
 
     namespace keylet_code {
     enum keylet_code : uint32_t {

@@ -59,7 +59,8 @@ api.connect().then(() => {
         Account: "rGGLq3bp1oMjzFwwXnt3kMVtqgKpcue957",
         Destination: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         Amount: "50000000", // 50 XRP
-        LastLedgerSequence: 1000
+        LastLedgerSequence: 1000,
+        Fee: "10000"
     });
 
     console.log(proposed_txn)
