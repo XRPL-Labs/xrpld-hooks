@@ -110,7 +110,16 @@ int64_t hook(int64_t reserved)
     if (slot_no < 0)
         rollback(SBUF("Notary: Could not set keylet in slot"), 10);
 
-    int64_t result = slot_subfield(slot_no, sfSignerEntries, slot_no);
+    int64_t result = slot_subfield(slot_no, sfSignerQuorum, 0);
+    if (result < 0)
+        rollback(SBUF("Notary: Could not find sfSignerQuorum on hook account"), 20);
+
+    uint32_t signer_quorum = 0;
+    result = slot(&signer_quorum, 4, result);
+    if (result != 4)
+        rollback(SBUF("Notary: Could not fetch sfSignerQuorum from sfSignerEntries."), 80);
+    
+    result = slot_subfield(slot_no, sfSignerEntries, slot_no);
     if (result < 0)
         rollback(SBUF("Notary: Could not find sfSignerEntries on hook account"), 20);
 
@@ -119,14 +128,6 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Notary: Could not fetch sfSignerEntries count"), 30);
 
 
-    result = slot_subfield(slot_no, sfSignerQuorum, 0);
-    if (result < 0)
-        rollback(SBUF("Notary: Could not find sfSignerQuoprum on hook account"), 20);
-
-    uint32_t signer_quorum = 0;
-    result = slot(&signer_quorum, 4, result);
-    if (result != 4)
-        rollback(SBUF("Notary: Could not fetch sfSignerQuorum from sfSignerEntries."), 80);
 
     int subslot = 0;
     uint8_t found = 0;
@@ -134,7 +135,7 @@ int64_t hook(int64_t reserved)
 
     for (int i = 0; GUARD(8), i < signer_count; ++i)
     {
-        subslot = slot_subarray(slot_no, 0, subslot);
+        subslot = slot_subarray(slot_no, i, subslot);
         if (subslot < 0)
             rollback(SBUF("Notary: Could not fetch one of the sfSigner entries [subarray]."), 40);
 
@@ -156,9 +157,10 @@ int64_t hook(int64_t reserved)
         if (result != 2)
             rollback(SBUF("Notary: Could not fetch sfSignerWeight from sfSignerEntry."), 80);
 
+        TRACEHEX(account_field);
+        TRACEHEX(signer_account);
         int equal = 0;
         BUFFER_EQUAL_GUARD(equal, signer_account, 20, account_field, 20, 8);
-
         if (equal)
         {
             found = i + 1;
@@ -207,7 +209,7 @@ int64_t hook(int64_t reserved)
             rollback(SBUF("Notary: Memo too large (4kib max)."), 4);
 
         // inspect unsigned payload
-        int64_t txtype_lookup      = sto_subfield(payload_ptr, payload_len, sfTransactionType);
+        int64_t txtype_lookup      = sto_subfield(data_ptr, data_len, sfTransactionType);
         if (txtype_lookup < 0)
             rollback(SBUF("Notary: Memo is invalid format. Should be an unsigned transaction."), 2);
 
