@@ -115,10 +115,14 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Notary: Could not find sfSignerQuorum on hook account"), 20);
 
     uint32_t signer_quorum = 0;
-    result = slot(&signer_quorum, 4, result);
+    uint8_t buf[4];
+    result = slot(SBUF(buf), result);
     if (result != 4)
         rollback(SBUF("Notary: Could not fetch sfSignerQuorum from sfSignerEntries."), 80);
     
+    signer_quorum = UINT32_FROM_BUF(buf);
+    TRACEVAR(signer_quorum);
+
     result = slot_subfield(slot_no, sfSignerEntries, slot_no);
     if (result < 0)
         rollback(SBUF("Notary: Could not find sfSignerEntries on hook account"), 20);
@@ -133,7 +137,7 @@ int64_t hook(int64_t reserved)
     uint8_t found = 0;
     uint16_t signer_weight = 0;
 
-    for (int i = 0; GUARD(8), i < signer_count; ++i)
+    for (int i = 0; GUARD(8), i < signer_count + 1; ++i)
     {
         subslot = slot_subarray(slot_no, i, subslot);
         if (subslot < 0)
@@ -152,11 +156,14 @@ int64_t hook(int64_t reserved)
         if (result < 0)
             rollback(SBUF("Notary: Could not fetch sfSignerWeight from sfSignerEntry."), 70);
 
-        result = slot(&signer_weight, 2, result);
+        result = slot(buf, 2, result);
 
         if (result != 2)
             rollback(SBUF("Notary: Could not fetch sfSignerWeight from sfSignerEntry."), 80);
 
+        signer_weight = UINT16_FROM_BUF(buf);
+
+        TRACEVAR(signer_weight);
         TRACEHEX(account_field);
         TRACEHEX(signer_account);
         int equal = 0;
@@ -247,11 +254,12 @@ int64_t hook(int64_t reserved)
     for (uint8_t i = 1; GUARD(8), i < 9; ++i)
     {
         invoice_id[31] = ( invoice_id[31] & 0xF0U ) + i;
-        uint16_t weight = 0;
-        if (state(&weight, 2, SBUF(invoice_id)) == 2)
-            total += weight;
+        if (state(buf, 2, SBUF(invoice_id)) == 2)
+            total += UINT16_FROM_BUF(buf);
     }
 
+    TRACEVAR(total);
+    TRACEVAR(signer_quorum);
     if (total < signer_quorum)
         accept(SBUF("Notary: Accepted signature/txn, waiting for other signers..."), 0);
 

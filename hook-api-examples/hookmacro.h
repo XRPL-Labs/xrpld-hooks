@@ -140,6 +140,16 @@ int out_len = 0;\
 #define BUFFER_EQUAL(output, buf1, buf2, compare_len)\
     BUFFER_EQUAL_GUARD(output, buf1, compare_len, buf2, compare_len, 1)
 
+#define UINT16_TO_BUF(buf_raw, i)\
+{\
+    unsigned char* buf = (unsigned char*)buf_raw;\
+    buf[0] = (((uint64_t)i) >> 8) & 0xFFUL;\
+    buf[1] = (((uint64_t)i) >> 0) & 0xFFUL;\
+}
+
+#define UINT16_FROM_BUF(buf)\
+    (((uint64_t)((buf)[0]) <<  8) +\
+     ((uint64_t)((buf)[1]) <<  0))
 
 #define UINT32_TO_BUF(buf_raw, i)\
 {\
