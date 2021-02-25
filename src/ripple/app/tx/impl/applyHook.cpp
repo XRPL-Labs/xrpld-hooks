@@ -2235,7 +2235,7 @@ DEFINE_HOOK_FUNCTION(
     unsigned char* inject_start = start;
     unsigned char* inject_end = start;
 
-    DBG_PRINTF("sto_erase called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
+    DBG_PRINTF("sto_emplace called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
     for (int j = -5; j < 5; ++j)
         DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
     DBG_PRINTF("\n");

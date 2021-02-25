@@ -39,6 +39,8 @@ sto_erase( ... sfSigners )
 int64_t hook(int64_t reserved)
 {
 
+    etxn_reserve(1);
+
     // this api fetches the AccountID of the account the hook currently executing is installed on
     // since hooks can be triggered by both incoming and ougoing transactions this is important to know
     unsigned char hook_accid[20];
@@ -57,6 +59,7 @@ int64_t hook(int64_t reserved)
         accept(SBUF("Notary: Outgoing transaction"), 20);
 
     uint8_t tx_blob[MAX_MEMO_SIZE];
+    int64_t tx_len = 0;
 
     uint8_t invoice_id[32];
     int64_t invoice_id_len = otxn_field(SBUF(invoice_id), sfInvoiceID);
@@ -64,20 +67,22 @@ int64_t hook(int64_t reserved)
     {
         // select the blob by setting the last nibble to F
         invoice_id[31] = ( invoice_id[31] & 0xF0U ) + 0x0FU;
-        if (state(SBUF(tx_blob), SBUF(invoice_id)) > 0)
-        {
-            // blob exists, check expiry
-            int64_t  lls_lookup = util_subfield(SBUF(tx_blob), sfLastLedgerSequence);
-            uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + tx_blob;
-            uint32_t lls_len = SUB_LENGTH(lls_lookup);
+        tx_len = state(SBUF(tx_blob), SBUF(invoice_id));
+        if (tx_len < 0)
+            rollback(SBUF("Notary: Received invoice id that did not correspond to a submitted multisig txn."), 1);
 
-            if (lls_len != 4 || UINT32_FROM_BUF(lls_ptr) < ledger_seq())
-            {
-                // expired or invalid tx, purging
-                if (state_set(0, 0, SBUF(invoice_id)) < 0)
-                   rollback(SBUF("Notary: Error erasing old txn blob."), 40);
-                accpet(SBUF("Notary: Multisig txn was too old (last ledger seq passed) and was erased."), 1);
-            }
+        // blob exists, check expiry
+        int64_t  lls_lookup = util_subfield(tx_blob, tx_len, sfLastLedgerSequence);
+        uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + tx_blob;
+        uint32_t lls_len = SUB_LENGTH(lls_lookup);
+
+        if (lls_len != 4 || UINT32_FROM_BUF(lls_ptr) < ledger_seq())
+        {
+            // expired or invalid tx, purging
+            if (state_set(0, 0, SBUF(invoice_id)) < 0)
+               rollback(SBUF("Notary: Error erasing old txn blob."), 40);
+
+            accpet(SBUF("Notary: Multisig txn was too old (last ledger seq passed) and was erased."), 1);
         }
     }
 
@@ -88,10 +93,10 @@ int64_t hook(int64_t reserved)
     uint32_t payload_len = 0;
     uint8_t* payload_ptr = 0;
 
-    if (memo_len <= 0 && invoice_id_len <= 0)
+    if (memos_len <= 0 && invoice_id_len <= 0)
         accept(SBUF("Notary: Incoming txn with neither memo nor invoice ID, passing."), 0);
 
-    if (memo_len > 0 && invoice_id_len > 0)
+    if (memos_len > 0 && invoice_id_len > 0)
         rollback(SBUF("Notary: Incoming txn with both memo and invoice ID, abort."), 0);
 
     // now check if the sender is on the signer list
@@ -114,7 +119,7 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Notary: Could not fetch sfSignerEntries count"), 30);
 
 
-    int64_t result = slot_subfield(slot_no, sfSignerQuorum, 0);
+    result = slot_subfield(slot_no, sfSignerQuorum, 0);
     if (result < 0)
         rollback(SBUF("Notary: Could not find sfSignerQuoprum on hook account"), 20);
 
@@ -130,7 +135,7 @@ int64_t hook(int64_t reserved)
     for (int i = 0; GUARD(8), i < signer_count; ++i)
     {
         subslot = slot_subarray(slot_no, 0, subslot);
-        if (sublot < 0)
+        if (subslot < 0)
             rollback(SBUF("Notary: Could not fetch one of the sfSigner entries [subarray]."), 40);
 
         result = slot_subfield(subslot, sfAccount, 0);
@@ -164,7 +169,7 @@ int64_t hook(int64_t reserved)
     if (!found)
         rollback(SBUF("Notary: Your account was not present in the signer list."), 70);
 
-    if (memo_len)
+    if (memos_len > 0)
     {
         if (invoice_id_len > 0)
             rollback(SBUF("Notary: Incoming transaction with both invoice id and memo. Aborting."), 0);
@@ -247,10 +252,81 @@ int64_t hook(int64_t reserved)
         accept(SBUF("Notary: Accepted signature/txn, waiting for other signers..."), 0);
 
     // execution to here means we must emit the txn then clean up
-    // emit txn
-    // emit event
-    //
-    accept(SBUF("Notary: Slot success"), 0);
+    int should_emit = 1;
+    invoice_id[31] = ( invoice_id[31] & 0xF0U ) + 0x0FU;
+    tx_len = state(SBUF(tx_blob), SBUF(invoice_id));
+    if (tx_len < 0)
+        should_emit = 0;
+
+    // delete everything from state before emitting
+    state_set(0, 0, SBUF(invoice_id));
+    for (uint8_t i = 1; GUARD(8), i < 9; ++i)
+    {
+        invoice_id[31] = ( invoice_id[31] & 0xF0U ) + i;
+        state_set(0, 0, SBUF(invoice_id));
+    }
+    
+    if (!should_emit)
+        rollback(SBUF("Notary: Tried to emit multisig txn but it was msising"), 1);
+
+    // blob exists, check expiry
+    int64_t  lls_lookup = util_subfield(tx_blob, tx_len, sfLastLedgerSequence);
+    uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + tx_blob;
+    uint32_t lls_len = SUB_LENGTH(lls_lookup);
+
+    if (lls_len != 4 || UINT32_FROM_BUF(lls_ptr) < ledger_seq())
+        rollback(SBUF("Notary: Was about to emit txn but it's too old now"), 1);
+
+    // modify the txn for emission
+    // we need to remove sfSigners if it exists
+    // we need to zero sfSequence sfSigningPubKey and sfTxnSignature
+    // we need to correctly set sfFirstLedgerSequence
+
+    // first do the erasure, this can fail if there is no such sfSigner field, so swap buffers to immitate success
+    uint8_t  buffer[MAX_MEMO_SIZE];
+    uint8_t* buffer2 = buffer;
+    uint8_t* buffer1 = tx_blob;
+    result = sto_erase(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, sfSigners);
+    if (result > 0)
+        tx_len = result;
+    else
+        BUFFER_SWAP(buffer1, buffer2);
+
+    // next zero sfSequence
+    uint8_t zeroed[6];
+    CLEARBUF(zeroed);
+    zeroed[0] = 0x24U; // this is the lead byte for sfSequence
+
+    tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, zeroed, 5, sfSequence);
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfSequence failed."), 1);
+
+    // next set sfSigningPubKey to 0
+    zeroed[0] = 0x73U;  // this is the lead byte for sfSigningPubkey, note that the next byte is 0 which is the length
+    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfSigningPubKey);
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfSigningPubKey failed."), 1);
+
+    // next set sfTxnSignature to 0
+    zeroed[0] = 0x74U; // lead byte for sfTxnSignature, next byte is length which is 0
+    tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, zeroed, 2, sfTxnSignature);
+    
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfTxnSignature failed."), 1);
+    
+    // finally set FirstLedgerSeq appropriately
+    uint32_t fls = ledger_seq() + 1;
+    zeroed[0] = 0x20U;
+    zeroed[1] = 0x1AU;
+    UINT32_TO_BUF(zeroed + 2, fls);
+    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfFirstLedgerSequence);
+    
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfFirstLedgerSequence failed."), 1);
+
+    emit(buffer2, tx_len);     
+
+    accept(SBUF("Notary: Emitted multisigned txn"), 0);
     return 0;
 }
 

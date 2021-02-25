@@ -124,6 +124,13 @@ int out_len = 0;\
     }\
 }
 
+#define BUFFER_SWAP(x,y)\
+{\
+    uint8_t* z = x;\
+    x = y;\
+    y = z;\
+}
+
 #define BUFFER_EQUAL_STR_GUARD(output, buf1, buf1len, str, n)\
     BUFFER_EQUAL_GUARD(output, buf1, buf1len, str, (sizeof(str)-1), n)
 
