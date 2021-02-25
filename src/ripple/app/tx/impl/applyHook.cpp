@@ -1875,7 +1875,25 @@ DEFINE_HOOK_FUNCTION(
     uint32_t write_ptr, uint32_t write_len,
     uint32_t read_ptr, uint32_t read_len )
 {
-    return NOT_IMPLEMENTED; // RH TODO, and bill appropriately
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
+
+    if (write_len < 32)
+        return TOO_SMALL;
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (hookCtx.nonce_counter > hook_api::max_nonce)
+        return TOO_MANY_NONCES;
+
+    auto hash = ripple::sha512Half(
+        std::vector { memory + read_ptr, memory + read_ptr + read_len } /* RH TODO: check if string_view can be used*/
+    );
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, 32,
+        hash.data(), 32,
+        memory, memory_length);
 }
 
 
