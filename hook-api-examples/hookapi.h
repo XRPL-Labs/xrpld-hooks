@@ -102,10 +102,10 @@ extern int64_t util_sha512h        (uint32_t write_ptr, uint32_t write_len,
  *         to read_ptr and the low-word (least significant 4 bytes) is its length. MSB is sign bit, if set (negative)
  *         return value indicates error (typically error means could not find.)
  */
-extern int64_t util_subfield       (uint32_t read_ptr,  uint32_t read_len, uint32_t field_id );
+extern int64_t sto_subfield       (uint32_t read_ptr,  uint32_t read_len, uint32_t field_id );
 
 /**
- * Index into a xrpld serialized array and return the location and length of an index. Unlike util_subfield this api
+ * Index into a xrpld serialized array and return the location and length of an index. Unlike sto_subfield this api
  * always returns the offset and length of the whole object at that index (not its payload.) Use SUB_OFFSET and
  * SUB_LENGTH macros to extract return value.
  * @param read_ptr The memory location of the stobject
@@ -115,8 +115,16 @@ extern int64_t util_subfield       (uint32_t read_ptr,  uint32_t read_len, uint3
  *         to read_ptr and the low-word (least significant 4 bytes) is its length. MSB is sign bit, if set (negative)
  *         return value indicates error (typically error means could not find.)
  */
-extern int64_t util_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32_t array_id);
+extern int64_t sto_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32_t array_id);
 
+extern int64_t sto_validate       (uint32_t read_ptr,  uint32_t read_len);
+
+extern int64_t sto_emplace        (uint32_t read_ptr,  uint32_t read_len,
+                                   uint32_t sread_ptr, uint32_t sread_len,
+                                   uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id);
+
+extern int64_t sto_erase          (uint32_t write_ptr,  uint32_t write_len, 
+                                   uint32_t read_ptr,   uint32_t read_len, uint32_t field_id);
 
 extern int64_t util_keylet         (uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
                                     uint32_t a,         uint32_t b,         uint32_t c,

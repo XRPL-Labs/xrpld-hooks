@@ -72,7 +72,7 @@ int64_t hook(int64_t reserved)
             rollback(SBUF("Notary: Received invoice id that did not correspond to a submitted multisig txn."), 1);
 
         // blob exists, check expiry
-        int64_t  lls_lookup = util_subfield(tx_blob, tx_len, sfLastLedgerSequence);
+        int64_t  lls_lookup = sto_subfield(tx_blob, tx_len, sfLastLedgerSequence);
         uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + tx_blob;
         uint32_t lls_len = SUB_LENGTH(lls_lookup);
 
@@ -82,7 +82,7 @@ int64_t hook(int64_t reserved)
             if (state_set(0, 0, SBUF(invoice_id)) < 0)
                rollback(SBUF("Notary: Error erasing old txn blob."), 40);
 
-            accpet(SBUF("Notary: Multisig txn was too old (last ledger seq passed) and was erased."), 1);
+            accept(SBUF("Notary: Multisig txn was too old (last ledger seq passed) and was erased."), 1);
         }
     }
 
@@ -174,7 +174,7 @@ int64_t hook(int64_t reserved)
         if (invoice_id_len > 0)
             rollback(SBUF("Notary: Incoming transaction with both invoice id and memo. Aborting."), 0);
 
-        int64_t   memo_lookup = util_subarray(memos, memos_len, 0);
+        int64_t   memo_lookup = sto_subarray(memos, memos_len, 0);
         uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
         uint32_t  memo_len = SUB_LENGTH(memo_lookup);
 
@@ -183,14 +183,14 @@ int64_t hook(int64_t reserved)
 
         // memos are nested inside an actual memo object, so we need to subfield
         // equivalently in JSON this would look like memo_array[i]["Memo"]
-        memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
+        memo_lookup = sto_subfield(memo_ptr, memo_len, sfMemo);
         memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
         memo_len = SUB_LENGTH(memo_lookup);
 
         if (memo_lookup < 0)
             rollback(SBUF("Notary: Incoming txn had a blank sfMemos, abort."), 1);
 
-        int64_t  format_lookup   = util_subfield(memo_ptr, memo_len, sfMemoFormat);
+        int64_t  format_lookup   = sto_subfield(memo_ptr, memo_len, sfMemoFormat);
         uint8_t* format_ptr = SUB_OFFSET(format_lookup) + memo_ptr;
         uint32_t format_len = SUB_LENGTH(format_lookup);
 
@@ -199,7 +199,7 @@ int64_t hook(int64_t reserved)
         if (!is_unsigned_payload)
             accept(SBUF("Notary: Memo is an invalid format. Passing txn."), 50);
 
-        int64_t  data_lookup = util_subfield(memo_ptr, memo_len, sfMemoData);
+        int64_t  data_lookup = sto_subfield(memo_ptr, memo_len, sfMemoData);
         uint8_t* data_ptr = SUB_OFFSET(data_lookup) + memo_ptr;
         uint32_t data_len = SUB_LENGTH(data_lookup);
 
@@ -207,11 +207,11 @@ int64_t hook(int64_t reserved)
             rollback(SBUF("Notary: Memo too large (4kib max)."), 4);
 
         // inspect unsigned payload
-        int64_t txtype_lookup      = util_subfield(payload_ptr, payload_len, sfTransactionType);
+        int64_t txtype_lookup      = sto_subfield(payload_ptr, payload_len, sfTransactionType);
         if (txtype_lookup < 0)
             rollback(SBUF("Notary: Memo is invalid format. Should be an unsigned transaction."), 2);
 
-        int64_t  lls_lookup = util_subfield(data_ptr, data_len, sfLastLedgerSequence);
+        int64_t  lls_lookup = sto_subfield(data_ptr, data_len, sfLastLedgerSequence);
         uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + data_ptr;
         uint32_t lls_len = SUB_LENGTH(lls_lookup);
 
@@ -220,8 +220,10 @@ int64_t hook(int64_t reserved)
             rollback(SBUF("Notary: Provided txn blob expires too soo (LastLedgerSeq)."), 3);
 
         // compute txn hash
-        if (sto_sha512h(SBUF(invoice_id), data_ptr, data_len) < 0)
+        if (util_sha512h(SBUF(invoice_id), data_ptr, data_len) < 0)
             rollback(SBUF("Notary: Could not compute sha512 over the submitted txn."), 5);
+
+        TRACEHEX(invoice_id);
 
         invoice_id[31] = ( invoice_id[31] & 0xF0U ) + 0x0FU;
 
@@ -270,7 +272,7 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Notary: Tried to emit multisig txn but it was msising"), 1);
 
     // blob exists, check expiry
-    int64_t  lls_lookup = util_subfield(tx_blob, tx_len, sfLastLedgerSequence);
+    int64_t  lls_lookup = sto_subfield(tx_blob, tx_len, sfLastLedgerSequence);
     uint8_t* lls_ptr = SUB_OFFSET(lls_lookup) + tx_blob;
     uint32_t lls_len = SUB_LENGTH(lls_lookup);
 
