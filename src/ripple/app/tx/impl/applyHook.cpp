@@ -1627,13 +1627,13 @@ DEFINE_HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
-    for (int i = 0; i < 33; ++i)
-        if (pk[i] != 0)
-        {
-            JLOG(j.trace())
-                << "Hook: Emission failure: sfSigningPubKey present but non-zero.";
-            return EMISSION_FAILURE;
-        }
+    for (int i = 0; i < pk.size(); ++i)
+    if (pk[i] != 0)
+    {
+        JLOG(j.trace())
+            << "Hook: Emission failure: sfSigningPubKey present but non-zero.";
+        return EMISSION_FAILURE;
+    }
 
     // rule 3: sfEmitDetails must be present and valid
     if (!stpTrans->isFieldPresent(sfEmitDetails))

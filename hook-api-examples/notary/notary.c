@@ -371,7 +371,19 @@ int64_t hook(int64_t reserved)
 
     trace(buffer1, tx_len, 1);
 
-    if (emit(buffer1, tx_len) < 0)
+    // replace fee with something currently appropriate
+    uint8_t fee[ENCODE_DROPS_SIZE];
+    uint8_t* fee_ptr = fee; // this ptr is incremented by the macro, so just throw it away
+    int64_t fee_to_pay = etxn_fee_base(tx_len + ENCODE_DROPS_SIZE);
+    ENCODE_DROPS(fee_ptr, fee_to_pay, amFEE);
+    tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, SBUF(fee), sfFee);
+    
+    if (tx_len <= 0)
+        rollback(SBUF("Notary: Emplacing sfFee failed."), 1);
+    
+    trace(buffer2, tx_len, 1);
+
+    if (emit(buffer2, tx_len) < 0)
         accept(SBUF("Notary: All conditions met but emission failed: proposed txn was malformed."), 1);
 
     accept(SBUF("Notary: Emitted multisigned txn"), 0);
