@@ -90,7 +90,7 @@ api.connect().then(() => {
                         {
                             SignerEntry: {
                                 Account: 'rJVmjaBshq7jDBLtHvN2D4juayqr6Nk7HL',
-                                SignerWeight: 2
+                                SignerWeight: 1
                             }
                         },
                         {

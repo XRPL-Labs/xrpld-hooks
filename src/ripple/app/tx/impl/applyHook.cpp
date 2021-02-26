@@ -543,6 +543,7 @@ void hook::commitChangesToLedger(
         return;
     }
     
+
     // write hook state changes, if we are allowed to
     if (cclMode & cclAPPLY)
     {
@@ -1888,7 +1889,7 @@ DEFINE_HOOK_FUNCTION(
         return TOO_MANY_NONCES;
 
     auto hash = ripple::sha512Half(
-        std::vector { memory + read_ptr, memory + read_ptr + read_len } /* RH TODO: check if string_view can be used*/
+       ripple::Slice { memory + read_ptr, read_len } 
     );
 
     WRITE_WASM_MEMORY_AND_RETURN(
@@ -2319,7 +2320,7 @@ DEFINE_HOOK_FUNCTION(
         WRITE_WASM_MEMORY(
             bytes_written,
             (write_ptr + bytes_written), (write_len - bytes_written),
-            upto, (end - inject_end),
+            inject_end, (end - inject_end),
             memory, memory_length);
     }
     return bytes_written;
