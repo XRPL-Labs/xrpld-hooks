@@ -1495,7 +1495,27 @@ DEFINE_HOOK_FUNCTION(
 
         case keylet_code::LINE:
         {
-            return 34;
+            if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0 || f == 0)
+               return INVALID_ARGUMENT;
+
+            uint32_t hi_ptr = a, hi_len = b, lo_ptr = c, lo_len = d, cu_ptr = e, cu_len = f;
+
+            if (NOT_IN_BOUNDS(hi_ptr, hi_len, memory_length) ||
+                NOT_IN_BOUNDS(lo_ptr, lo_len, memory_length) ||
+                NOT_IN_BOUNDS(cu_ptr, cu_len, memory_length))
+               return OUT_OF_BOUNDS;
+
+            if (hi_len != 20 || lo_len != 20 || cu_len != 20)
+                return INVALID_ARGUMENT;
+
+            ripple::AccountID a0 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + hi_ptr);
+            ripple::AccountID a1 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + lo_ptr);
+            ripple::Currency  cu = ripple::base_uint<160, ripple::detail::CurrencyTag>::fromVoid(memory + cu_ptr);
+
+            std::cout << "util_keylet: line(" << a0 << ", " << a1 << ", " << cu << ")\n";
+            ripple::Keylet kl =
+                ripple::keylet::line(a0, a1, cu);
+            return serialize_keylet(kl, memory, write_ptr, write_len);
         }
 
         case keylet_code::OFFER:
