@@ -22,7 +22,7 @@ api.connect().then(() => {
         LimitAmount: {
             currency: "USD",
             issuer: "rECE33X6yXqM7MpjXCqG8nsdSWtSFzeGrS",
-            value: "1"
+            value: "10000000000000"
         },
         Fee: "100000"
     }

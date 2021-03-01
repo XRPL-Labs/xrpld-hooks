@@ -18,7 +18,7 @@ api.connect().then(() => {
     j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
-        Amount: "30000000",
+        Amount: "100000000",
         Destination: "rECE33X6yXqM7MpjXCqG8nsdSWtSFzeGrS",
         Fee: "100000"
     }

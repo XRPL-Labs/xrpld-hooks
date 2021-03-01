@@ -101,7 +101,7 @@ int64_t hook(int64_t reserved)
         mantissa += ((int64_t)lowlim[7]); 
     
 
-    // normalize the mantissa by multiple divisions by 1 million
+    // normalize the mantissa by multiple divisions by 1 million for computational purposes
     for (int i = 0; GUARD(16), i < 32 && mantissa > 1000000 && mantissa % 1000000 == 0; ++i)
     {
         mantissa /= 1000000;
@@ -131,18 +131,34 @@ int64_t hook(int64_t reserved)
         mantissa *= amount_sent * 66U;
         exponent += -8; // -6 for the drops, -2 for the 66%
 
+        // normalize for serialization purposes
+        for (int i = 0; GUARD(16), i < 16 && mantissa < 1000000000000000U; ++i)
+        {
+            mantissa *= 10;
+            exponent--;
+        }
+
+        exponent += 97;
+        if (exponent < 0 || exponent > 255)
+            rollback(SBUF("Peggy: Internal error, invalid exponent"), 1);
         // mantissa and exponent are now ready to go into an outgoing PUSD amount
-        TRACEVAR(exponent);
+
+        // check if their trustline limit is sufficient to receive the PUSD they are creating
+
+        uint8_t exponent_out = exponent;
+        
+        TRACEVAR(exponent_out);
         TRACEVAR(mantissa);
 
         CLEARBUF(amount_buffer);
 
         // set sign and non-xrp bits and first 6 bits of exponent
         amount_buffer[0] = 0b11000000U;
-        amount_buffer[0] += (uint8_t)(exponent >> 2U);
+        amount_buffer[0] += (uint8_t)(exponent_out >> 2U);
         
         // set least significant 2 bits of exponent and first 6 bits of mantissa
-        amount_buffer[1] = ((uint8_t)(exponent & 0b11U)) + ((uint8_t)((mantissa >> 48U) & 0b111111U));
+        amount_buffer[1] = (exponent_out & 0b11U) << 6U;
+        amount_buffer[1] += ((uint8_t)((mantissa >> 48U) & 0b111111U));
         // set the remaining mantissa bytes
         amount_buffer[2] = (uint8_t)((mantissa >> 40U) & 0xFFU);
         amount_buffer[3] = (uint8_t)((mantissa >> 32U) & 0xFFU);
