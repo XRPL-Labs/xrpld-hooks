@@ -262,6 +262,23 @@ int out_len = 0;\
  **/
 
 
+#define ENCODE_TL_SIZE 49
+#define ENCODE_TL(buf_out, tlamt, amount_type)\
+{\
+        uint8_t uat = amount_type; \
+        buf_out[0] = 0x60U +(uat & 0x0FU ); \
+        for (int i = 1; GUARDM(48, 1), i < 49; ++i)\
+            buf_out[i] = tlamt[i-1];\
+        buf_out += ENCODE_TL_SIZE;\
+}
+#define _06_XX_ENCODE_TL(buf_out, drops, amount_type )\
+    ENCODE_TL(buf_out, drops, amount_type );
+#define ENCODE_TL_AMOUNT(buf_out, drops )\
+    ENCODE_TL(buf_out, drops, amAMOUNT );
+#define _06_01_ENCODE_TL_AMOUNT(buf_out, drops )\
+    ENCODE_TL_AMOUNT(buf_out, drops );
+
+
 // Encode drops to serialization format
 // consumes 9 bytes
 #define ENCODE_DROPS_SIZE 9
@@ -458,4 +475,31 @@ int out_len = 0;\
         etxn_details((uint32_t)buf_out, 105);                                               /* emitdet | size 105 */ \
     }
 
+#define PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE 277
+#define PREPARE_PAYMENT_SIMPLE_TRUSTLINE(buf_out_master, tlamt, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
+    {\
+        uint8_t* buf_out = buf_out_master;\
+        uint8_t acc[20];\
+        uint64_t drops_fee = (drops_fee_raw);\
+        uint32_t dest_tag = (dest_tag_raw);\
+        uint32_t src_tag = (src_tag_raw);\
+        uint32_t cls = (uint32_t)ledger_seq();\
+        hook_account(SBUF(acc));\
+        _01_02_ENCODE_TT                   (buf_out, ttPAYMENT                      );      /* uint16  | size   3 */ \
+        _02_02_ENCODE_FLAGS                (buf_out, tfCANONICAL                    );      /* uint32  | size   5 */ \
+        _02_03_ENCODE_TAG_SRC              (buf_out, src_tag                        );      /* uint32  | size   5 */ \
+        _02_04_ENCODE_SEQUENCE             (buf_out, 0                              );      /* uint32  | size   5 */ \
+        _02_14_ENCODE_TAG_DST              (buf_out, dest_tag                       );      /* uint32  | size   5 */ \
+        _02_26_ENCODE_FLS                  (buf_out, cls + 1                        );      /* uint32  | size   6 */ \
+        _02_27_ENCODE_LLS                  (buf_out, cls + 5                        );      /* uint32  | size   6 */ \
+        _06_01_ENCODE_TL_AMOUNT            (buf_out, tlamt                          );      /* amount  | size  48 */ \
+        _06_08_ENCODE_DROPS_FEE            (buf_out, drops_fee                      );      /* amount  | size   9 */ \
+        _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
+        _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
+        _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
+        etxn_details((uint32_t)buf_out, 105);                                               /* emitdet | size 105 */ \
+    }
+
 #endif
+
+

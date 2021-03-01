@@ -44,22 +44,38 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Peggy: sfAccount field missing!!!"), 10); // this code could never be hit in prod
                                                                   // but it's here for completeness
 
+    // get the source tag if any... negative means it wasn't provided
+    int64_t source_tag = otxn_field(0,0, sfSourceTag);
+    if (source_tag < 0)
+        source_tag = 0xFFFFFFFFU;
+
     // compare the "From Account" (sfAccount) on the transaction with the account the hook is running on
     int equal = 0; BUFFER_EQUAL(equal, hook_accid, account_field, 20);
     if (equal)
         accept(SBUF("Peggy: Outgoing transaction"), 20);
 
 
-
     uint8_t keylet[34];
     CLEARBUF(keylet);
+    // check if a trustline exists between the sender and the hook for the USD currency [ PUSD ]
+    if (util_keylet(SBUF(keylet), KEYLET_LINE, SBUF(hook_accid), SBUF(account_field), SBUF(currency)) != 34)
+        rollback(SBUF("Peggy: Internal error, could not generate keylet"), 10);
+    
+    int64_t trustline_slot = slot_set(SBUF(keylet), 0);
+    TRACEVAR(trustline_slot);
+    if (trustline_slot < 0)
+        rollback(SBUF("Peggy: You must have a trustline set for USD to this account."), 10);
+
+    CLEARBUF(keylet);
+    // find the oracle price value
     if (util_keylet(SBUF(keylet), KEYLET_LINE, SBUF(oracle_lo), SBUF(oracle_hi), SBUF(currency)) != 34)
         rollback(SBUF("Peggy: Internal error, could not generate keylet"), 10);
 
     int64_t slot_no = slot_set(SBUF(keylet), 0);
     TRACEVAR(slot_no);
     if (slot_no < 0)
-        rollback(SBUF("Peggy: Could not set keylet in slot"), 10);
+        rollback(SBUF("Peggy: Could not find oracle trustline"), 10);
+
 
     int64_t result = slot_subfield(slot_no, sfLowLimit, 0);
     if (result < 0)
@@ -93,24 +109,72 @@ int64_t hook(int64_t reserved)
     }
 
     // check the amount of XRP sent with this transaction
-    uint8_t amount_buffer[8];
+    uint8_t amount_buffer[48];
     int64_t amount_len = otxn_field(SBUF(amount_buffer), sfAmount);
     // if it's negative then it's a non-XRP amount, or alternatively if the MSB is set
-    if (amount_len != 8 || amount_buffer[0] & 0x80) /* non-xrp amount */
-        rollback(SBUF("Peggy: Non-xrp balance sent. Can't proceed!"), 30);
+    TRACEVAR(amount_len);
+    if (amount_len < 0 || (amount_len != 48 && amount_len != 8))
+        rollback(SBUF("Peggy: Error reading the amount of xrp or usd sent to the hook."), 1);
 
-    // this is the actual value of the amount of XRP sent to the hook in this transaction
-    int64_t amount_sent = AMOUNT_TO_DROPS(amount_buffer);
+    // buffer to store the soon-to-be emitted txn
+    uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE];
 
-    // perform the computation for number of PUSD
-    mantissa *= amount_sent * 66U;
-    exponent += -8; // -6 for the drops, -2 for the 66%
+    trace(amount_buffer, amount_len, 1);
+    if (amount_len == 8)
+    {
+        // XRP incoming
 
-    // mantissa and exponent are now ready to go into an outgoing PUSD amount
+        // this is the actual value of the amount of XRP sent to the hook in this transaction
+        int64_t amount_sent = AMOUNT_TO_DROPS(amount_buffer);
 
-    TRACEVAR(exponent);
-    TRACEVAR(mantissa);
+        // perform the computation for number of PUSD
+        mantissa *= amount_sent * 66U;
+        exponent += -8; // -6 for the drops, -2 for the 66%
 
+        // mantissa and exponent are now ready to go into an outgoing PUSD amount
+        TRACEVAR(exponent);
+        TRACEVAR(mantissa);
+
+        CLEARBUF(amount_buffer);
+
+        // set sign and non-xrp bits and first 6 bits of exponent
+        amount_buffer[0] = 0b11000000U;
+        amount_buffer[0] += (uint8_t)(exponent >> 2U);
+        
+        // set least significant 2 bits of exponent and first 6 bits of mantissa
+        amount_buffer[1] = ((uint8_t)(exponent & 0b11U)) + ((uint8_t)((mantissa >> 48U) & 0b111111U));
+        // set the remaining mantissa bytes
+        amount_buffer[2] = (uint8_t)((mantissa >> 40U) & 0xFFU);
+        amount_buffer[3] = (uint8_t)((mantissa >> 32U) & 0xFFU);
+        amount_buffer[4] = (uint8_t)((mantissa >> 24U) & 0xFFU);
+        amount_buffer[5] = (uint8_t)((mantissa >> 16U) & 0xFFU);
+        amount_buffer[6] = (uint8_t)((mantissa >>  8U) & 0xFFU);
+        amount_buffer[7] = (uint8_t)((mantissa >>  0U) & 0xFFU);
+
+        // set the currency code... since we have prefilled 0's we only need to set U S D in the right spot
+        amount_buffer[20] = currency[12];
+        amount_buffer[21] = currency[13];
+        amount_buffer[22] = currency[14];
+
+        // set the issuer account
+        for (int i = 0; GUARD(20), i < 20; ++i)
+            amount_buffer[28 + i] = hook_accid[i];
+
+        trace(amount_buffer, 48, 1);
+
+        int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);
+
+        /// amount_buffer ready to be placed into emitted tx
+        PREPARE_PAYMENT_SIMPLE_TRUSTLINE(txn_out, amount_buffer, fee, account_field, source_tag, 0);
+        emit(SBUF(txn_out));
+        accept(SBUF("Peggy: Emitted a PUSD txn to you."), 1);
+    }
+    else
+    {
+        // trustline incoming
+        //todo: ensure currency = USD and issuer is this hook
+        int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
+    }
 
 
 
