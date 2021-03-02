@@ -112,22 +112,15 @@ int64_t hook(int64_t reserved)
        (((((uint16_t)lowlim[0]) << 8) + lowlim[1]) >> 6U) & 0xFF;
     exponent -= 97;
 
-    int64_t mantissa = 
-        (((int64_t)lowlim[1]) & 0b00111111U) << 48U;
-        mantissa += ((int64_t)lowlim[2]) << 40U; 
-        mantissa += ((int64_t)lowlim[3]) << 32U; 
-        mantissa += ((int64_t)lowlim[4]) << 24U; 
-        mantissa += ((int64_t)lowlim[5]) << 16U; 
-        mantissa += ((int64_t)lowlim[6]) << 8U; 
-        mantissa += ((int64_t)lowlim[7]); 
+    uint64_t mantissa = 
+        (((uint64_t)lowlim[1]) & 0b00111111U) << 48U;
+        mantissa += ((uint64_t)lowlim[2]) << 40U; 
+        mantissa += ((uint64_t)lowlim[3]) << 32U; 
+        mantissa += ((uint64_t)lowlim[4]) << 24U; 
+        mantissa += ((uint64_t)lowlim[5]) << 16U; 
+        mantissa += ((uint64_t)lowlim[6]) << 8U; 
+        mantissa += ((uint64_t)lowlim[7]); 
     
-
-    // normalize the mantissa by multiple divisions by 1 million for computational purposes
-    for (int i = 0; GUARD(16), i < 32 && mantissa > 1000000 && mantissa % 1000000 == 0; ++i)
-    {
-        mantissa /= 1000000;
-        exponent += 6;
-    }
 
     // check the amount of XRP sent with this transaction
     uint8_t amount_buffer[48];
@@ -149,8 +142,16 @@ int64_t hook(int64_t reserved)
         int64_t amount_sent = AMOUNT_TO_DROPS(amount_buffer);
 
         // perform the computation for number of PUSD
-        mantissa *= amount_sent * 66U;
-        exponent += -8; // -6 for the drops, -2 for the 66%
+        uint64_t new_mantissa = 0;
+        for (int i = 0; GUARD(16), i < 16; ++i)
+        {
+            new_mantissa = mantissa * amount_sent * 66U;
+            if (new_mantissa > mantissa)
+                break;
+            // execution to here means we had an overflow when multiplying the mantissa
+
+        }
+        exponent -= 8; // -6 for the drops, -2 for the 66%
 
         // normalize for serialization purposes
         NORMALIZE(mantissa, exponent);
@@ -204,7 +205,7 @@ int64_t hook(int64_t reserved)
         {
             // fetch serialized vault state for PUSD
             int16_t exponent_vault = ((int16_t)vault[0]) - 97;
-            int64_t mantissa_vault = ((int64_t)vault[1]) << 48U;
+            uint64_t mantissa_vault = ((int64_t)vault[1]) << 48U;
             mantissa_vault += ((int64_t)vault[2]) << 40U; 
             mantissa_vault += ((int64_t)vault[3]) << 32U; 
             mantissa_vault += ((int64_t)vault[4]) << 24U; 

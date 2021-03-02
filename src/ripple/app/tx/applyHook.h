@@ -203,6 +203,24 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve,       uint32_t count );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
     DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr,  uint32_t read_len );
+
+    DECLARE_HOOK_FUNCTION(int64_t,  float_create,       uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t manitssa_hi, uint32_t mantissa_lo,
+                                                        uint32_t exponent );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_multiply,     uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t aread_ptr, uint32_t aread_len,
+                                                        uint32_t bread_ptr, uint32_t bread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_negate,       uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_equal,        uint32_t aread_ptr, uint32_t aread_len,
+                                                        uint32_t bread_ptr, uint32_t bread_len, uint32_t precision );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sum,          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t aread_ptr, uint32_t aread_len,
+                                                        uint32_t bread_ptr, uint32_t bread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_serialize,    uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len, uint32_t field_code);
+    DECLARE_HOOK_FUNCTION(int64_t,  float_unserialize,  uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len );
+
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
@@ -358,6 +376,15 @@ namespace hook {
             ADD_HOOK_FUNCTION(etxn_details, ctx);
             ADD_HOOK_FUNCTION(etxn_reserve, ctx);
             ADD_HOOK_FUNCTION(etxn_generation, ctx);
+            
+            ADD_HOOK_FUNCTION(float_create, ctx);
+            ADD_HOOK_FUNCTION(float_multiply, ctx);
+            ADD_HOOK_FUNCTION(float_negate, ctx);
+            ADD_HOOK_FUNCTION(float_equal, ctx);
+            ADD_HOOK_FUNCTION(float_sum, ctx);
+            ADD_HOOK_FUNCTION(float_serialize, ctx);
+            ADD_HOOK_FUNCTION(float_unserialize, ctx);            
+            
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
             ADD_HOOK_FUNCTION(otxn_field_txt, ctx);
