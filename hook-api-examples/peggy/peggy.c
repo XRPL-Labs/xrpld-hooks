@@ -6,6 +6,27 @@
  *
  **/
 
+#define NORMALIZE(mantissa, exponent)\
+{\
+    if (mantissa == 0)\
+        exponent = 0;\
+    else\
+    {\
+        for (int i = 0; GUARDM(16,1), i < 16 && mantissa > 10000000000000000U; ++i)\
+        {\
+            mantissa /= 10;\
+            exponent++;\
+        }\
+        for (int i = 0; GUARDM(16,2), i < 16 && mantissa < 1000000000000000U; ++i)\
+        {\
+            mantissa *= 10;\
+            exponent--;\
+        }\
+    }\
+    if (exponent < -96 || exponent > 80)\
+        rollback(SBUF("Peggy: Internal error, invalid exponent"), 1);\
+}
+
 #include <stdint.h>
 #include "../hookapi.h"
 
@@ -132,20 +153,13 @@ int64_t hook(int64_t reserved)
         exponent += -8; // -6 for the drops, -2 for the 66%
 
         // normalize for serialization purposes
-        for (int i = 0; GUARD(16), i < 16 && mantissa < 1000000000000000U; ++i)
-        {
-            mantissa *= 10;
-            exponent--;
-        }
+        NORMALIZE(mantissa, exponent);
 
-        exponent += 97;
-        if (exponent < 0 || exponent > 255)
-            rollback(SBUF("Peggy: Internal error, invalid exponent"), 1);
         // mantissa and exponent are now ready to go into an outgoing PUSD amount
 
         // check if their trustline limit is sufficient to receive the PUSD they are creating
 
-        uint8_t exponent_out = exponent;
+        uint8_t exponent_out = (uint8_t)(exponent + 97);
         
         TRACEVAR(exponent_out);
         TRACEVAR(mantissa);
@@ -183,6 +197,72 @@ int64_t hook(int64_t reserved)
         /// amount_buffer ready to be placed into emitted tx
         PREPARE_PAYMENT_SIMPLE_TRUSTLINE(txn_out, amount_buffer, fee, account_field, source_tag, 0);
         emit(SBUF(txn_out));
+
+        // check if state currently exists
+        uint8_t vault[16];
+        if (state(SBUF(vault), SBUF(account_field)) == 16)
+        {
+            // fetch serialized vault state for PUSD
+            int16_t exponent_vault = ((int16_t)vault[0]) - 97;
+            int64_t mantissa_vault = ((int64_t)vault[1]) << 48U;
+            mantissa_vault += ((int64_t)vault[2]) << 40U; 
+            mantissa_vault += ((int64_t)vault[3]) << 32U; 
+            mantissa_vault += ((int64_t)vault[4]) << 24U; 
+            mantissa_vault += ((int64_t)vault[5]) << 16U; 
+            mantissa_vault += ((int64_t)vault[6]) << 8U; 
+            mantissa_vault += ((int64_t)vault[7]); 
+
+            TRACEVAR(mantissa_vault);
+            TRACEVAR(exponent_vault);
+
+            // adjust floating points until they line up
+            for (int i = 0; GUARD(16), i < 16 && exponent != exponent_vault; ++i)
+            {
+                if (exponent > exponent_vault)
+                {
+                    mantissa *= 10;
+                    exponent--;
+                } else if (exponent < exponent_vault)
+                {
+                    mantissa_vault *= 10;
+                    exponent_vault--;
+                }
+            }
+
+            // add values toghether
+            mantissa += mantissa_vault;
+
+            TRACEVAR(mantissa);
+            TRACEVAR(exponent);
+        
+            NORMALIZE(mantissa, exponent);
+
+            // fetch serialized xrp drops
+            int64_t drops_vault = 
+                (((int64_t)vault[ 8]) << 56U) +
+                (((int64_t)vault[ 9]) << 48U) +
+                (((int64_t)vault[10]) << 40U) +
+                (((int64_t)vault[11]) << 32U) +
+                (((int64_t)vault[12]) << 24U) +
+                (((int64_t)vault[13]) << 16U) +
+                (((int64_t)vault[14]) <<  8U) +
+                (((int64_t)vault[16]) <<  0U);
+
+            TRACEVAR(drops_vault);
+
+            // add to amount
+            amount_sent += drops_vault;
+        }
+
+        // serialize into vault
+        CLEARBUF(vault);
+        vault[0] = (uint8_t)(exponent + 97);
+        UINT64_TO_BUF((vault+1), mantissa);
+        UINT64_TO_BUF((vault+8), amount_sent);
+
+        if (state_set(SBUF(vault), SBUF(account_field)) < 0)
+            rollback(SBUF("Peggy: Internal error - Failed to set vault."), 2);
+
         accept(SBUF("Peggy: Emitted a PUSD txn to you."), 1);
     }
     else
