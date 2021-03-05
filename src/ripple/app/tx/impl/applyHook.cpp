@@ -105,8 +105,8 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
 {
     if (len != 34)
         return std::nullopt;
-    
-    uint16_t ktype = 
+
+    uint16_t ktype =
         ((uint16_t)ptr[0] << 8) +
         ((uint16_t)ptr[1]);
 
@@ -521,7 +521,7 @@ DEFINE_HOOK_FUNCTION(
 void hook::commitChangesToLedger(
         hook::HookResult& hookResult,
         ripple::ApplyContext& applyCtx,
-        uint8_t cclMode = 0b11U) 
+        uint8_t cclMode = 0b11U)
     /* Mode: (Bits)
      *  (MSB)      (LSB)
      * ------------------------
@@ -542,7 +542,7 @@ void hook::commitChangesToLedger(
             "commitChangesToLedger called with invalid mode (00)";
         return;
     }
-    
+
 
     // write hook state changes, if we are allowed to
     if (cclMode & cclAPPLY)
@@ -561,7 +561,7 @@ void hook::commitChangesToLedger(
             }
         }
     }
-    
+
     // closed views do not modify add/remove ledger entries
     if (applyCtx.view().open())
         return;
@@ -575,7 +575,7 @@ void hook::commitChangesToLedger(
         {
             auto& tpTrans = hookResult.emittedTxn.front();
             auto& id = tpTrans->getID();
-            JLOG(j.trace()) 
+            JLOG(j.trace())
                 << "Hook: " << " emitted tx: " << id << "\n";
 
             std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
@@ -595,7 +595,7 @@ void hook::commitChangesToLedger(
                 sleEmitted = std::make_shared<SLE>(emittedId);
                 //sleEmitted->delField(sfEmittedTxn);
                 sleEmitted->emplace_back(
-                    ripple::STObject(sit, sfEmittedTxn) 
+                    ripple::STObject(sit, sfEmittedTxn)
                 );
 
                 auto page = applyCtx.view().dirAppend(
@@ -636,7 +636,7 @@ void hook::commitChangesToLedger(
 
         if (!sle)
         {
-            JLOG(j.warn()) 
+            JLOG(j.warn())
                 << "Hook: ccl tried to remove already removed emittedtxn";
             return;
         }
@@ -651,14 +651,14 @@ void hook::commitChangesToLedger(
                 << "Hook: ccl tefBAD_LEDGER";
             return;
         }
-    
+
         applyCtx.view().erase(sle);
         return;
     }
 
 }
 
-/*    
+/*
     // this is the ownerless ledger object that stores emitted transactions
     auto const klEmitted = keylet::emitted();
     SLE::pointer sleEmitted = applyCtx.view().peek(klEmitted);
@@ -668,14 +668,14 @@ void hook::commitChangesToLedger(
         sleEmitted = std::make_shared<SLE>(klEmitted);
         created = true;
     }
-    
+
     STArray newEmittedTxns { sfEmittedTxns } ;
     auto const& tx = applyCtx.tx;
     auto const& old = sleEmitted->getFieldArray(sfEmittedTxns);
-    
+
     // the transaction we are processing is itself the product of a hook
     // so it may be present in the ltEMITTED structure, in which case it should remove itself
-    // but only if we are in "remove" mode 
+    // but only if we are in "remove" mode
     if (tx.isFieldPresent(sfEmitDetails) &&
         sleEmitted && sleEmitted->isFieldPresent(sfEmittedTxns) &&
         cclMode & cclREMOVE)
@@ -683,7 +683,7 @@ void hook::commitChangesToLedger(
         auto const& emitDetails = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
         ripple::uint256 eTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
         ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
-   
+
         //uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
 
         for (auto v: old)
@@ -691,7 +691,7 @@ void hook::commitChangesToLedger(
             if (!v.isFieldPresent(sfEmitDetails))
             {
                 JLOG(j.warn()) << "sfEmitDetails missing from sleEmitted entry";
-                continue;    
+                continue;
             }
 
             if (!v.isFieldPresent(sfLastLedgerSequence))
@@ -717,7 +717,7 @@ void hook::commitChangesToLedger(
             }
 
             newEmittedTxns.push_back(v);
-        }    
+        }
     }
     else
         for (auto v: old)
@@ -1057,17 +1057,17 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    
+
     if (!(write_ptr == 0 && write_len == 0) &&
         NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     if (write_ptr != 0 && write_len == 0)
         return TOO_SMALL;
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
-    
+
     if (hookCtx.slot[slot_no].entry == 0)
         return INTERNAL_ERROR;
 
@@ -1141,7 +1141,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (key.size() > write_len)
         return TOO_SMALL;
-    
+
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, key.size(),
         key.data(), key.size(),
@@ -1163,7 +1163,7 @@ int32_t
 get_free_slot(hook::HookContext& hookCtx)
 {
     int32_t slot_into = 0;
-    
+
     // allocate a slot
     if (hookCtx.slot_free.size() > 0)
     {
@@ -1212,7 +1212,7 @@ DEFINE_HOOK_FUNCTION(
     }
     else if (read_len == 32)
     {
-        
+
         uint256 hash;
         if (!hash.SetHexExact((const char*)(memory + read_ptr)))
             return INVALID_ARGUMENT;
@@ -1276,9 +1276,9 @@ DEFINE_HOOK_FUNCTION(
     bool copied = false;
     try
     {
-        ripple::STArray& parent_obj = 
+        ripple::STArray& parent_obj =
             const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STArray>();
-        
+
         std::cout << "slot_subarray 1 :: " << parent_obj.size() << "\n";
         if (parent_obj.size() <= array_id)
         return DOESNT_EXIST;
@@ -1329,13 +1329,13 @@ DEFINE_HOOK_FUNCTION(
 
     try
     {
-        ripple::STObject& parent_obj = 
+        ripple::STObject& parent_obj =
             const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STObject>();
 
         std::cout << "slot_subfield 2\n";
         if (!parent_obj.isFieldPresent(fieldCode))
             return DOESNT_EXIST;
-    
+
         new_slot = ( new_slot == 0 ? get_free_slot(hookCtx) : new_slot );
 
         // copy
@@ -1909,7 +1909,7 @@ DEFINE_HOOK_FUNCTION(
         return TOO_MANY_NONCES;
 
     auto hash = ripple::sha512Half(
-       ripple::Slice { memory + read_ptr, read_len } 
+       ripple::Slice { memory + read_ptr, read_len }
     );
 
     WRITE_WASM_MEMORY_AND_RETURN(
@@ -2247,13 +2247,13 @@ DEFINE_HOOK_FUNCTION(
     uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id )
 {
     HOOK_SETUP();
-    
+
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     if (NOT_IN_BOUNDS(sread_ptr, sread_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     if (NOT_IN_BOUNDS(fread_ptr, fread_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -2266,7 +2266,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (fread_len > 4096)
         return TOO_BIG;
-    
+
     // we must inject the field at the canonical location....
     // so find that location
     unsigned char* start = (unsigned char*)(memory + sread_ptr);
@@ -2329,9 +2329,9 @@ DEFINE_HOOK_FUNCTION(
         (write_ptr + bytes_written), (write_len - bytes_written),
         memory + fread_ptr, fread_len,
         memory, memory_length);
-    
 
-    
+
+
     // part 2
     if (end - inject_end > 0)
     {
@@ -2356,7 +2356,7 @@ DEFINE_HOOK_FUNCTION(
     uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id )
 {
     HOOK_SETUP();
-    
+
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -2396,7 +2396,7 @@ DEFINE_HOOK_FUNCTION(
         upto += length;
     }
 
-                
+
     if (erase_start >= start && erase_end >= start && erase_start <= end && erase_end <= end)
     {
         // do erasure via selective copy
@@ -2411,7 +2411,7 @@ DEFINE_HOOK_FUNCTION(
             memory, memory_length);
 
         // skip the field we're erasing
-        
+
         // part 2
         if (end - erase_end > 0)
         WRITE_WASM_MEMORY(
@@ -2605,112 +2605,137 @@ DEFINE_HOOK_FUNCTION(
 
 #define RETURN_IF_INVALID_FLOAT(float1)\
 {\
-    if (float1 < 0) return INVALID_FLOAT;\
-    if (float != 0)\
+    if (float1 < 0) return hook_api::INVALID_FLOAT;\
+    if (float1 != 0)\
     {\
-        int64_t mantissa = get_mantissa(float1);\
-        int32_t exponent = get_exponent(float1);\
-        if (mantissa < ripple::minMantissa ||\
-            mantissa > ripple::maxMantissa ||\
-            exponent > ripple::maxExponent ||\
-            exponent < ripple::minExponent)\
-            return INVALID_FLOAT;\
+        int64_t mantissa = hook_float::get_mantissa(float1);\
+        int32_t exponent = hook_float::get_exponent(float1);\
+        if (mantissa < minMantissa ||\
+            mantissa > maxMantissa ||\
+            exponent > maxExponent ||\
+            exponent < minExponent)\
+            return hook_api::INVALID_FLOAT;\
     }\
 }
-
-
-inline int32_t get_exponent(int64_t float1)
+namespace hook_float
 {
-    RETURN_IF_INVALID_FLOAT(float1);
-    return ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
-}
+    using namespace hook_api;
 
-inline uint64_t get_mantissa(int64_t float1)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    return float1 & ((1ULL<<55U)-1);
-}
+    static int64_t const minMantissa = 1000000000000000ull;
+    static int64_t const maxMantissa = 9999999999999999ull;
+    static int32_t const minExponent = -96;
+    static int32_t const maxExponent = 80;
 
-inline bool is_negative(int64_t float1)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    return (float1 >> 62) != 0;
-}
 
-inline int64_t invert_sign(int64_t float1)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    return float1 ^ (1ULL<<62);
-}
-
-inline int64_t set_sign(int64_t float1, bool set_negative)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    bool neg = is_negative(float1);
-    if (neg && set_negative || !neg && !set_negative)
-        return float1;
-
-    return invert_sign(float1);
-}
-
-inline int64_t set_mantissa(int64_t float1, uint64_t mantissa)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (mantissa > ripple::maxMantissa)
-        return MANTISSA_OVERSIZED;
-
-    return (int64_t)(
-            (((uint64_t)float1) & (~((1ULL<<55U)-1))) + /* remove existing mantissa */
-            (((uint64_t)mantissa) & ((1ULL<<55U)-1)));  /* add new mantissa */
-}
-
-inline int64_t set_exponent(int64_t float1, int32_t exponent)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (exponent > ripple::maxExponent)
-        return EXPONENT_OVERSIZED;
-    if (exponent < ripple::minExponent)
-        return EXPONENT_UNDERSIZED;
-
-    uint8_t exp = (uint8_t)(exponent + 97);
-
-    return (int64_t)(
-            ((uint64_t)float1) & ~(0x3FCULL<<52U) +     /* remove existing exponent */
-            (((uint64_t)exp)<<54U));                    /* add new exponent */
-
-}
-
-inline int64_t make_float(ripple::IOUAmount& amt)
-{
-    int64_t man_out = amt.mantissa();
-    int64_t float_out = 0;
-    if (man_out < 0)
+    inline uint64_t get_mantissa(int64_t float1);
+    inline int32_t get_exponent(int64_t float1)
     {
-        man_out *= -1;
-        float_out = set_sign(float_out, true);
+        if (float1 < 0) return hook_api::INVALID_FLOAT;
+        int32_t exponent = ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
+        int64_t mantissa = hook_float::get_mantissa(float1);
+        if (mantissa < minMantissa ||
+            mantissa > maxMantissa ||
+            exponent > maxExponent ||
+            exponent < minExponent)
+            return hook_api::INVALID_FLOAT;
+        return exponent;
     }
-    float_out = set_mantissa(float_out, man_out);
-    float_out = set_exponent(float_out, amt.exponent());
-    return float_out;
+
+    inline uint64_t get_mantissa(int64_t float1)
+    {
+        if (float1 < 0) return hook_api::INVALID_FLOAT;
+        int32_t exponent = hook_float::get_exponent(float1);
+        int64_t mantissa = float1 & ((1ULL<<55U)-1);
+        if (mantissa < minMantissa ||
+            mantissa > maxMantissa ||
+            exponent > maxExponent ||
+            exponent < minExponent)
+            return hook_api::INVALID_FLOAT;
+        return mantissa;
+    }
+
+    inline bool is_negative(int64_t float1)
+    {
+        return (float1 >> 62) != 0;
+    }
+
+    inline int64_t invert_sign(int64_t float1)
+    {
+        RETURN_IF_INVALID_FLOAT(float1);
+        return float1 ^ (1ULL<<62);
+    }
+
+    inline int64_t set_sign(int64_t float1, bool set_negative)
+    {
+        RETURN_IF_INVALID_FLOAT(float1);
+        bool neg = is_negative(float1);
+        if ((neg && set_negative) || (!neg && !set_negative))
+            return float1;
+
+        return invert_sign(float1);
+    }
+
+    inline int64_t set_mantissa(int64_t float1, uint64_t mantissa)
+    {
+        RETURN_IF_INVALID_FLOAT(float1);
+        if (mantissa > maxMantissa)
+            return MANTISSA_OVERSIZED;
+
+        return (int64_t)(
+                (((uint64_t)float1) & (~((1ULL<<55U)-1))) + /* remove existing mantissa */
+                (((uint64_t)mantissa) & ((1ULL<<55U)-1)));  /* add new mantissa */
+    }
+
+    inline int64_t set_exponent(int64_t float1, int32_t exponent)
+    {
+        RETURN_IF_INVALID_FLOAT(float1);
+        if (exponent > maxExponent)
+            return EXPONENT_OVERSIZED;
+        if (exponent < minExponent)
+            return EXPONENT_UNDERSIZED;
+
+        uint8_t exp = (uint8_t)(exponent + 97);
+
+        return (int64_t)(
+                (((uint64_t)float1) & ~(0x3FCULL<<52U)) +     /* remove existing exponent */
+                (((uint64_t)exp)<<54U));                    /* add new exponent */
+
+    }
+
+    inline int64_t make_float(ripple::IOUAmount& amt)
+    {
+        int64_t man_out = amt.mantissa();
+        int64_t float_out = 0;
+        if (man_out < 0)
+        {
+            man_out *= -1;
+            float_out = set_sign(float_out, true);
+        }
+        float_out = set_mantissa(float_out, man_out);
+        float_out = set_exponent(float_out, amt.exponent());
+        return float_out;
+    }
+
+    inline int64_t make_float(int32_t exponent, int64_t mantissa)
+    {
+        if (mantissa == 0)
+            return 0;
+        if (mantissa > maxMantissa)
+            return MANTISSA_OVERSIZED;
+        if (exponent > maxExponent)
+            return EXPONENT_OVERSIZED;
+        if (exponent < minExponent)
+            return EXPONENT_UNDERSIZED;
+
+        int64_t out = ((((int64_t)(exponent + 97)) & 0xFFU) << 54U)
+            + (mantissa < 0 ? (1ULL<<62U) : 0 )
+            + (((mantissa < 0) ? -1 : 1) * mantissa);
+        RETURN_IF_INVALID_FLOAT(out);
+        return out;
+    }
 }
 
-inline int64_t make_float(int32_t exponent, uint64_t manitssa)
-{
-    if (manitssa == 0)
-        return 0;
-    if (mantissa > ripple::maxMantissa)
-        return MANTISSA_OVERSIZED;
-    if (exponent > ripple::maxExponent)
-        return EXPONENT_OVERSIZED;
-    if (exponent < ripple::minExponent)
-        return EXPONENT_UNDERSIZED;
-
-    int64_t out = (((exponent + 97) & 0xFFU) << 54U)
-        + (mantissa < 0 ? (1ULL<<62U) : 0 )
-        + (((mantissa < 0) ? -1 : 1) * mantissa);
-    RETURN_IF_INVALID_FLOAT(out);
-    return out;
-}
+using namespace hook_float;
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -2720,11 +2745,11 @@ DEFINE_HOOK_FUNCTION(
     return make_float(exponent, mantissa);
 }
 
-using uint128_t = ripple::basics::base_uint<128>;
+using uint128_t = ripple::base_uint<128>;
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_multiply,
-    int64_t float1, uint64_t float2 )
+    int64_t float1, int64_t float2 )
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
@@ -2747,7 +2772,7 @@ DEFINE_HOOK_FUNCTION(
     }
     if (exp1 < minExponent || mantissa < minMantissa)
         return 0;
-    
+
     bool neg_result = (neg1 && !neg2) || (!neg1 && neg2);
     uint64_t man_out = result;
     int64_t float_out = set_mantissa(0, man_out);
@@ -2768,7 +2793,7 @@ DEFINE_HOOK_FUNCTION(
 
     int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
     int32_t exp1 = get_exponent(float1);
-    try 
+    try
     {
         ripple::IOUAmount amt {man1, exp1};
         ripple::IOUAmount out = ripple::mulRatio(amt, numerator, denominator, round_up != 0); // already normalized
@@ -2805,7 +2830,7 @@ DEFINE_HOOK_FUNCTION(
     if (equal_flag && less_flag && greater_flag || mode == 0)
         return INVALID_ARGUMENT;
 
-    try 
+    try
     {
         int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
         int32_t exp1 = get_exponent(float1);
@@ -2813,7 +2838,7 @@ DEFINE_HOOK_FUNCTION(
         int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1 : 1);
         int32_t exp2 = get_exponent(float2);
         ripple::IOUAmount amt2 {man2, exp2};
-        
+
         if (not_equal && amt1 != amt2)
             return 0;
 
@@ -2848,12 +2873,12 @@ DEFINE_HOOK_FUNCTION(
     int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1 : 1);
     int32_t exp2 = get_exponent(float2);
 
-    try 
+    try
     {
         ripple::IOUAmount amt1 {man1, exp1};
         ripple::IOUAmount amt2 {man2, exp2};
         amt1 += amt2;
-        return make_float(amt1);    
+        return make_float(amt1);
     }
     catch (std::overflow_error& e)
     {
@@ -2869,14 +2894,14 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     RETURN_IF_INVALID_FLOAT(float1);
-    
+
     uint16_t field = field_code & 0xFFFFU;
     uint16_t type  = field_code >> 16U;
 
     int bytes_needed = 8 +  ( field <  16 && type <  16 ? 1 :
-                            ( field >= 16 && type <  16 ? 2 : 
+                            ( field >= 16 && type <  16 ? 2 :
                             ( field <  16 && type >= 16 ? 2 : 3 )));
-    
+
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -2916,7 +2941,7 @@ DEFINE_HOOK_FUNCTION(
     uint64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1) + 97;
     bool neg = is_negative(float1);
-    
+
     /// encode the rippled floating point sto format
     uint8_t out[8];
     out[0] =  (!neg ? 0b11000000U : 0b10000000U);
@@ -2930,7 +2955,7 @@ DEFINE_HOOK_FUNCTION(
     out[6] = (uint8_t)((man >>  8U) & 0xFFU);
     out[7] = (uint8_t)((man >>  0U) & 0xFFU);
 
-    
+
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
         out, 8,
@@ -2990,7 +3015,7 @@ DEFINE_HOOK_FUNCTION(
     int64_t out = set_mantissa(0, mantissa);
     out = set_exponent(out, exponent);
     return set_sign(out, is_negative);
-}   
+}
 inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 {
     RETURN_IF_INVALID_FLOAT(float1);
@@ -3009,7 +3034,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 
     exp1 -= exp2;
     man1 /= man2;
-    
+
     while (man1 > maxMantissa)
     {
         if (exp1 > maxExponent)
@@ -3024,7 +3049,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
         man1 *= 10;
         exp1--;
     }
-    
+
     neg1 = ((neg1 && !neg2) || (!neg1) && neg2);
 
     int64_t out = set_mantissa(0, man1);
@@ -3079,7 +3104,7 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1 )
 {
     RETURN_IF_INVALID_FLOAT(float1);
-    return get_sign(float1);
+    return is_negative(float1);
 }
 
 DEFINE_HOOK_FUNCTION(

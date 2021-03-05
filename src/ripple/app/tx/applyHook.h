@@ -235,11 +235,11 @@ namespace hook_api {
     DECLARE_HOOK_FUNCNARG(int64_t,  float_one );
 
     DECLARE_HOOK_FUNCTION(int64_t,  float_exponent,     int64_t float1 );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_exponent_set  int64_t float1,     int32_t exponent );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_exponent_set, int64_t float1,     int32_t exponent );
     DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa,     int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa_set, int64_t float1,     int64_t mantissa );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign,         int64_t float1 );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set      int64_t float1,     int32_t negative );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set,     int64_t float1,     int32_t negative );
     
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
