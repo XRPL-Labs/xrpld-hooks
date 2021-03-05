@@ -98,7 +98,8 @@ namespace hook_api {
         MANTISSA_UNDERSIZED = -27,
         EXPONENT_OVERSIZED = -28,
         EXPONENT_UNDERSIZED = -29,
-        OVERFLOW = -30                  // if an operation with a float results in an overflow
+        OVERFLOW = -30,                 // if an operation with a float results in an overflow
+        NOT_IOU_AMOUNT = -31
     };
 
     enum ExitType : int8_t {
@@ -230,8 +231,16 @@ namespace hook_api {
                                                         int64_t float1,     uint32_t field_code);
     DECLARE_HOOK_FUNCTION(int64_t,  float_sto_set,      uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,  float_invert,       int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_divide,       int64_t float1,     int64_t float2 );
+    DECLARE_HOOK_FUNCNARG(int64_t,  float_one );
+
     DECLARE_HOOK_FUNCTION(int64_t,  float_exponent,     int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_exponent_set  int64_t float1,     int32_t exponent );
     DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa,     int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa_set, int64_t float1,     int64_t mantissa );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sign,         int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set      int64_t float1,     int32_t negative );
+    
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
@@ -399,6 +408,17 @@ namespace hook {
             ADD_HOOK_FUNCTION(float_invert, ctx);
             ADD_HOOK_FUNCTION(float_mantissa, ctx);
             ADD_HOOK_FUNCTION(float_exponent, ctx);
+
+            ADD_HOOK_FUNCTION(float_divide, ctx);
+            ADD_HOOK_FUNCTION(float_one, ctx);
+            ADD_HOOK_FUNCTION(float_mantissa, ctx);
+            ADD_HOOK_FUNCTION(float_mantissa_set, ctx);
+            ADD_HOOK_FUNCTION(float_exponent, ctx);
+            ADD_HOOK_FUNCTION(float_exponent_set, ctx);
+            ADD_HOOK_FUNCTION(float_sign, ctx);
+            ADD_HOOK_FUNCTION(float_sign_set, ctx);
+
+
             
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
