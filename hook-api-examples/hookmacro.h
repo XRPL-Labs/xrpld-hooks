@@ -109,7 +109,7 @@ int out_len = 0;\
 
 // when using this macro buf1len may be dynamic but buf2len must be static
 // provide n >= 1 to indicate how many times the macro will be hit on the line of code
-// e.g. if it is in a loop that loops 10 times n = 10 
+// e.g. if it is in a loop that loops 10 times n = 10
 #define BUFFER_EQUAL_GUARD(output, buf1, buf1len, buf2, buf2len, n)\
 {\
     output = ((buf1len) == (buf2len) ? 1 : 0);\
@@ -499,6 +499,30 @@ int out_len = 0;\
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
         etxn_details((uint32_t)buf_out, 105);                                               /* emitdet | size 105 */ \
     }
+
+
+
+/*
+
+typedef struct { int8_t exponent; int64_t mantissa; } IOUAmount_t;
+#define IOU_MIN_MANTISSA 1000000000000000ULL;
+#define IOU_MAX_MANTISSA 9999999999999999ULL;
+#define IOU_MIN_EXPONENT = -96;
+#define IOU_MAX_EXPONENT = 80;
+#define IOU_NORMALIZE(x)\
+{\
+    if (x.mantissa != 0)\
+    {\
+        while (x.mantissa < IOU_MIN_MANTISSA && x.exponent > IOU_MIN_EXPONENT)\
+        {\
+            x.mantissa *= 10;\
+            x.exponent--;\
+        }\
+
+    }
+}
+
+*/
 
 #endif
 

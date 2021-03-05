@@ -35,27 +35,35 @@ namespace hook_api {
 
     namespace keylet_code {
     enum keylet_code : uint32_t {
-            HOOK = 1,
-            HOOK_STATE = 2,
-            ACCOUNT = 3,
-            AMENDMENTS = 4,
-            CHILD = 5,
-            SKIP = 6,
-            FEES = 7,
-            NEGATIVE_UNL = 8,
-            LINE = 9,
-            OFFER = 10,
-            QUALITY = 11,
-            NEXT = 12,
-            TICKET = 13,
-            SIGNERS = 14,
-            CHECK = 15,
-            DEPOSIT_PREAUTH = 16,
-            UNCHECKED = 17,
-            OWNER_DIR = 18,
-            PAGE = 19,
-            ESCROW = 20,
-            PAYCHAN = 21
+        HOOK = 1,
+        HOOK_STATE = 2,
+        ACCOUNT = 3,
+        AMENDMENTS = 4,
+        CHILD = 5,
+        SKIP = 6,
+        FEES = 7,
+        NEGATIVE_UNL = 8,
+        LINE = 9,
+        OFFER = 10,
+        QUALITY = 11,
+        NEXT = 12,
+        TICKET = 13,
+        SIGNERS = 14,
+        CHECK = 15,
+        DEPOSIT_PREAUTH = 16,
+        UNCHECKED = 17,
+        OWNER_DIR = 18,
+        PAGE = 19,
+        ESCROW = 20,
+        PAYCHAN = 21
+    };
+    }
+
+    namespace compare_mode {
+    enum compare_mode : uint32_t {
+        EQUAL = 1,
+        LESS = 2,
+        GREATER = 4
     };
     }
 
@@ -83,7 +91,14 @@ namespace hook_api {
         RC_ACCEPT = -20,                // hook should temrinate due to an accept() call
         NO_SUCH_KEYLET = -21,           // invalid keylet or keylet type
         NOT_AN_ARRAY = -22,             // if a count of an sle is requested but its not STI_ARRAY
-        NOT_AN_OBJECT = -23             // if a subfield is requested from something that isn't an object
+        NOT_AN_OBJECT = -23,            // if a subfield is requested from something that isn't an object
+        INVALID_FLOAT = -24,
+        DIVISION_BY_ZERO = -25,
+        MANTISSA_OVERSIZED = -26,
+        MANTISSA_UNDERSIZED = -27,
+        EXPONENT_OVERSIZED = -28,
+        EXPONENT_UNDERSIZED = -29,
+        OVERFLOW = -30                  // if an operation with a float results in an overflow
     };
 
     enum ExitType : int8_t {
@@ -204,23 +219,19 @@ namespace hook_api {
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
     DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr,  uint32_t read_len );
 
-    DECLARE_HOOK_FUNCTION(int64_t,  float_create,       uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t manitssa_hi, uint32_t mantissa_lo,
-                                                        uint32_t exponent );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_multiply,     uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t aread_ptr, uint32_t aread_len,
-                                                        uint32_t bread_ptr, uint32_t bread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_negate,       uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_equal,        uint32_t aread_ptr, uint32_t aread_len,
-                                                        uint32_t bread_ptr, uint32_t bread_len, uint32_t precision );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_sum,          uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t aread_ptr, uint32_t aread_len,
-                                                        uint32_t bread_ptr, uint32_t bread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_serialize,    uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t read_ptr,  uint32_t read_len, uint32_t field_code);
-    DECLARE_HOOK_FUNCTION(int64_t,  float_unserialize,  uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t read_ptr,  uint32_t read_len );
-
+    DECLARE_HOOK_FUNCTION(int64_t,  float_set,          int32_t exponent,   int64_t mantissa );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_multiply,     int64_t float1,     int64_t float2 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_mulratio,     int64_t float1,     uint32_t round_up, 
+                                                        uint32_t numerator, uint32_t denominator );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_negate,       int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_compare,      int64_t float1,     int64_t float2, uint32_t mode );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sum,          int64_t float1,     int64_t float2 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sto,          uint32_t write_ptr, uint32_t write_len,
+                                                        int64_t float1,     uint32_t field_code);
+    DECLARE_HOOK_FUNCTION(int64_t,  float_sto_set,      uint32_t read_ptr,  uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_invert,       int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_exponent,     int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa,     int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
@@ -377,13 +388,17 @@ namespace hook {
             ADD_HOOK_FUNCTION(etxn_reserve, ctx);
             ADD_HOOK_FUNCTION(etxn_generation, ctx);
             
-            ADD_HOOK_FUNCTION(float_create, ctx);
+            ADD_HOOK_FUNCTION(float_set, ctx);
             ADD_HOOK_FUNCTION(float_multiply, ctx);
+            ADD_HOOK_FUNCTION(float_mulratio, ctx);
             ADD_HOOK_FUNCTION(float_negate, ctx);
-            ADD_HOOK_FUNCTION(float_equal, ctx);
+            ADD_HOOK_FUNCTION(float_compare, ctx);
             ADD_HOOK_FUNCTION(float_sum, ctx);
-            ADD_HOOK_FUNCTION(float_serialize, ctx);
-            ADD_HOOK_FUNCTION(float_unserialize, ctx);            
+            ADD_HOOK_FUNCTION(float_sto, ctx);
+            ADD_HOOK_FUNCTION(float_sto_set, ctx);            
+            ADD_HOOK_FUNCTION(float_invert, ctx);
+            ADD_HOOK_FUNCTION(float_mantissa, ctx);
+            ADD_HOOK_FUNCTION(float_exponent, ctx);
             
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
