@@ -2632,7 +2632,7 @@ namespace hook_float
     {
         if (float1 < 0) return hook_api::INVALID_FLOAT;
         int32_t exponent = ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
-        int64_t mantissa = hook_float::get_mantissa(float1);
+        int64_t mantissa = float1 & ((1ULL<<55U)-1);
         if (mantissa < minMantissa ||
             mantissa > maxMantissa ||
             exponent > maxExponent ||
@@ -2644,7 +2644,7 @@ namespace hook_float
     inline uint64_t get_mantissa(int64_t float1)
     {
         if (float1 < 0) return hook_api::INVALID_FLOAT;
-        int32_t exponent = hook_float::get_exponent(float1);
+        int32_t exponent = ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
         int64_t mantissa = float1 & ((1ULL<<55U)-1);
         if (mantissa < minMantissa ||
             mantissa > maxMantissa ||
