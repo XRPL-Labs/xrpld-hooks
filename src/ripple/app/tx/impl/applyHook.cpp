@@ -2716,7 +2716,7 @@ namespace hook_float
         return float_out;
     }
 
-    inline int64_t make_float(int32_t exponent, int64_t mantissa)
+    inline int64_t make_float(int64_t mantissa, int32_t exponent)
     {
         if (mantissa == 0)
             return 0;
@@ -2742,10 +2742,45 @@ DEFINE_HOOK_FUNCTION(
     float_set,
     int32_t exponent, int64_t mantissa )
 {
-    return make_float(exponent, mantissa);
+    return make_float(mantissa, exponent);
 }
 
-using uint128_t = ripple::base_uint<128>;
+// https://stackoverflow.com/questions/31652875/fastest-way-to-multiply-two-64-bit-ints-to-128-bit-then-to-64-bit
+inline void umul64wide (uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo)
+{
+    uint64_t a_lo = (uint64_t)(uint32_t)a;
+    uint64_t a_hi = a >> 32;
+    uint64_t b_lo = (uint64_t)(uint32_t)b;
+    uint64_t b_hi = b >> 32;
+
+    uint64_t p0 = a_lo * b_lo;
+    uint64_t p1 = a_lo * b_hi;
+    uint64_t p2 = a_hi * b_lo;
+    uint64_t p3 = a_hi * b_hi;
+
+    uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
+
+    *lo = p0 + (p1 << 32) + (p2 << 32);
+    *hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
+}
+
+inline int64_t mulratio_internal
+    (int64_t& man1, int32_t& exp1, bool round_up, uint32_t numerator, uint32_t denominator)
+{
+    try
+    {
+        ripple::IOUAmount amt {man1, exp1};
+        ripple::IOUAmount out = ripple::mulRatio(amt, numerator, denominator, round_up != 0); // already normalized
+        man1 = out.mantissa();
+        exp1 = out.exponent();
+        return 1;
+    }
+    catch (std::overflow_error& e)
+    {
+        return OVERFLOW;
+    }
+}
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_multiply,
@@ -2761,25 +2796,51 @@ DEFINE_HOOK_FUNCTION(
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
 
-    exp1 += exp2;
-    uint128_t result = uint128_t(man1) * uint128_t(man2);
-    while (result > maxMantissa)
-    {
-        if (exp1 > maxExponent)
-            return OVERFLOW;
-        result /= 10;
-        exp1++;
-    }
-    if (exp1 < minExponent || mantissa < minMantissa)
-        return 0;
 
-    bool neg_result = (neg1 && !neg2) || (!neg1 && neg2);
-    uint64_t man_out = result;
-    int64_t float_out = set_mantissa(0, man_out);
-    float_out = set_exponent(float_out, exp1);
-    float_out = set_sign(float_out, neg_result);
-    return float_out;
+    int32_t exp_out = exp1 + exp2;
+
+    // multiply the mantissas, this could result in upto a 128 bit number, represented as high and low here
+    uint64_t man_hi = 0, man_lo = 0;
+    umul64wide(man1, man2, &man_hi, &man_lo);
+    
+    // normalize our double wide mantissa by shifting bits under man_hi is 0
+    uint8_t man_shifted = 0;
+    while (man_hi > 0)
+    {
+        bool set = (man_hi & 1) != 0;
+        man_hi >>= 1;
+        man_lo >>= 1;
+        man_lo += (set ? (1ULL<<63U) : 0);
+        man_shifted++;
+    }
+
+    // we shifted the mantissa by man_shifted bits, which equates to a division by 2^man_shifted
+    // now shift into the normalized range
+    while (man_lo > maxMantissa)
+    {
+        if (exp_out > maxExponent)
+            return OVERFLOW;
+        man_lo /= 10;
+        exp_out++;
+    }
+    
+    // we can adjust for the bitshifting by doing upto two smaller multiplications now
+    neg1 = (neg1 && !neg2) || (!neg1 && neg2);
+    int64_t man_out = (neg1 ? -1 : 1) * ((int64_t)(man_lo));
+    if (man_shifted > 32)
+    {
+        man_shifted -=32;
+        if (mulratio_internal(man_out, exp_out, false, 0xFFFFFFFFU, 1) < 0)
+            return OVERFLOW;
+    }
+
+    if (mulratio_internal(man_out, exp_out, false, 1U << man_shifted, 1) < 0)
+        return OVERFLOW;
+
+    // now we have our product
+    return make_float(man_out, exp_out);
 }
+
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -2793,16 +2854,11 @@ DEFINE_HOOK_FUNCTION(
 
     int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
     int32_t exp1 = get_exponent(float1);
-    try
-    {
-        ripple::IOUAmount amt {man1, exp1};
-        ripple::IOUAmount out = ripple::mulRatio(amt, numerator, denominator, round_up != 0); // already normalized
-        return make_float(out);
-    }
-    catch (std::overflow_error& e)
-    {
+
+    if (mulratio_internal(man1, exp1, round_up > 0, numerator, denominator) < 0)
         return OVERFLOW;
-    }
+
+    return make_float(man1, exp1);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -2817,7 +2873,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_compare,
-    int64_t float1, uint64_t float2, uint32_t mode)
+    int64_t float1, int64_t float2, uint32_t mode)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
@@ -2827,7 +2883,7 @@ DEFINE_HOOK_FUNCTION(
     bool greater_flag   = mode & compare_mode::GREATER;
     bool not_equal      = less_flag && greater_flag;
 
-    if (equal_flag && less_flag && greater_flag || mode == 0)
+    if ((equal_flag && less_flag && greater_flag) || mode == 0)
         return INVALID_ARGUMENT;
 
     try
@@ -2863,7 +2919,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_sum,
-    int64_t float1, uint64_t float2)
+    int64_t float1, int64_t float2)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
@@ -3050,7 +3106,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
         exp1--;
     }
 
-    neg1 = ((neg1 && !neg2) || (!neg1) && neg2);
+    neg1 = (neg1 && !neg2) || (!neg1 && neg2);
 
     int64_t out = set_mantissa(0, man1);
     out = set_exponent(out, exp1);
@@ -3063,10 +3119,18 @@ DEFINE_HOOK_FUNCTION(
 {
     return float_divide_internal(float1, float2);
 }
-const int64_t float_one_internal = make_float(-15, 1000000000000000ull);
+const int64_t float_one_internal = make_float(1000000000000000ull, -15);
 
 
 DEFINE_HOOK_FUNCTION(
+    int64_t,
+    float_sign_set,
+    int64_t float1,     uint32_t negative)
+{
+    RETURN_IF_INVALID_FLOAT(float1);
+    return set_sign(float1, negative != 0);
+}
+DEFINE_HOOK_FUNCNARG(
     int64_t,
     float_one)
 {
@@ -3125,12 +3189,4 @@ DEFINE_HOOK_FUNCTION(
     return set_mantissa(float1, mantissa);
 }
 
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_sign_set,
-    int64_t float1, uint32_t negative )
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    return set_sign(float1, negative);
-}
 
