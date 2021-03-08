@@ -324,6 +324,32 @@ extern int64_t otxn_id             (uint32_t write_ptr,  uint32_t write_len);
 extern int64_t otxn_type           (void);
 
 
+
+extern int64_t  float_set           (int32_t exponent,   int64_t mantissa );
+extern int64_t  float_multiply      (int64_t float1,     int64_t float2 );
+extern int64_t  float_mulratio      (int64_t float1,     uint32_t round_up,
+                                     uint32_t numerator, uint32_t denominator );
+extern int64_t  float_negate        (int64_t float1 );
+extern int64_t  float_compare       (int64_t float1,     int64_t float2, uint32_t mode );
+extern int64_t  float_sum           (int64_t float1,     int64_t float2 );
+extern int64_t  float_sto           (uint32_t write_ptr, uint32_t write_len,
+                                     int64_t float1,     uint32_t field_code);
+extern int64_t  float_sto_set       (uint32_t read_ptr,  uint32_t read_len );
+extern int64_t  float_invert        (int64_t float1 );
+extern int64_t  float_divide        (int64_t float1,     int64_t float2 );
+extern int64_t  float_one           ();
+
+extern int64_t  float_exponent      (int64_t float1 );
+extern int64_t  float_exponent_set  (int64_t float1,     int32_t exponent );
+extern int64_t  float_mantissa      (int64_t float1 );
+extern int64_t  float_mantissa_set  (int64_t float1,     int64_t mantissa );
+extern int64_t  float_sign          (int64_t float1 );
+extern int64_t  float_sign_set      (int64_t float1,     uint32_t negative );
+
+extern int64_t  trace_float         (int64_t float1);
+
+
+
 #define SUCCESS  0                  // return codes > 0 are reserved for hook apis to return "success"
 #define OUT_OF_BOUNDS  -1           // could not read or write to a pointer to provided by hook
 #define INTERNAL_ERROR  -2          // eg directory is corrupt
@@ -346,6 +372,8 @@ extern int64_t otxn_type           (void);
 #define RC_ROLLBACK -19             // used internally by hook api to indicate a rollback
 #define RC_ACCEPT -20               // used internally by hook api to indicate an accept
 #define NO_SUCH_KEYLET -21          // the specified keylet or keylet type does not exist or could not be computed
+
+#define INVALID_FLOAT -10024        // if the mantissa or exponent are outside normalized ranges
 
 #define KEYLET_HOOK 1                                                                                                  
 #define KEYLET_HOOK_STATE 2                                                                                            

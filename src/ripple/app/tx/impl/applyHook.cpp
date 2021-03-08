@@ -2608,66 +2608,58 @@ DEFINE_HOOK_FUNCTION(
     if (float1 < 0) return hook_api::INVALID_FLOAT;\
     if (float1 != 0)\
     {\
-        int64_t mantissa = hook_float::get_mantissa(float1);\
-        int32_t exponent = hook_float::get_exponent(float1);\
+        int64_t mantissa = get_mantissa(float1);\
+        int32_t exponent = get_exponent(float1);\
         if (mantissa < minMantissa ||\
             mantissa > maxMantissa ||\
             exponent > maxExponent ||\
             exponent < minExponent)\
-            return hook_api::INVALID_FLOAT;\
+            return INVALID_FLOAT;\
     }\
 }
 namespace hook_float
 {
     using namespace hook_api;
-
     static int64_t const minMantissa = 1000000000000000ull;
     static int64_t const maxMantissa = 9999999999999999ull;
     static int32_t const minExponent = -96;
     static int32_t const maxExponent = 80;
-
-
-    inline uint64_t get_mantissa(int64_t float1);
     inline int32_t get_exponent(int64_t float1)
     {
-        if (float1 < 0) return hook_api::INVALID_FLOAT;
-        int32_t exponent = ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
-        int64_t mantissa = float1 & ((1ULL<<55U)-1);
-        if (mantissa < minMantissa ||
-            mantissa > maxMantissa ||
-            exponent > maxExponent ||
-            exponent < minExponent)
-            return hook_api::INVALID_FLOAT;
-        return exponent;
+        if (float1 < 0)
+            return INVALID_FLOAT;
+        if (float1 == 0)
+            return 0;
+        if (float1 < 0) return INVALID_FLOAT;
+        uint64_t float_in = (uint64_t)float1;
+        float_in >>= 54U;
+        float_in &= 0xFFU;
+        return ((int32_t)float_in) - 97;
     }
 
     inline uint64_t get_mantissa(int64_t float1)
     {
-        if (float1 < 0) return hook_api::INVALID_FLOAT;
-        int32_t exponent = ((int32_t)((float1 >> 54) & 0xFFU)) - 97;
-        int64_t mantissa = float1 & ((1ULL<<55U)-1);
-        if (mantissa < minMantissa ||
-            mantissa > maxMantissa ||
-            exponent > maxExponent ||
-            exponent < minExponent)
-            return hook_api::INVALID_FLOAT;
-        return mantissa;
+        if (float1 < 0)
+            return INVALID_FLOAT;
+        if (float1 == 0)
+            return 0;
+        if (float1 < 0) return INVALID_FLOAT;
+        float1 -= ((((uint64_t)float1) >> 54U) << 54U);
+        return float1;
     }
 
     inline bool is_negative(int64_t float1)
     {
-        return (float1 >> 62) != 0;
+        return (float1 >> 62U) != 0;
     }
 
     inline int64_t invert_sign(int64_t float1)
     {
-        RETURN_IF_INVALID_FLOAT(float1);
-        return float1 ^ (1ULL<<62);
+        return float1 ^ (1ULL<<62U);
     }
 
     inline int64_t set_sign(int64_t float1, bool set_negative)
     {
-        RETURN_IF_INVALID_FLOAT(float1);
         bool neg = is_negative(float1);
         if ((neg && set_negative) || (!neg && !set_negative))
             return float1;
@@ -2677,29 +2669,23 @@ namespace hook_float
 
     inline int64_t set_mantissa(int64_t float1, uint64_t mantissa)
     {
-        RETURN_IF_INVALID_FLOAT(float1);
         if (mantissa > maxMantissa)
             return MANTISSA_OVERSIZED;
-
-        return (int64_t)(
-                (((uint64_t)float1) & (~((1ULL<<55U)-1))) + /* remove existing mantissa */
-                (((uint64_t)mantissa) & ((1ULL<<55U)-1)));  /* add new mantissa */
+        return float1 - get_mantissa(float1) + mantissa;
     }
 
     inline int64_t set_exponent(int64_t float1, int32_t exponent)
     {
-        RETURN_IF_INVALID_FLOAT(float1);
         if (exponent > maxExponent)
             return EXPONENT_OVERSIZED;
         if (exponent < minExponent)
             return EXPONENT_UNDERSIZED;
 
-        uint8_t exp = (uint8_t)(exponent + 97);
-
-        return (int64_t)(
-                (((uint64_t)float1) & ~(0x3FCULL<<52U)) +     /* remove existing exponent */
-                (((uint64_t)exp)<<54U));                    /* add new exponent */
-
+        uint64_t exp = (exponent + 97);
+        exp <<= 54U;
+        float1 &= ~(0xFFLL<<54);
+        float1 += (int64_t)exp;
+        return float1;
     }
 
     inline int64_t make_float(ripple::IOUAmount& amt)
@@ -2718,6 +2704,7 @@ namespace hook_float
 
     inline int64_t make_float(int64_t mantissa, int32_t exponent)
     {
+        std::cout << "make_float(" << mantissa << ", " << exponent << ")\n";
         if (mantissa == 0)
             return 0;
         if (mantissa > maxMantissa)
@@ -2726,23 +2713,96 @@ namespace hook_float
             return EXPONENT_OVERSIZED;
         if (exponent < minExponent)
             return EXPONENT_UNDERSIZED;
-
-        int64_t out = ((((int64_t)(exponent + 97)) & 0xFFU) << 54U)
-            + (mantissa < 0 ? (1ULL<<62U) : 0 )
-            + (((mantissa < 0) ? -1 : 1) * mantissa);
-        RETURN_IF_INVALID_FLOAT(out);
+        bool neg = mantissa < 0;
+        if (neg)
+            mantissa *= -1LL;
+        int64_t out =  0;
+        out = set_mantissa(out, mantissa);
+        out = set_exponent(out, exponent);
+        out = set_sign(out, neg);
         return out;
     }
-}
 
+    int64_t float_set(int32_t exp, int64_t mantissa)
+    {
+        if (mantissa == 0)
+            return 0;
+
+        bool neg = mantissa < 0;
+        if (neg)
+            mantissa *= -1LL;
+
+        // normalize
+        while (mantissa < minMantissa)
+        {
+            mantissa *= 10;
+            exp--;
+            if (exp < minExponent)
+                return INVALID_FLOAT; //underflow
+        }
+        while (mantissa > maxMantissa)
+        {
+            mantissa /= 10;
+            exp++;
+            if (exp > maxExponent)
+                return INVALID_FLOAT; //overflow
+        }
+
+        return make_float( ( neg ? -1LL : 1LL ) * mantissa, exp);
+
+    }
+
+}
 using namespace hook_float;
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    float_set,
-    int32_t exponent, int64_t mantissa )
+    trace_float,
+    int64_t float1)
 {
-    return make_float(mantissa, exponent);
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
+    if (!j.trace())
+        return 0;
+
+    int64_t man = get_mantissa(float1);
+    int32_t exp = get_exponent(float1);
+    bool neg = is_negative(float1);
+    man *= (neg ? -1 : 1);
+    if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
+    {
+        j.trace() << "Hook: [trace()]: <invalid float>";
+        return 0;
+    }
+
+    j.trace() << "Hook: [trace()]: " << man << "*10^(" << exp << ")";
+    return 0;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    float_set,
+    int32_t exp, int64_t mantissa )
+{
+    if (mantissa == 0)
+        return 0;
+
+    // normalize
+    while (mantissa < minMantissa)
+    {
+        mantissa *= 10;
+        exp--;
+        if (exp < minExponent)
+            return INVALID_FLOAT; //underflow
+    }
+    while (mantissa > maxMantissa)
+    {
+        mantissa /= 10;
+        exp++;
+        if (exp > maxExponent)
+            return INVALID_FLOAT; //overflow
+    }
+
+    return make_float(mantissa, exp);
 }
 
 // https://stackoverflow.com/questions/31652875/fastest-way-to-multiply-two-64-bit-ints-to-128-bit-then-to-64-bit
@@ -2802,7 +2862,7 @@ DEFINE_HOOK_FUNCTION(
     // multiply the mantissas, this could result in upto a 128 bit number, represented as high and low here
     uint64_t man_hi = 0, man_lo = 0;
     umul64wide(man1, man2, &man_hi, &man_lo);
-    
+
     // normalize our double wide mantissa by shifting bits under man_hi is 0
     uint8_t man_shifted = 0;
     while (man_hi > 0)
@@ -2823,7 +2883,7 @@ DEFINE_HOOK_FUNCTION(
         man_lo /= 10;
         exp_out++;
     }
-    
+
     // we can adjust for the bitshifting by doing upto two smaller multiplications now
     neg1 = (neg1 && !neg2) || (!neg1 && neg2);
     int64_t man_out = (neg1 ? -1 : 1) * ((int64_t)(man_lo));

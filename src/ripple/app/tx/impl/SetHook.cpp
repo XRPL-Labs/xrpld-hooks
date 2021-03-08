@@ -130,6 +130,7 @@ const std::set<std::string> import_whitelist
     "state_set",
     "trace",
     "trace_num",
+    "trace_float",
     "trace_slot",
     "util_accid",
     "util_raddr",

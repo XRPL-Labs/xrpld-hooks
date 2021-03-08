@@ -92,7 +92,7 @@ namespace hook_api {
         NO_SUCH_KEYLET = -21,           // invalid keylet or keylet type
         NOT_AN_ARRAY = -22,             // if a count of an sle is requested but its not STI_ARRAY
         NOT_AN_OBJECT = -23,            // if a subfield is requested from something that isn't an object
-        INVALID_FLOAT = -24,
+        INVALID_FLOAT = -10024,         // specially selected value that will never be a valid exponent
         DIVISION_BY_ZERO = -25,
         MANTISSA_OVERSIZED = -26,
         MANTISSA_UNDERSIZED = -27,
@@ -267,6 +267,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
     DECLARE_HOOK_FUNCTION(int64_t,	trace_num,          uint32_t read_ptr, uint32_t read_len, int64_t number );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_float,        int64_t  float1 );
 
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_burden         );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_field,         uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
@@ -448,6 +449,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(trace, ctx);
             ADD_HOOK_FUNCTION(trace_slot, ctx);
             ADD_HOOK_FUNCTION(trace_num, ctx);
+            ADD_HOOK_FUNCTION(trace_float, ctx);
 
             SSVM::AST::Limit TabLimit(10, 20);
             addHostTable("table", std::make_unique<SSVM::Runtime::Instance::TableInstance>(
