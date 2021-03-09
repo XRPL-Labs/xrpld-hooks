@@ -57,6 +57,7 @@ SF_U8 const sfTransactionResult(access, STI_UINT8, 3, "TransactionResult");
 // 8-bit integers (uncommon)
 SF_U8 const sfTickSize(access, STI_UINT8, 16, "TickSize");
 SF_U8 const sfUNLModifyDisabling(access, STI_UINT8, 17, "UNLModifyDisabling");
+SF_U8 const sfHookResult(access, STI_UINT8, 18, "HookResult");
 
 // 16-bit integers
 SF_U16 const sfLedgerEntryType(
@@ -122,6 +123,7 @@ SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 SF_U32 const sfHookStateDataMaxSize(access, STI_UINT32, 42, "HookStateDataMaxSize");
 
 SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "EmitGeneration");
+SF_U32 const sfHookReturnCode(access, STI_UINT32, 44, "HookReturnCode");
 
 // 64-bit integers (common)
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
@@ -186,6 +188,7 @@ SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
 SF_U256 const sfHookStateKey(access, STI_HASH256, 26, "HookStateKey");
 SF_U256 const sfHookSetTxnID(access, STI_HASH256, 27, "HookSetTxnID");
+SF_U256 const sfHookHash(access, STI_HASH256, 28, "HookHash");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");
@@ -246,6 +249,7 @@ SF_Blob const sfNegativeUNLToDisable(access, STI_VL, 20, "ValidatorToDisable");
 SF_Blob const
     sfNegativeUNLToReEnable(access, STI_VL, 21, "ValidatorToReEnable");
 SF_Blob const sfHookStateData(access, STI_VL, 22, "HookStateData");
+SF_Blob const sfHookReturnString(access, STI_VL, 23, "HookReturnString");
 
 // account
 SF_Account const sfAccount(access, STI_ACCOUNT, 1, "Account");
@@ -258,6 +262,8 @@ SF_Account const sfTarget(access, STI_ACCOUNT, 7, "Target");
 SF_Account const sfRegularKey(access, STI_ACCOUNT, 8, "RegularKey");
 
 SF_Account const sfEmitCallback(access, STI_ACCOUNT, 9, "EmitCallback"); //hook to callback when pseudo is included in a ledger 
+// account (uncommon)
+SF_Account const sfHookAccount(access, STI_ACCOUNT, 16, "HookAccount");
 
 // path set
 SField const sfPaths(access, STI_PATHSET, 1, "Paths");
@@ -290,6 +296,7 @@ SField const sfSigner(access, STI_OBJECT, 16, "Signer");
 SField const sfMajority(access, STI_OBJECT, 18, "Majority");
 SField const sfNegativeUNLEntry(access, STI_OBJECT, 19, "DisabledValidator");
 SField const sfEmittedTxn(access, STI_OBJECT, 20, "EmittedTxn");    // wrapper for an emitted tx
+SField const sfHookExecution(access, STI_OBJECT, 21, "HookExecution");
 
 // array of objects
 // ARRAY/1 is reserved for end of array
@@ -313,6 +320,7 @@ SField const sfMemos(access, STI_ARRAY, 9, "Memos");
 // array of objects (uncommon)
 SField const sfMajorities(access, STI_ARRAY, 16, "Majorities");
 SField const sfNegativeUNL(access, STI_ARRAY, 17, "NegativeUNL");
+SField const sfHookExecutions(access, STI_ARRAY, 18, "HookExecutions");
 
 SField::SField(
     private_access_tag_t,
