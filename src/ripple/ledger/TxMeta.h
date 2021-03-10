@@ -109,7 +109,6 @@ public:
         mDelivered.reset(delivered);
     }
 
-    //RH TODO: should this be const?
     STArray const&
     getHookExecutions() const
     {

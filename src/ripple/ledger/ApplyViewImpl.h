@@ -79,6 +79,12 @@ public:
         hookExecution_.push_back(std::move(hookExecution));
     }
 
+    uint16_t
+    nextHookExecutionIndex()
+    {
+        return hookExecution_.size();
+    }
+
     /** Get the number of modified entries
      */
     std::size_t

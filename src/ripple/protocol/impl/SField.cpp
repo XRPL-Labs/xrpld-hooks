@@ -71,6 +71,9 @@ SF_U16 const sfSignerWeight(access, STI_UINT16, 3, "SignerWeight");
 
 // 16-bit integers (uncommon)
 SF_U16 const sfVersion(access, STI_UINT16, 16, "Version");
+SF_U16 const sfHookStateChangeCount(access, STI_UINT16, 17, "HookStateChangeCount");
+SF_U16 const sfHookEmitCount(access, STI_UINT16, 18, "HookEmitCount");
+SF_U16 const sfHookExecutionIndex(access, STI_UINT16, 19, "HookExecutionIndex");
 
 // 32-bit integers (common)
 SF_U32 const sfFlags(access, STI_UINT32, 2, "Flags");

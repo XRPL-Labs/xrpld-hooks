@@ -350,6 +350,9 @@ extern SF_U16 const sfSignerWeight;
 
 // 16-bit integers (uncommon)
 extern SF_U16 const sfVersion;
+extern SF_U16 const sfHookStateChangeCount;
+extern SF_U16 const sfHookEmitCount;
+extern SF_U16 const sfHookExecutionIndex;
 
 // 32-bit integers (common)
 extern SF_U32 const sfFlags;

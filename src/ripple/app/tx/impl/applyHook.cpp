@@ -548,6 +548,7 @@ void hook::commitChangesToLedger(
         return;
     }
 
+    uint16_t change_count = 0;
 
     // write hook state changes, if we are allowed to
     if (cclMode & cclAPPLY)
@@ -558,6 +559,7 @@ void hook::commitChangesToLedger(
             const auto& key = cacheEntry.first;
             const auto& blob = cacheEntry.second.second;
             if (is_modified) {
+                change_count++;
                 // this entry isn't just cached, it was actually modified
                 auto HSKeylet = keylet::hook_state(hookResult.account, key);
                 auto slice = Slice(blob.data(), blob.size());
@@ -571,6 +573,11 @@ void hook::commitChangesToLedger(
     // closed views do not modify add/remove ledger entries
     if (applyCtx.view().open())
         return;
+
+    //RH TODO: this seems hacky... and also maybe there's a way this cast might fail?
+    ApplyViewImpl& avi = dynamic_cast<ApplyViewImpl&>(applyCtx.view());
+
+    uint16_t exec_index = avi.nextHookExecutionIndex();
 
     // apply emitted transactions to the ledger (by adding them to the emitted directory) if we are allowed to
     if (cclMode & cclAPPLY)
@@ -672,8 +679,10 @@ void hook::commitChangesToLedger(
     meta.setFieldU64(sfHookReturnCode, (uint64_t)(hookResult.exitCode));
     meta.setFieldVL(sfHookReturnString, ripple::Slice{hookResult.exitReason.data(), hookResult.exitReason.size()});
     meta.setFieldU64(sfHookInstructionCount, hookResult.instructionCount);
-    //RH TODO: this seems hacky... and also maybe there's a way this cast might fail?
-    dynamic_cast<ApplyViewImpl&>(applyCtx.view()).addHookMetaData(std::move(meta));
+    meta.setFieldU16(sfHookEmitCount, (uint16_t)(hookResult.emittedTxn.size())); // this will never wrap, hard limit
+    meta.setFieldU16(sfHookExecutionIndex, exec_index );
+    meta.setFieldU16(sfHookStateChangeCount, change_count );
+    avi.addHookMetaData(std::move(meta));
 
 }
 
