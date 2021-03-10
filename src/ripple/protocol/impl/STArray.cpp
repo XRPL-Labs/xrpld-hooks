@@ -42,6 +42,11 @@ STArray::STArray(int n)
     v_.reserve(n);
 }
 
+STArray::STArray(std::vector<STObject> const& v, SField const& f) : STBase(f)
+{
+    v_ = v;
+}
+
 STArray::STArray(SField const& f) : STBase(f)
 {
 }
