@@ -123,7 +123,6 @@ SF_U32 const sfHookReserveCount(access, STI_UINT32, 41, "HookReserveCount");
 SF_U32 const sfHookStateDataMaxSize(access, STI_UINT32, 42, "HookStateDataMaxSize");
 
 SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "EmitGeneration");
-SF_U32 const sfHookReturnCode(access, STI_UINT32, 44, "HookReturnCode");
 
 // 64-bit integers (common)
 SF_U64 const sfIndexNext(access, STI_UINT64, 1, "IndexNext");
@@ -144,6 +143,8 @@ SF_U64 const sfEmitBurden(access, STI_UINT64, 12, "EmitBurden");
 
 // 64-bit integers (uncommon)
 SF_U64 const sfHookOn(access, STI_UINT64, 16, "HookOn");
+SF_U64 const sfHookInstructionCount(access, STI_UINT64, 17, "HookInstructionCount");
+SF_U64 const sfHookReturnCode(access, STI_UINT64, 18, "HookReturnCode");
 
 
 // 128-bit

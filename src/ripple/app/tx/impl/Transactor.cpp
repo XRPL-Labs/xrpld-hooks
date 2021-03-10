@@ -729,6 +729,7 @@ Transactor::operator()()
                 sendResult =
                     hook::apply(
                             hookSending->getFieldH256(sfHookSetTxnID),
+                            hookSending->getFieldH256(sfHookHash),
                             hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
 
                 if (sendResult->exitType != hook_api::ExitType::ACCEPT)
@@ -751,6 +752,7 @@ Transactor::operator()()
                     recvResult =
                         hook::apply(
                                 hookReceiving->getFieldH256(sfHookSetTxnID),
+                                hookReceiving->getFieldH256(sfHookHash),
                                 hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
 
                     if (recvResult->exitType != hook_api::ExitType::ACCEPT)
@@ -785,6 +787,7 @@ Transactor::operator()()
                     try {
                      hook::apply(
                             hookCallback->getFieldH256(sfHookSetTxnID),
+                            hookCallback->getFieldH256(sfHookHash),
                             hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
 
                     }

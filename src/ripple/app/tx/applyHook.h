@@ -102,11 +102,11 @@ namespace hook_api {
         NOT_IOU_AMOUNT = -31
     };
 
-    enum ExitType : int8_t {
-        UNSET = -2,
-        WASM_ERROR = -1,
-        ROLLBACK = 0,
-        ACCEPT = 1,
+    enum ExitType : uint8_t {
+        UNSET = 0,
+        WASM_ERROR = 1,
+        ROLLBACK = 2,
+        ACCEPT = 3,
     };
 
     const int etxn_details_size = 105;
@@ -290,6 +290,7 @@ namespace hook {
 
     HookResult apply(
             ripple::uint256,
+            ripple::uint256,
             ripple::Blob,
             ripple::ApplyContext&,
             const ripple::AccountID&,
@@ -302,6 +303,8 @@ namespace hook {
 
     struct HookResult
     {
+        ripple::uint256 hookSetTxnID;
+        ripple::uint256 hookHash;
         ripple::Keylet accountKeylet;
         ripple::Keylet ownerDirKeylet;
         ripple::Keylet hookKeylet;
@@ -312,6 +315,7 @@ namespace hook {
         hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
         std::string exitReason {""};
         int64_t exitCode {-1};
+        uint64_t instructionCount {0};
     };
 
     class HookModule;

@@ -304,9 +304,10 @@ hook::setHookState(
 
 hook::HookResult
     hook::apply(
-        ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching */
+        ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
+        ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */ 
         Blob hook, ApplyContext& applyCtx,
-        const AccountID& account,
+        const AccountID& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
         bool callback = false)
 {
 
@@ -315,6 +316,8 @@ hook::HookResult
         .applyCtx = applyCtx,
         // we will return this context object (RVO / move constructed)
         .result = {
+            .hookSetTxnID = hookSetTxnID,
+            .hookHash = hookHash,
             .accountKeylet = keylet::account(account),
             .ownerDirKeylet = keylet::ownerDir(account),
             .hookKeylet = keylet::hook(account),
@@ -341,7 +344,8 @@ hook::HookResult
     if (auto result =
             vm.runWasmFile(
                 SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
-        results = *result;
+//        results = *result;
+        hookCtx.result.instructionCount = vm.getStatistics().getInstrCount();
     else
     {
         uint32_t ssvm_error = static_cast<uint32_t>(result.error());
@@ -374,6 +378,7 @@ hook::HookResult
 
     JLOG(j.trace()) <<
         "Hook: Destroying instance for " << account << "\n";
+    
     return hookCtx.result;
 }
 
@@ -560,6 +565,7 @@ void hook::commitChangesToLedger(
                 // ^ should not fail... checks were done before map insert
             }
         }
+
     }
 
     // closed views do not modify add/remove ledger entries
@@ -622,114 +628,55 @@ void hook::commitChangesToLedger(
     // remove this (activating) transaction from the emitted directory if we were instructed to
     if (cclMode & cclREMOVE)
     {
-        auto const& tx = applyCtx.tx;
-        if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
+        do
         {
-            JLOG(j.warn())
-                << "Hook: Tried to cclREMOVE on non-emitted tx";
-            return;
-        }
+            auto const& tx = applyCtx.tx;
+            if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
+            {
+                JLOG(j.warn())
+                    << "Hook: Tried to cclREMOVE on non-emitted tx";
+                break;
+            }
 
-        auto key = keylet::emitted(tx.getTransactionID());
+            auto key = keylet::emitted(tx.getTransactionID());
 
-        auto const& sle = applyCtx.view().peek(key);
+            auto const& sle = applyCtx.view().peek(key);
 
-        if (!sle)
-        {
-            JLOG(j.warn())
-                << "Hook: ccl tried to remove already removed emittedtxn";
-            return;
-        }
+            if (!sle)
+            {
+                JLOG(j.warn())
+                    << "Hook: ccl tried to remove already removed emittedtxn";
+                break;
+            }
 
-        if (!applyCtx.view().dirRemove(
-                keylet::emittedDir(),
-                sle->getFieldU64(sfOwnerNode),
-                key,
-                false))
-        {
-            JLOG(j.fatal())
-                << "Hook: ccl tefBAD_LEDGER";
-            return;
-        }
+            if (!applyCtx.view().dirRemove(
+                    keylet::emittedDir(),
+                    sle->getFieldU64(sfOwnerNode),
+                    key,
+                    false))
+            {
+                JLOG(j.fatal())
+                    << "Hook: ccl tefBAD_LEDGER";
+                break;
+            }
 
-        applyCtx.view().erase(sle);
-        return;
+            applyCtx.view().erase(sle);
+        } while (0);
     }
+
+    // add a metadata entry for this hook execution result
+    STObject meta { sfHookExecution };
+    meta.setFieldU8(sfHookResult, hookResult.exitType );
+    meta.setFieldH256(sfHookHash, hookResult.hookSetTxnID);
+    meta.setAccountID(sfHookAccount, hookResult.account);
+    meta.setFieldU64(sfHookReturnCode, (uint64_t)(hookResult.exitCode));
+    meta.setFieldVL(sfHookReturnString, ripple::Slice{hookResult.exitReason.data(), hookResult.exitReason.size()});
+    meta.setFieldU64(sfHookInstructionCount, hookResult.instructionCount);
+    //RH TODO: this seems hacky... and also maybe there's a way this cast might fail?
+    dynamic_cast<ApplyViewImpl&>(applyCtx.view()).addHookMetaData(std::move(meta));
 
 }
 
-/*
-    // this is the ownerless ledger object that stores emitted transactions
-    auto const klEmitted = keylet::emitted();
-    SLE::pointer sleEmitted = applyCtx.view().peek(klEmitted);
-    bool created = false;
-    if (!sleEmitted)
-    {
-        sleEmitted = std::make_shared<SLE>(klEmitted);
-        created = true;
-    }
-
-    STArray newEmittedTxns { sfEmittedTxns } ;
-    auto const& tx = applyCtx.tx;
-    auto const& old = sleEmitted->getFieldArray(sfEmittedTxns);
-
-    // the transaction we are processing is itself the product of a hook
-    // so it may be present in the ltEMITTED structure, in which case it should remove itself
-    // but only if we are in "remove" mode
-    if (tx.isFieldPresent(sfEmitDetails) &&
-        sleEmitted && sleEmitted->isFieldPresent(sfEmittedTxns) &&
-        cclMode & cclREMOVE)
-    {
-        auto const& emitDetails = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
-        ripple::uint256 eTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
-        ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
-
-        //uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
-
-        for (auto v: old)
-        {
-            if (!v.isFieldPresent(sfEmitDetails))
-            {
-                JLOG(j.warn()) << "sfEmitDetails missing from sleEmitted entry";
-                continue;
-            }
-
-            if (!v.isFieldPresent(sfLastLedgerSequence))
-            {
-                JLOG(j.warn()) << "sfLastLedgerSequence missing from sleEmitted entry";
-                continue;
-            }
-
-            // RH TODO: move these pruning operations to the Change transaction to avoid attaching to unrelated tx
-
-//            uint32_t tx_lls = v.getFieldU32(sfLastLedgerSequence);
-//            if (tx_lls < ledgerSeq)
-//            {
-//                JLOG(j.trace()) << "sfLastLedgerSequence triggered ltEMITTED prune of etxn with nonce: " << nonce;
-//                continue;
-//            }
-            auto const& emitEntry = v.getField(sfEmitDetails).downcast<STObject>();
-            if (emitEntry.getFieldH256(sfEmitParentTxnID) == eTxnID &&
-                emitEntry.getFieldH256(sfEmitNonce) == nonce)
-            {
-                JLOG(j.trace()) << "hook: commitChanges pruned ltEMITTED of etxn with nonce: " << nonce;
-                continue;
-            }
-
-            newEmittedTxns.push_back(v);
-        }
-    }
-    else
-        for (auto v: old)
-            newEmittedTxns.push_back(v);
-
-    sleEmitted->setFieldArray(sfEmittedTxns, newEmittedTxns);
-
-    if (created)
-        applyCtx.view().insert(sleEmitted);
-    else
-        applyCtx.view().update(sleEmitted);
-*/
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
 DEFINE_HOOK_FUNCTION(
     int64_t,

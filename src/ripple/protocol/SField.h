@@ -395,7 +395,6 @@ extern SF_U32 const sfHookStateCount;
 extern SF_U32 const sfHookReserveCount;
 extern SF_U32 const sfHookStateDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
 extern SF_U32 const sfEmitGeneration; 
-extern SF_U32 const sfHookReturnCode;       // the code returned by hook dev (rollback or accept) NOT exe. result 
 
 // 64-bit integers
 extern SF_U64 const sfIndexNext;
@@ -410,7 +409,9 @@ extern SF_U64 const sfDestinationNode;
 extern SF_U64 const sfCookie;
 extern SF_U64 const sfServerVersion;
 extern SF_U64 const sfHookOn; 
+extern SF_U64 const sfHookInstructionCount;
 extern SF_U64 const sfEmitBurden; 
+extern SF_U64 const sfHookReturnCode;       // the code returned by hook dev (rollback or accept) NOT exe. result 
 
 // 128-bit
 extern SF_U128 const sfEmailHash;

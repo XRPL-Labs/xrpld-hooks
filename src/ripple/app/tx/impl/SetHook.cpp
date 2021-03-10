@@ -935,6 +935,11 @@ SetHook::setHook()
         hook->setFieldU32(sfHookStateDataMaxSize, blobMax);
         hook->setFieldU64(sfHookOn, hookOn_);
         hook->setFieldH256(sfHookSetTxnID, ctx_.tx.getTransactionID());
+        hook->setFieldH256(sfHookHash, ripple::sha512Half(      
+            ripple::HashPrefix::hookByteCode,
+            hook_
+        ));
+
 
         //hook->setFieldU32(sfPreviousTxnLgrSeq, ctx_.app.getLedgerMaster().getValidLedgerIndex() + 1);
         // Add the hook to the account's directory.

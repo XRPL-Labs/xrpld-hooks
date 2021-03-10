@@ -69,6 +69,16 @@ public:
         deliver_ = amount;
     }
 
+   
+    /* Set hook metadata for a hook execution
+     * Takes ownership / use std::move
+     */
+    void
+    addHookMetaData(STObject&& hookExecution)
+    {
+        hookExecution_.push_back(std::move(hookExecution));
+    }
+
     /** Get the number of modified entries
      */
     std::size_t
@@ -87,6 +97,7 @@ public:
 
 private:
     boost::optional<STAmount> deliver_;
+    std::vector<STObject> hookExecution_;
 };
 
 }  // namespace ripple

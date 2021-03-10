@@ -189,6 +189,7 @@ LedgerFormats::LedgerFormats()
             {sfHookStateDataMaxSize, soeREQUIRED},   // this is set at time of creation according to 
                                                      // what the validators voted on
             {sfHookOn, soeREQUIRED},  
+            {sfHookHash, soeREQUIRED}
         },
         commonFields);
 
