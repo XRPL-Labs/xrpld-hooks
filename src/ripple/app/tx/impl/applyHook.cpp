@@ -83,6 +83,143 @@ using namespace ripple;
     hookCtx.result.exitCode = error_code;\
     return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
 }
+namespace hook_float
+{
+    using namespace hook_api;
+    static int64_t const minMantissa = 1000000000000000ull;
+    static int64_t const maxMantissa = 9999999999999999ull;
+    static int32_t const minExponent = -96;
+    static int32_t const maxExponent = 80;
+    inline int32_t get_exponent(int64_t float1)
+    {
+        if (float1 < 0)
+            return INVALID_FLOAT;
+        if (float1 == 0)
+            return 0;
+        if (float1 < 0) return INVALID_FLOAT;
+        uint64_t float_in = (uint64_t)float1;
+        float_in >>= 54U;
+        float_in &= 0xFFU;
+        return ((int32_t)float_in) - 97;
+    }
+
+    inline uint64_t get_mantissa(int64_t float1)
+    {
+        if (float1 < 0)
+            return INVALID_FLOAT;
+        if (float1 == 0)
+            return 0;
+        if (float1 < 0) return INVALID_FLOAT;
+        float1 -= ((((uint64_t)float1) >> 54U) << 54U);
+        return float1;
+    }
+
+    inline bool is_negative(int64_t float1)
+    {
+        return (float1 >> 62U) != 0;
+    }
+
+    inline int64_t invert_sign(int64_t float1)
+    {
+        return float1 ^ (1ULL<<62U);
+    }
+
+    inline int64_t set_sign(int64_t float1, bool set_negative)
+    {
+        bool neg = is_negative(float1);
+        if ((neg && set_negative) || (!neg && !set_negative))
+            return float1;
+
+        return invert_sign(float1);
+    }
+
+    inline int64_t set_mantissa(int64_t float1, uint64_t mantissa)
+    {
+        if (mantissa > maxMantissa)
+            return MANTISSA_OVERSIZED;
+        return float1 - get_mantissa(float1) + mantissa;
+    }
+
+    inline int64_t set_exponent(int64_t float1, int32_t exponent)
+    {
+        if (exponent > maxExponent)
+            return EXPONENT_OVERSIZED;
+        if (exponent < minExponent)
+            return EXPONENT_UNDERSIZED;
+
+        uint64_t exp = (exponent + 97);
+        exp <<= 54U;
+        float1 &= ~(0xFFLL<<54);
+        float1 += (int64_t)exp;
+        return float1;
+    }
+
+    inline int64_t make_float(ripple::IOUAmount& amt)
+    {
+        int64_t man_out = amt.mantissa();
+        int64_t float_out = 0;
+        if (man_out < 0)
+        {
+            man_out *= -1;
+            float_out = set_sign(float_out, true);
+        }
+        float_out = set_mantissa(float_out, man_out);
+        float_out = set_exponent(float_out, amt.exponent());
+        return float_out;
+    }
+
+    inline int64_t make_float(int64_t mantissa, int32_t exponent)
+    {
+        std::cout << "make_float(" << mantissa << ", " << exponent << ")\n";
+        if (mantissa == 0)
+            return 0;
+        if (mantissa > maxMantissa)
+            return MANTISSA_OVERSIZED;
+        if (exponent > maxExponent)
+            return EXPONENT_OVERSIZED;
+        if (exponent < minExponent)
+            return EXPONENT_UNDERSIZED;
+        bool neg = mantissa < 0;
+        if (neg)
+            mantissa *= -1LL;
+        int64_t out =  0;
+        out = set_mantissa(out, mantissa);
+        out = set_exponent(out, exponent);
+        out = set_sign(out, neg);
+        return out;
+    }
+
+    int64_t float_set(int32_t exp, int64_t mantissa)
+    {
+        if (mantissa == 0)
+            return 0;
+
+        bool neg = mantissa < 0;
+        if (neg)
+            mantissa *= -1LL;
+
+        // normalize
+        while (mantissa < minMantissa)
+        {
+            mantissa *= 10;
+            exp--;
+            if (exp < minExponent)
+                return INVALID_FLOAT; //underflow
+        }
+        while (mantissa > maxMantissa)
+        {
+            mantissa /= 10;
+            exp++;
+            if (exp > maxExponent)
+                return INVALID_FLOAT; //overflow
+        }
+
+        return make_float( ( neg ? -1LL : 1LL ) * mantissa, exp);
+
+    }
+
+}
+using namespace hook_float;
 inline int64_t
 serialize_keylet(
         ripple::Keylet& kl,
@@ -1320,9 +1457,56 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_type,
-    uint32_t slot )
+    uint32_t slot_no )
 {
     return NOT_IMPLEMENTED; // RH TODO
+}
+
+/*
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    slot_flt,
+    uint32_t slot_no )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+
+    try
+    {
+        ripple::STAmount& amt =
+            const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STAmount>();
+
+        return make_float(amt);
+    }
+    catch (const std::bad_cast& e)
+    {
+        return NOT_IOU_AMOUNT;
+    }
+}
+*/
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    slot_float,
+    uint32_t slot_no )
+{
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+
+    try
+    {
+        ripple::STAmount& st_amt =
+            const_cast<ripple::STBase&>(*hookCtx.slot[slot_no].entry).downcast<ripple::STAmount>();
+        ripple::IOUAmount amt = st_amt.iou();
+        return make_float(amt);
+    }
+    catch (const std::bad_cast& e)
+    {
+        return NOT_IOU_AMOUNT;
+    }
+
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -2573,143 +2757,6 @@ DEFINE_HOOK_FUNCTION(
             return INVALID_FLOAT;\
     }\
 }
-namespace hook_float
-{
-    using namespace hook_api;
-    static int64_t const minMantissa = 1000000000000000ull;
-    static int64_t const maxMantissa = 9999999999999999ull;
-    static int32_t const minExponent = -96;
-    static int32_t const maxExponent = 80;
-    inline int32_t get_exponent(int64_t float1)
-    {
-        if (float1 < 0)
-            return INVALID_FLOAT;
-        if (float1 == 0)
-            return 0;
-        if (float1 < 0) return INVALID_FLOAT;
-        uint64_t float_in = (uint64_t)float1;
-        float_in >>= 54U;
-        float_in &= 0xFFU;
-        return ((int32_t)float_in) - 97;
-    }
-
-    inline uint64_t get_mantissa(int64_t float1)
-    {
-        if (float1 < 0)
-            return INVALID_FLOAT;
-        if (float1 == 0)
-            return 0;
-        if (float1 < 0) return INVALID_FLOAT;
-        float1 -= ((((uint64_t)float1) >> 54U) << 54U);
-        return float1;
-    }
-
-    inline bool is_negative(int64_t float1)
-    {
-        return (float1 >> 62U) != 0;
-    }
-
-    inline int64_t invert_sign(int64_t float1)
-    {
-        return float1 ^ (1ULL<<62U);
-    }
-
-    inline int64_t set_sign(int64_t float1, bool set_negative)
-    {
-        bool neg = is_negative(float1);
-        if ((neg && set_negative) || (!neg && !set_negative))
-            return float1;
-
-        return invert_sign(float1);
-    }
-
-    inline int64_t set_mantissa(int64_t float1, uint64_t mantissa)
-    {
-        if (mantissa > maxMantissa)
-            return MANTISSA_OVERSIZED;
-        return float1 - get_mantissa(float1) + mantissa;
-    }
-
-    inline int64_t set_exponent(int64_t float1, int32_t exponent)
-    {
-        if (exponent > maxExponent)
-            return EXPONENT_OVERSIZED;
-        if (exponent < minExponent)
-            return EXPONENT_UNDERSIZED;
-
-        uint64_t exp = (exponent + 97);
-        exp <<= 54U;
-        float1 &= ~(0xFFLL<<54);
-        float1 += (int64_t)exp;
-        return float1;
-    }
-
-    inline int64_t make_float(ripple::IOUAmount& amt)
-    {
-        int64_t man_out = amt.mantissa();
-        int64_t float_out = 0;
-        if (man_out < 0)
-        {
-            man_out *= -1;
-            float_out = set_sign(float_out, true);
-        }
-        float_out = set_mantissa(float_out, man_out);
-        float_out = set_exponent(float_out, amt.exponent());
-        return float_out;
-    }
-
-    inline int64_t make_float(int64_t mantissa, int32_t exponent)
-    {
-        std::cout << "make_float(" << mantissa << ", " << exponent << ")\n";
-        if (mantissa == 0)
-            return 0;
-        if (mantissa > maxMantissa)
-            return MANTISSA_OVERSIZED;
-        if (exponent > maxExponent)
-            return EXPONENT_OVERSIZED;
-        if (exponent < minExponent)
-            return EXPONENT_UNDERSIZED;
-        bool neg = mantissa < 0;
-        if (neg)
-            mantissa *= -1LL;
-        int64_t out =  0;
-        out = set_mantissa(out, mantissa);
-        out = set_exponent(out, exponent);
-        out = set_sign(out, neg);
-        return out;
-    }
-
-    int64_t float_set(int32_t exp, int64_t mantissa)
-    {
-        if (mantissa == 0)
-            return 0;
-
-        bool neg = mantissa < 0;
-        if (neg)
-            mantissa *= -1LL;
-
-        // normalize
-        while (mantissa < minMantissa)
-        {
-            mantissa *= 10;
-            exp--;
-            if (exp < minExponent)
-                return INVALID_FLOAT; //underflow
-        }
-        while (mantissa > maxMantissa)
-        {
-            mantissa /= 10;
-            exp++;
-            if (exp > maxExponent)
-                return INVALID_FLOAT; //overflow
-        }
-
-        return make_float( ( neg ? -1LL : 1LL ) * mantissa, exp);
-
-    }
-
-}
-using namespace hook_float;
 
 DEFINE_HOOK_FUNCTION(
     int64_t,

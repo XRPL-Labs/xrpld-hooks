@@ -247,6 +247,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
     DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
 
+
     DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
@@ -255,7 +256,8 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subfield,      uint32_t parent_slot, uint32_t field_id, uint32_t new_slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot_no );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_float,         uint32_t slot_no );
 
     DECLARE_HOOK_FUNCTION(int64_t,	state_set,          uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
@@ -449,6 +451,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(slot_subarray, ctx);
             ADD_HOOK_FUNCTION(slot_subfield, ctx);
             ADD_HOOK_FUNCTION(slot_type, ctx);
+            ADD_HOOK_FUNCTION(slot_float, ctx);
 
             ADD_HOOK_FUNCTION(trace, ctx);
             ADD_HOOK_FUNCTION(trace_slot, ctx);

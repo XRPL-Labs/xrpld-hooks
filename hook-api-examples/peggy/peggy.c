@@ -6,27 +6,6 @@
  *
  **/
 
-#define NORMALIZE(mantissa, exponent)\
-{\
-    if (mantissa == 0)\
-        exponent = 0;\
-    else\
-    {\
-        for (int i = 0; GUARDM(16,1), i < 16 && mantissa > 10000000000000000U; ++i)\
-        {\
-            mantissa /= 10;\
-            exponent++;\
-        }\
-        for (int i = 0; GUARDM(16,2), i < 16 && mantissa < 1000000000000000U; ++i)\
-        {\
-            mantissa *= 10;\
-            exponent--;\
-        }\
-    }\
-    if (exponent < -96 || exponent > 80)\
-        rollback(SBUF("Peggy: Internal error, invalid exponent"), 1);\
-}
-
 #include <stdint.h>
 #include "../hookapi.h"
 
@@ -108,7 +87,8 @@ int64_t hook(int64_t reserved)
     if (result < 0) 
         rollback(SBUF("Peggy: Could not dump slot"), 20);
 
-    int16_t exponent = 
+    
+    /*int16_t exponent = 
        (((((uint16_t)lowlim[0]) << 8) + lowlim[1]) >> 6U) & 0xFF;
     exponent -= 97;
 
@@ -120,7 +100,7 @@ int64_t hook(int64_t reserved)
         mantissa += ((uint64_t)lowlim[5]) << 16U; 
         mantissa += ((uint64_t)lowlim[6]) << 8U; 
         mantissa += ((uint64_t)lowlim[7]); 
-    
+    */
 
     // check the amount of XRP sent with this transaction
     uint8_t amount_buffer[48];

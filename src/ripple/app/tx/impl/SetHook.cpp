@@ -125,6 +125,7 @@ const std::set<std::string> import_whitelist
     "slot_subarray",
     "slot_subfield",
     "slot_type",
+    "slot_float",
     "state",
     "state_foreign",
     "state_set",
