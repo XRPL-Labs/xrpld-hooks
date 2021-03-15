@@ -99,7 +99,9 @@ namespace hook_api {
         EXPONENT_OVERSIZED = -28,
         EXPONENT_UNDERSIZED = -29,
         OVERFLOW = -30,                 // if an operation with a float results in an overflow
-        NOT_IOU_AMOUNT = -31
+        NOT_IOU_AMOUNT = -31,
+        NOT_AN_AMOUNT = -32,
+        INVALID_AMOUNT = -33
     };
 
     enum ExitType : uint8_t {
@@ -277,6 +279,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_generation     );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_slot,          uint32_t slot_no );
 
 
 } /* end namespace hook_api */
@@ -433,6 +436,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(otxn_field, ctx);
             ADD_HOOK_FUNCTION(otxn_id, ctx);
             ADD_HOOK_FUNCTION(otxn_type, ctx);
+            ADD_HOOK_FUNCTION(otxn_slot, ctx);
             ADD_HOOK_FUNCTION(hook_account, ctx);
             ADD_HOOK_FUNCTION(hook_hash, ctx);
             ADD_HOOK_FUNCTION(fee_base, ctx);

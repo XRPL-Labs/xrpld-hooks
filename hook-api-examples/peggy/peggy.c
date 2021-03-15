@@ -77,31 +77,18 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Peggy: Could not find oracle trustline"), 10);
 
 
-    int64_t result = slot_subfield(slot_no, sfLowLimit, 0);
-    if (result < 0)
+    int64_t lim_slot = slot_subfield(slot_no, sfLowLimit, 0);
+    if (lim_slot < 0)
         rollback(SBUF("Peggy: Could not find sfLowLimit on hook account"), 20);
 
+    TRACEVAR(lim_slot);
 
-    uint8_t lowlim[1024];
-    result = slot(SBUF(lowlim), result);
-    if (result < 0) 
+    int64_t low_lim = slot_float(lim_slot);
+    if (low_lim < 0) 
         rollback(SBUF("Peggy: Could not dump slot"), 20);
-
     
-    /*int16_t exponent = 
-       (((((uint16_t)lowlim[0]) << 8) + lowlim[1]) >> 6U) & 0xFF;
-    exponent -= 97;
-
-    uint64_t mantissa = 
-        (((uint64_t)lowlim[1]) & 0b00111111U) << 48U;
-        mantissa += ((uint64_t)lowlim[2]) << 40U; 
-        mantissa += ((uint64_t)lowlim[3]) << 32U; 
-        mantissa += ((uint64_t)lowlim[4]) << 24U; 
-        mantissa += ((uint64_t)lowlim[5]) << 16U; 
-        mantissa += ((uint64_t)lowlim[6]) << 8U; 
-        mantissa += ((uint64_t)lowlim[7]); 
-    */
-
+    trace_float(low_lim);
+    
     // check the amount of XRP sent with this transaction
     uint8_t amount_buffer[48];
     int64_t amount_len = otxn_field(SBUF(amount_buffer), sfAmount);

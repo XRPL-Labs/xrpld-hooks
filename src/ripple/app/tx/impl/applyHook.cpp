@@ -189,7 +189,7 @@ namespace hook_float
         return out;
     }
 
-    int64_t float_set(int32_t exp, int64_t mantissa)
+    inline int64_t float_set(int32_t exp, int64_t mantissa)
     {
         if (mantissa == 0)
             return 0;
@@ -220,6 +220,34 @@ namespace hook_float
 
 }
 using namespace hook_float;
+inline
+int32_t
+no_free_slots(hook::HookContext& hookCtx)
+{
+    return (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0);
+}
+
+
+inline
+int32_t
+get_free_slot(hook::HookContext& hookCtx)
+{
+    int32_t slot_into = 0;
+
+    // allocate a slot
+    if (hookCtx.slot_free.size() > 0)
+    {
+        slot_into = hookCtx.slot_free.front();
+        hookCtx.slot_free.pop();
+    }
+
+    // no slots were available in the queue so increment slot counter
+    if (slot_into == 0)
+        slot_into = hookCtx.slot_counter++;
+
+    return slot_into;
+}
+
 inline int64_t
 serialize_keylet(
         ripple::Keylet& kl,
@@ -442,7 +470,7 @@ hook::setHookState(
 hook::HookResult
     hook::apply(
         ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
-        ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */ 
+        ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */
         Blob hook, ApplyContext& applyCtx,
         const AccountID& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
         bool callback = false)
@@ -515,7 +543,7 @@ hook::HookResult
 
     JLOG(j.trace()) <<
         "Hook: Destroying instance for " << account << "\n";
-    
+
     return hookCtx.result;
 }
 
@@ -986,6 +1014,39 @@ DEFINE_HOOK_FUNCNARG(
     return applyCtx.tx.getTxnType();
 }
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    otxn_slot,
+    uint32_t slot_into )
+{
+
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (slot_into > hook_api::max_slots)
+        return INVALID_ARGUMENT;
+
+    // check if we can emplace the object to a slot
+    if (slot_into == 0 && no_free_slots(hookCtx))
+        return NO_FREE_SLOTS;
+    
+    if (slot_into == 0)
+        slot_into = get_free_slot(hookCtx);
+
+    auto const& st_tx =
+        std::make_shared<ripple::STObject>(const_cast<ripple::STTx&>(applyCtx.tx).downcast<ripple::STObject>());
+
+    auto const& txID = applyCtx.tx.getTransactionID();
+
+    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+            .id = std::vector<uint8_t>{ txID.data(), txID.data() + txID.size() },
+            .storage = st_tx,
+            .entry = 0
+    }});
+    hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
+
+    return slot_into;
+
+}
 // Return the burden of the originating transaction... this will be 1 unless the originating transaction
 // was itself an emitted transaction from a previous hook invocation
 DEFINE_HOOK_FUNCNARG(
@@ -1243,34 +1304,6 @@ DEFINE_HOOK_FUNCTION(
     return NOT_IMPLEMENTED;
 }
 
-inline
-int32_t
-no_free_slots(hook::HookContext& hookCtx)
-{
-    return (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0);
-}
-
-
-inline
-int32_t
-get_free_slot(hook::HookContext& hookCtx)
-{
-    int32_t slot_into = 0;
-
-    // allocate a slot
-    if (hookCtx.slot_free.size() > 0)
-    {
-        slot_into = hookCtx.slot_free.front();
-        hookCtx.slot_free.pop();
-    }
-
-    // no slots were available in the queue so increment slot counter
-    if (slot_into == 0)
-        slot_into = hookCtx.slot_counter++;
-
-    return slot_into;
-}
-
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_set,
@@ -1499,12 +1532,23 @@ DEFINE_HOOK_FUNCTION(
     {
         ripple::STAmount& st_amt =
             const_cast<ripple::STBase&>(*hookCtx.slot[slot_no].entry).downcast<ripple::STAmount>();
-        ripple::IOUAmount amt = st_amt.iou();
-        return make_float(amt);
+        if (st_amt.native())
+        {
+            ripple::XRPAmount amt = st_amt.xrp();
+            int64_t drops = amt.drops();
+            int32_t exp = -6;
+            // normalize
+            return hook_float::float_set(exp, drops);
+        }
+        else
+        {
+            ripple::IOUAmount amt = st_amt.iou();
+            return make_float(amt);
+        }
     }
     catch (const std::bad_cast& e)
     {
-        return NOT_IOU_AMOUNT;
+        return NOT_AN_AMOUNT;
     }
 
 }
