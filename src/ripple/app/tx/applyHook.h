@@ -258,7 +258,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subfield,      uint32_t parent_slot, uint32_t field_id, uint32_t new_slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot_no );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_type,          uint32_t slot_no, uint32_t flags );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_float,         uint32_t slot_no );
 
     DECLARE_HOOK_FUNCTION(int64_t,	state_set,          uint32_t read_ptr,  uint32_t read_len,

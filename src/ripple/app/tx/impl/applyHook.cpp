@@ -1490,35 +1490,39 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_type,
-    uint32_t slot_no )
+    uint32_t slot_no, uint32_t flags )
 {
-    return NOT_IMPLEMENTED; // RH TODO
-}
-
-/*
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    slot_flt,
-    uint32_t slot_no )
-{
+    
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
+    
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
+    if (hookCtx.slot[slot_no].entry == 0)
+        return INTERNAL_ERROR;
     try
     {
-        ripple::STAmount& amt =
-            const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STAmount>();
+        ripple::STBase& obj =
+            const_cast<ripple::STBase&>(*hookCtx.slot[slot_no].entry);//.downcast<ripple::STBase>();
+            if (flags == 0)
+                return obj.getFName().fieldCode;
+            
+            // this flag is for use with an amount field to determine if the amount is native (xrp)
+            if (flags == 1)
+            {
+                if (obj.getSType() != STI_AMOUNT)
+                    return NOT_AN_AMOUNT;
+                return
+                    const_cast<ripple::STBase&>(*hookCtx.slot[slot_no].entry).downcast<ripple::STAmount>().native();
+            }
 
-        return make_float(amt);
+            return INVALID_ARGUMENT;
     }
     catch (const std::bad_cast& e)
     {
-        return NOT_IOU_AMOUNT;
+        return INTERNAL_ERROR;
     }
 }
-*/
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
