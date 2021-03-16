@@ -698,9 +698,9 @@ void hook::commitChangesToLedger(
      * | cclRemove | cclApply |
      * ------------------------
      * | 1         | 1        |  Remove old ltEMITTED entry (where applicable) and apply state changes
-     * | 0         | 1        |  Apply but don't Remove
-     * | 1         | 0        |  Remove but don't Apply (used when rollback)
-     * | 0         | 0        |  Do nothing, invalid option
+     * | 0         | 1        |  Apply but don't Remove ltEMITTED entry
+     * | 1         | 0        |  Remove but don't Apply (used when rollback on an emitted txn)
+     * | 0         | 0        |  Invalid option
      * ------------------------
      */
 {
@@ -804,11 +804,9 @@ void hook::commitChangesToLedger(
         {
             auto const& tx = applyCtx.tx;
             if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
-            {
-                JLOG(j.warn())
-                    << "Hook: Tried to cclREMOVE on non-emitted tx";
+//                JLOG(j.warn())
+//                    << "Hook: Tried to cclREMOVE on non-emitted tx";
                 break;
-            }
 
             auto key = keylet::emitted(tx.getTransactionID());
 
@@ -848,7 +846,7 @@ void hook::commitChangesToLedger(
     meta.setFieldU16(sfHookExecutionIndex, exec_index );
     meta.setFieldU16(sfHookStateChangeCount, change_count );
     avi.addHookMetaData(std::move(meta));
-
+    std::cout << "\n\n{{{{ HOOK META }}}}\n\n";
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */

@@ -111,7 +111,7 @@ const std::set<std::string> import_whitelist
     "nonce",
     "otxn_burden",
     "otxn_field",
-    "otxn_field_txt",
+    "otxn_slot",
     "otxn_generation",
     "otxn_id",
     "otxn_type",

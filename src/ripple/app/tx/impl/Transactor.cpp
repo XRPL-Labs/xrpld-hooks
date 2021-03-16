@@ -78,7 +78,7 @@ preflight1(PreflightContext const& ctx)
     // if a hook emitted this transaction we bypass signature checks
     // there is a bar to circularing emitted transactions on the network
     // in their prevalidated form so this is safe
-    if (ctx.rules.enabled(featureHooks) && 
+    if (ctx.rules.enabled(featureHooks) &&
         hook::isEmittedTxn(ctx.tx))
         return tesSUCCESS;
 
@@ -251,7 +251,7 @@ Transactor::checkSeq(PreclaimContext const& ctx)
 
 
     // pass all emitted tx provided their seq is 0
-    if (ctx.view.rules().enabled(featureHooks) && 
+    if (ctx.view.rules().enabled(featureHooks) &&
         hook::isEmittedTxn(ctx.tx))
     {
         // this is more strictly enforced in the emit() hook api
@@ -291,7 +291,7 @@ Transactor::checkSeq(PreclaimContext const& ctx)
     if (ctx.tx.isFieldPresent(sfLastLedgerSequence) &&
         (ctx.view.seq() > ctx.tx.getFieldU32(sfLastLedgerSequence)))
         return tefMAX_LEDGER;
-    
+
 
     return tesSUCCESS;
 }
@@ -306,7 +306,7 @@ Transactor::setSeq()
     // do not update sequence of sfAccountTxnID for emitted tx
     if (ctx_.emitted())
         return;
-    
+
     std::uint32_t const t_seq = ctx_.tx.getSequence();
 
     sle->setFieldU32(sfSequence, t_seq + 1);
@@ -358,7 +358,7 @@ NotTEC
 Transactor::checkSign(PreclaimContext const& ctx)
 {
     // hook emitted transactions do not have signatures
-    if (ctx.view.rules().enabled(featureHooks) && 
+    if (ctx.view.rules().enabled(featureHooks) &&
         hook::isEmittedTxn(ctx.tx))
         return tesSUCCESS;
 
@@ -692,8 +692,10 @@ Transactor::operator()()
     bool hook_executed = false;
     uint64_t prehook_cycles = rdtsc();
 
+    std::cout << "\n\n\nTRANSACTOR : " << result << "\n\n\n";
+
     if (ctx_.view().rules().enabled(featureHooks) &&
-        result == tesSUCCESS)
+        (result == tesSUCCESS || result == tecHOOK_REJECTED))
     {
 
         std::optional<hook::HookResult> sendResult;
@@ -777,9 +779,9 @@ Transactor::operator()()
 
                     AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
 
-                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << " TX: " 
+                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << " TX: "
                         << ctx_.tx.getTransactionID() << "\n";
-            
+
                     hook_executed = true;
                     auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
 
@@ -791,16 +793,16 @@ Transactor::operator()()
                             hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
 
                     }
-                    catch (std::exception& e)                                                                          
-                    {                                                                                                  
-                        JLOG(j_.fatal()) << "%%%%%%%%%Hook Callback Processing: Failure: " << e.what() << "\n";                     
-                    } 
+                    catch (std::exception& e)
+                    {
+                        JLOG(j_.fatal()) << "%%%%%%%%%Hook Callback Processing: Failure: " << e.what() << "\n";
+                    }
                     // callback is unable to affect the application of an already Emitted Tx to the ledger
                     // so we're done
                 /*}
-                catch (std::exception& e)                                                                          
-                {                                                                                                  
-                    JLOG(j_.fatal()) << "Hook Callback Processing: Failure: " << e.what() << "\n";                     
+                catch (std::exception& e)
+                {
+                    JLOG(j_.fatal()) << "Hook Callback Processing: Failure: " << e.what() << "\n";
                 } */
                     /*
                 } catch ( ... )
@@ -824,19 +826,16 @@ Transactor::operator()()
                    (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
             // rollback condition
             result = tecHOOK_REJECTED;
-        else
-            // only apply ledger changes if we are not processing a rollback/error
-        {
-            if (sendResult)
-                hook::commitChangesToLedger(*sendResult, ctx_, hook::cclAPPLY);
 
-            if (recvResult)
-                hook::commitChangesToLedger(*recvResult, ctx_, hook::cclAPPLY); 
-        }
+        if (sendResult)
+            hook::commitChangesToLedger(*sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
+
+        if (recvResult)
+            hook::commitChangesToLedger(*recvResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
     }
 
     uint64_t posthook_cycles = rdtsc();
-    JLOG(j_.trace()) 
+    JLOG(j_.trace())
         << "Hook: Transactor: " << (hook_executed ? "hook " : "non-hook ") << "execution took "
         << (posthook_cycles - prehook_cycles);
 

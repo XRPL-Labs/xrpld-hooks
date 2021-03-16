@@ -79,28 +79,67 @@ int64_t hook(int64_t reserved)
 
     int64_t lim_slot = slot_subfield(slot_no, sfLowLimit, 0);
     if (lim_slot < 0)
-        rollback(SBUF("Peggy: Could not find sfLowLimit on hook account"), 20);
+        rollback(SBUF("Peggy: Could not find sfLowLimit on oracle trustline"), 20);
 
     TRACEVAR(lim_slot);
 
-    int64_t low_lim = slot_float(lim_slot);
-    if (low_lim < 0) 
-        rollback(SBUF("Peggy: Could not dump slot"), 20);
+    int64_t exchange_rate = slot_float(lim_slot);
+    if (exchange_rate < 0) 
+        rollback(SBUF("Peggy: Could not get exchange rate float"), 20);
     
-    trace_float(low_lim);
-    
-    // check the amount of XRP sent with this transaction
-    uint8_t amount_buffer[48];
-    int64_t amount_len = otxn_field(SBUF(amount_buffer), sfAmount);
-    // if it's negative then it's a non-XRP amount, or alternatively if the MSB is set
-    TRACEVAR(amount_len);
-    if (amount_len < 0 || (amount_len != 48 && amount_len != 8))
-        rollback(SBUF("Peggy: Error reading the amount of xrp or usd sent to the hook."), 1);
+    trace_float(exchange_rate);
+   
 
-    // buffer to store the soon-to-be emitted txn
-    uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE];
+    // process the amount sent
+    int64_t oslot = otxn_slot(0);
+    if (oslot < 0)
+        rollback(SBUF("Peggy: Could not slot originating txn."), 1);
 
-    trace(amount_buffer, amount_len, 1);
+    int64_t amt_slot = slot_subfield(oslot, sfAmount, 0);
+    if (amt_slot < 0)
+        rollback(SBUF("Peggy: Could not slot otxn.sfAmount"), 2);
+
+    int64_t amt = slot_float(amt_slot);
+    if (amt < 0)
+        rollback(SBUF("Peggy: Could not parse amount."), 1);
+
+    int64_t amt_type = slot_type(amt_slot, 1);
+    if (amt_type < 0)
+        rollback(SBUF("Peggy: Could not determine sent amount type"), 3);
+
+    TRACEVAR(amt);
+    TRACEVAR(amt_type);
+
+    if (amt_type == 1)
+    {
+        // XRP INCOMING
+
+    }
+    else
+    {
+        // non-xrp incoming
+        uint8_t amount_buffer[48];
+        if (slot(SBUF(amount_buffer), amt_slot) != 48)
+            rollback(SBUF("Peggy: Could not dump sfAmount"), 1);
+
+        // ensure the issuer is us
+        for (int i = 28; GUARD(20), i < 48; ++i)
+        {
+            if (amount_buffer[i] != hook_accid[i - 28])
+                rollback(SBUF("Peggy: A currency we didn't issue was sent to us."), 1);
+        }
+
+        // ensure the currency is PUSD
+        for (int i = 8; GUARD(20), i < 28; ++i)
+        {
+            if (amount_buffer[i] != currency[i - 8])
+                rollback(SBUF("Peggy: A non USD currency was sent to us."), 1);
+        }
+
+        // execution to here means it was valid PUSD
+
+    }
+/*
     if (amount_len == 8)
     {
         // XRP incoming
@@ -240,7 +279,7 @@ int64_t hook(int64_t reserved)
         int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
     }
 
-
+*/
 
     return 0;
 }
