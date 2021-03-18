@@ -20,14 +20,15 @@ int64_t hook(int64_t reserved)
 
     etxn_reserve(1);
 
-//r.decodeAccountID('rXUMMaPpZqPutoRszR29jtC8amWq3APkx').forEach((x)=>{process.stdout.write('0x'+x.toString(16)+',')})
-//    uint8_t oracle_accid[20] = {0x5U,0xb5U,0xf4U,0x3aU,0xf7U,0x17U,0xb8U,0x19U,0x48U,0x49U,0x1fU,0xb7U,0x7U,\
-//        0x9eU,0x4fU,0x17U,0x3fU,0x4eU,0xceU,0xb3U};
-//
     // fake oracle
-    uint8_t oracle_lo[20] = {0x2dU,0xd8U,0xaaU,0xdbU,0x4eU,0x15U,0xebU,0xeaU,0xeU,0xfdU,0x78U,0xd1U,0xb0U,\
+    uint8_t oracle_lo[20] = {
+        0x2dU,0xd8U,0xaaU,0xdbU,0x4eU,0x15U,
+        0xebU,0xeaU,0xeU,0xfdU,0x78U,0xd1U,0xb0U,\
         0x35U,0x91U,0x4U,0x7bU,0xfaU,0x1eU,0xeU};
-    uint8_t oracle_hi[20] = {0xb5U,0xc6U,0x32U,0xd4U,0x7cU,0x3dU,0x37U,0x24U,0x20U,0xabU,0x3dU,0x31U,0x50U,\
+
+    uint8_t oracle_hi[20] = {
+        0xb5U,0xc6U,0x32U,0xd4U,0x7cU,0x3dU,
+        0x37U,0x24U,0x20U,0xabU,0x3dU,0x31U,0x50U,\
         0xdcU,0x5U,0x51U,0xceU,0x9cU,0x5aU,0xf3U};
 
     uint8_t currency[20] = {0,0,0,0, 0,0,0,0, 0,0,0,0, 'U', 'S', 'D', 0,0,0,0,0};
@@ -61,10 +62,35 @@ int64_t hook(int64_t reserved)
     if (util_keylet(SBUF(keylet), KEYLET_LINE, SBUF(hook_accid), SBUF(account_field), SBUF(currency)) != 34)
         rollback(SBUF("Peggy: Internal error, could not generate keylet"), 10);
     
-    int64_t trustline_slot = slot_set(SBUF(keylet), 0);
-    TRACEVAR(trustline_slot);
-    if (trustline_slot < 0)
+    int64_t slot_user_trustline = slot_set(SBUF(keylet), 0);
+    TRACEVAR(slot_user_trustline);
+    if (slot_user_trustline < 0)
         rollback(SBUF("Peggy: You must have a trustline set for USD to this account."), 10);
+
+
+    int compare_result = 0;
+    ACCOUNT_COMPARE(compare_result, hook_accid, account_field);
+    if (compare_result == 0)
+        rollback(SBUF("Peggy: Invalid trustline set hi=lo?"), 1);
+
+    int64_t lim_slot = slot_subfield(slot_user_trustline, (compare_result > 1 ? sfLowLimit : sfHighLimit), 0); 
+    if (lim_slot < 0)
+        rollback(SBUF("Peggy: Could not find sfLowLimit on oracle trustline"), 20);
+
+    int64_t user_trustline_limit = slot_float(lim_slot);
+    if (user_trustline_limit < 0)
+        rollback(SBUF("Peggy: Could not parse user trustline limit"), 1);
+
+    trace(SBUF("user_trustline_limit:"), 0);
+    trace_float(user_trustline_limit);
+
+    int64_t required_limit = float_set(10, 1);
+
+    trace(SBUF("required_limit:"), 0);
+    trace_float(required_limit);
+
+    if (float_compare(user_trustline_limit, required_limit, COMPARE_EQUAL | COMPARE_GREATER) != 1)
+        rollback(SBUF("Peggy: You must set a trustline for USD to peggy for limit of at least 10B"), 1);
 
     CLEARBUF(keylet);
     // find the oracle price value
@@ -76,8 +102,7 @@ int64_t hook(int64_t reserved)
     if (slot_no < 0)
         rollback(SBUF("Peggy: Could not find oracle trustline"), 10);
 
-
-    int64_t lim_slot = slot_subfield(slot_no, sfLowLimit, 0);
+    lim_slot = slot_subfield(slot_no, sfLowLimit, 0);
     if (lim_slot < 0)
         rollback(SBUF("Peggy: Could not find sfLowLimit on oracle trustline"), 20);
 
@@ -103,20 +128,42 @@ int64_t hook(int64_t reserved)
     if (amt < 0)
         rollback(SBUF("Peggy: Could not parse amount."), 1);
 
-    int64_t amt_type = slot_type(amt_slot, 1);
-    if (amt_type < 0)
+    int64_t is_xrp = slot_type(amt_slot, 1);
+    if (is_xrp < 0)
         rollback(SBUF("Peggy: Could not determine sent amount type"), 3);
 
-    TRACEVAR(amt);
-    TRACEVAR(amt_type);
-
-    if (amt_type == 1)
+    if (is_xrp)
     {
         // XRP INCOMING
+        int64_t pusd_amt = float_multiply(amt, exchange_rate);
+        pusd_amt = float_mulratio(pusd_amt, 0, 2, 3);
+        trace(SBUF("computed pusd amt: "), 0); 
+        trace_float(pusd_amt);
 
+        int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);
+
+        uint8_t amt_out[48];
+        if (float_sto(amt_out, 9, pusd_amt, sfAmount) < 0)
+            rollback(SBUF("Peggy: Could not dump pusd amount into sto"), 1);
+
+        for (int i = 0; GUARD(20),i < 20; ++i)
+        {
+            amt_out[i + 28] = hook_accid[i];
+            amt_out[i +  8] = currency[i];
+        }
+
+        uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE];
+        PREPARE_PAYMENT_SIMPLE_TRUSTLINE(txn_out, amt_out, fee, account_field, source_tag, source_tag);
+
+        trace(SBUF(txn_out), 1);
+
+        if (emit(SBUF(txn_out) < 0))
+            rollback(SBUF("Peggy: Emitting txn failed"), 1);
+
+        accept(SBUF("Peggy: Sent out PUSD!"), 0);
+        return 0;
     }
-    else
-    {
+
         // non-xrp incoming
         uint8_t amount_buffer[48];
         if (slot(SBUF(amount_buffer), amt_slot) != 48)
@@ -137,8 +184,10 @@ int64_t hook(int64_t reserved)
         }
 
         // execution to here means it was valid PUSD
+        int64_t xrp_amt = float_divide(amt, exchange_rate);
+        trace(SBUF("computed xrp amt: "), 0); 
+        trace_float(xrp_amt);
 
-    }
 /*
     if (amount_len == 8)
     {

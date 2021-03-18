@@ -735,7 +735,7 @@ void hook::commitChangesToLedger(
 
     }
 
-    // closed views do not modify add/remove ledger entries
+    // open views do not modify add/remove ledger entries
     if (applyCtx.view().open())
         return;
 
@@ -3005,18 +3005,18 @@ DEFINE_HOOK_FUNCTION(
         ripple::IOUAmount amt2 {man2, exp2};
 
         if (not_equal && amt1 != amt2)
-            return 0;
+            return 1;
 
         if (equal_flag && amt1 == amt2)
-            return 0;
+            return 1;
 
         if (greater_flag && amt1 > amt2)
-            return 0;
+            return 1;
 
         if (less_flag && amt1 < amt2)
-            return 0;
+            return 1;
 
-        return 1;
+        return 0;
     }
     catch (std::overflow_error& e)
     {
@@ -3055,7 +3055,9 @@ DEFINE_HOOK_FUNCTION(
     int64_t,
     float_sto,
     uint32_t write_ptr, uint32_t write_len,
-    int64_t float1, uint32_t field_code)
+    uint32_t cread_ptr, uint32_t cread_len,
+    uint32_t iread_ptr, uint32_t iread_len,
+    int64_t float1,     uint32_t field_code)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     RETURN_IF_INVALID_FLOAT(float1);
@@ -3067,40 +3069,53 @@ DEFINE_HOOK_FUNCTION(
                             ( field >= 16 && type <  16 ? 2 :
                             ( field <  16 && type >= 16 ? 2 : 3 )));
 
+    int64_t bytes_written = 0;
+
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
+
+    bool is_xrp = (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0);
+
+    if (!is_xrp)
+    {
+        if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length) ||
+            NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
+            return OUT_OF_BOUNDS;
+    
+        if (cread_len != 20 || iread_len != 20)
+            return INVALID_ARGUMENT;
+
+        bytes_needed += 40;
+
+    }
+   
     if (bytes_needed > write_len)
         return TOO_SMALL;
 
     if (field < 16 && type < 16)
     {
         *(memory + write_ptr) = (((uint8_t)type) << 4U) + ((uint8_t)field);
-        write_len--;
-        write_ptr++;
-
+        bytes_written++;
     }
     else if (field >= 16 && type < 16)
     {
         *(memory + write_ptr) = (((uint8_t)type) << 4U);
         *(memory + write_ptr + 1) = ((uint8_t)field);
-        write_ptr += 2;
-        write_len -= 2;
+        bytes_written += 2;
     }
     else if (field < 16 && type >= 16)
     {
         *(memory + write_ptr) = (((uint8_t)field) << 4U);
         *(memory + write_ptr + 1) = ((uint8_t)type);
-        write_ptr += 2;
-        write_len -= 2;
+        bytes_written += 2;
     }
     else
     {
         *(memory + write_ptr) = 0;
         *(memory + write_ptr + 1) = ((uint8_t)type);
         *(memory + write_ptr + 2) = ((uint8_t)field);
-        write_ptr += 3;
-        write_len -= 2;
+        bytes_written += 3;
     }
 
     uint64_t man = get_mantissa(float1);
@@ -3109,7 +3124,9 @@ DEFINE_HOOK_FUNCTION(
 
     /// encode the rippled floating point sto format
     uint8_t out[8];
-    out[0] =  (!neg ? 0b11000000U : 0b10000000U);
+    
+    out[0] =  (is_xrp ? 0b00000000U : 0b10000000U);
+    out[0] +=    (neg ? 0b00000000U : 0b01000000U);
     out[0] += (uint8_t)(exp >> 2U);
     out[1] =  ((uint8_t)(exp & 0b11U)) << 6U;
     out[1] += (((uint8_t)(man >> 48U)) & 0b111111U);
@@ -3120,11 +3137,29 @@ DEFINE_HOOK_FUNCTION(
     out[6] = (uint8_t)((man >>  8U) & 0xFFU);
     out[7] = (uint8_t)((man >>  0U) & 0xFFU);
 
-
-    WRITE_WASM_MEMORY_AND_RETURN(
-        write_ptr, write_len,
+    WRITE_WASM_MEMORY(
+        bytes_written,
+        write_ptr + bytes_written, write_len - bytes_written,
         out, 8,
         memory, memory_length);
+
+    if (!is_xrp)
+    {
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            write_ptr + bytes_written, write_len - bytes_written,
+            memory + cread_ptr, 20,
+            memory, memory_length);
+        
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            write_ptr + bytes_written, write_len - bytes_written,
+            memory + iread_ptr, 20,
+            memory, memory_length);
+    }
+
+    return bytes_written;
+
 }
 
 DEFINE_HOOK_FUNCTION(

@@ -230,6 +230,8 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,  float_compare,      int64_t float1,     int64_t float2, uint32_t mode );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sum,          int64_t float1,     int64_t float2 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sto,          uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t cread_ptr, uint32_t cread_len,
+                                                        uint32_t iread_ptr, uint32_t iread_len,
                                                         int64_t float1,     uint32_t field_code);
     DECLARE_HOOK_FUNCTION(int64_t,  float_sto_set,      uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,  float_invert,       int64_t float1 );

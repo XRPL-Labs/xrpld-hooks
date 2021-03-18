@@ -335,6 +335,8 @@ extern int64_t  float_negate        (int64_t float1 );
 extern int64_t  float_compare       (int64_t float1,     int64_t float2, uint32_t mode );
 extern int64_t  float_sum           (int64_t float1,     int64_t float2 );
 extern int64_t  float_sto           (uint32_t write_ptr, uint32_t write_len,
+                                     uint32_t cread_ptr, uint32_t cread_len,
+                                     uint32_t iread_ptr, uint32_t iread_len,
                                      int64_t float1,     uint32_t field_code);
 extern int64_t  float_sto_set       (uint32_t read_ptr,  uint32_t read_len );
 extern int64_t  float_invert        (int64_t float1 );
@@ -399,6 +401,9 @@ extern int64_t  trace_float         (int64_t float1);
 #define KEYLET_ESCROW 20                                                                                               
 #define KEYLET_PAYCHAN 21 
 
+#define COMPARE_EQUAL 1U
+#define COMPARE_LESS 2U
+#define COMPARE_GREATER 4U
 
 #include "sfcodes.h"
 #include "hookmacro.h"

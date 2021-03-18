@@ -11,6 +11,11 @@
 
 #define SBUF(str) (uint32_t)(str), sizeof(str)
 
+#define REQUIRE(cond, str)\
+{\
+    if (!(cond))\
+        rollback(SBUF(str), __LINE__);\
+}
 
 // make a report buffer as a c-string
 // provide a name for a buffer to declare (buf)
@@ -129,6 +134,24 @@ int out_len = 0;\
     uint8_t* z = x;\
     x = y;\
     y = z;\
+}
+
+#define ACCOUNT_COMPARE(compare_result, buf1, buf2)\
+{\
+    compare_result = 0;\
+    for (int i = 0; GUARD(20), i < 20; ++i)\
+    {\
+        if (buf1[i] > buf2[i])\
+        {\
+            compare_result = 1;\
+            break;\
+        }\
+        else if (buf1[i] < buf2[i])\
+        {\
+            compare_result = -1;\
+            break;\
+        }\
+    }\
 }
 
 #define BUFFER_EQUAL_STR_GUARD(output, buf1, buf1len, str, n)\
@@ -501,28 +524,6 @@ int out_len = 0;\
     }
 
 
-
-/*
-
-typedef struct { int8_t exponent; int64_t mantissa; } IOUAmount_t;
-#define IOU_MIN_MANTISSA 1000000000000000ULL;
-#define IOU_MAX_MANTISSA 9999999999999999ULL;
-#define IOU_MIN_EXPONENT = -96;
-#define IOU_MAX_EXPONENT = 80;
-#define IOU_NORMALIZE(x)\
-{\
-    if (x.mantissa != 0)\
-    {\
-        while (x.mantissa < IOU_MIN_MANTISSA && x.exponent > IOU_MIN_EXPONENT)\
-        {\
-            x.mantissa *= 10;\
-            x.exponent--;\
-        }\
-
-    }
-}
-
-*/
 
 #endif
 
