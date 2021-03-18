@@ -627,7 +627,12 @@ removeUnfundedOffers(
 XRPAmount
 Transactor::reset(XRPAmount fee)
 {
+    ApplyViewImpl& avi = dynamic_cast<ApplyViewImpl&>(ctx_.view());
+    std::vector<STObject> hookMeta;
+    avi.copyHookMetaData(hookMeta);
     ctx_.discard();
+    ApplyViewImpl& avi2 = dynamic_cast<ApplyViewImpl&>(ctx_.view());
+    avi2.setHookMetaData(std::move(hookMeta));
 
     auto const txnAcct =
         view().peek(keylet::account(ctx_.tx.getAccountID(sfAccount)));
@@ -856,11 +861,10 @@ Transactor::operator()()
     if (ctx_.size() > oversizeMetaDataCap)
         result = tecOVERSIZE;
 
-    if (isTecClaim(result) && (view().flags() & tapFAIL_HARD))
+    if ((isTecClaim(result) && (view().flags() & tapFAIL_HARD)))
     {
         // If the tapFAIL_HARD flag is set, a tec result
         // must not do anything
-
         ctx_.discard();
         applied = false;
     }
@@ -945,6 +949,7 @@ Transactor::operator()()
         if (!view().open() && fee != beast::zero)
             ctx_.destroyXRP(fee);
 
+        std::cout << "\n\n\nCLAIM FEE\n\n\n";
         // Once we call apply, we will no longer be able to look at view()
         ctx_.apply(result);
     }

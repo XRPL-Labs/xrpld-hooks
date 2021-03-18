@@ -25,7 +25,10 @@
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/TER.h>
 #include <boost/optional.hpp>
-
+#include <algorithm>
+#include <vector>
+#include <iterator>
+ 
 namespace ripple {
 
 /** Editable, discardable view that can build metadata for one tx.
@@ -77,6 +80,18 @@ public:
     addHookMetaData(STObject&& hookExecution)
     {
         hookExecution_.push_back(std::move(hookExecution));
+    }
+
+    void
+    setHookMetaData(std::vector<STObject>&& vec)
+    {
+        hookExecution_ = std::move(vec);
+    }
+
+    void
+    copyHookMetaData(std::vector<STObject>& into)
+    {
+        std::copy(hookExecution_.begin(), hookExecution_.end(), std::back_inserter(into));
     }
 
     uint16_t
