@@ -9,6 +9,11 @@
 #include <stdint.h>
 #include "../hookapi.h"
 
+// e.g. you get back 2/3rds of your xrp as pusd
+#define COLLATERALIZATION_NUMERATOR 2
+#define COLLATERALIZATION_DENOMINATOR 3
+
+
 int64_t cbak(int64_t reserved)
 {
     accept(0,0,0);
@@ -55,6 +60,9 @@ int64_t hook(int64_t reserved)
     if (equal)
         accept(SBUF("Peggy: Outgoing transaction"), 20);
 
+    // invoice id is used for taking over undercollateralized vaults
+    uint8_t invoice_id[32];
+    int64_t invoice_id_len = otxn_field(SBUF(invoice_id), sfInvoiceID);
 
     uint8_t keylet[34];
     CLEARBUF(keylet);
@@ -132,32 +140,80 @@ int64_t hook(int64_t reserved)
     if (is_xrp < 0)
         rollback(SBUF("Peggy: Could not determine sent amount type"), 3);
 
+    uint8_t vault_owner = 1;
     uint8_t vault_key[24];
-    for (int i = 0; GUARD(20), i < 20; ++i)
-        vault_key[i] = account_field[i];
+    if (invoice_id_len != 32)
+    {
+        for (int i = 0; GUARD(20), i < 20; ++i)
+            vault_key[i] = account_field[i];
 
-    vault_key[20] = (uint8_t)((source_tag >> 24U) & 0xFFU);
-    vault_key[21] = (uint8_t)((source_tag >> 16U) & 0xFFU);
-    vault_key[22] = (uint8_t)((source_tag >>  8U) & 0xFFU);
-    vault_key[23] = (uint8_t)((source_tag >>  0U) & 0xFFU);
+        vault_key[20] = (uint8_t)((source_tag >> 24U) & 0xFFU);
+        vault_key[21] = (uint8_t)((source_tag >> 16U) & 0xFFU);
+        vault_key[22] = (uint8_t)((source_tag >>  8U) & 0xFFU);
+        vault_key[23] = (uint8_t)((source_tag >>  0U) & 0xFFU);
+    }
+    else
+    {
+        for (int i = 0; GUARD(24), i < 24; ++i)
+            vault_key[i] = invoice_id[i];
+        vault_owner = 0;
+    }
 
     // check if state currently exists
     uint8_t vault[16];
-    int64_t vault_pusd_out = 0;
-    int64_t vault_xrp_in = 0;
+    int64_t vault_pusd = 0;
+    int64_t vault_xrp = 0;
     if (state(SBUF(vault), SBUF(vault_key)) == 16)
     {
-        vault_pusd_out = float_sto_set(vault, 8);
-        vault_xrp_in   = float_sto_set(vault + 8, 16);
+        vault_pusd = float_sto_set(vault, 8);
+        vault_xrp  = float_sto_set(vault + 8, 16);
     }
 
     if (is_xrp)
     {
         // XRP INCOMING
-        int64_t pusd_amt = float_multiply(amt, exchange_rate);
-        pusd_amt = float_mulratio(pusd_amt, 0, 2, 3);
-        trace(SBUF("computed pusd amt: "), 0); 
-        trace_float(pusd_amt);
+        
+        // compute new vault xrp by adding the xrp they just sent
+        vault_xrp = float_sum(amt, vault_xrp_in);
+
+        // compute the maximum amount of pusd that can be out according to the collateralization
+        int64_t max_vault_pusd = float_mulratio(vault_xrp, exchange_rate)
+        max_vault_pusd =
+            float_mulratio(max_vault_pusd, 0, COLLATERALIZATION_NUMERATOR, COLLATERALIZATION_DENOMINATOR);
+
+        // compute the amount we can send them
+        int64_t pusd_to_send =
+            float_sum(max_vault_pusd, float_negate(vault_pusd));
+        if (pusd_to_send < 0)
+            rollback(SBUF("Peggy: Error computing pusd to send"), 1);
+
+        if (float_compare(pusd_to_send, 0, COMPARE_LESS))
+        {
+            // vault is undercollateralized
+            if (!vault_owner)
+                rollback(SBUF("Peggy: Vault is undercollateralized and your deposit would not redeem it."), 1);
+            else
+            {
+                if (float_sto(vault + 8, 8, 0,0,0,0, vault_xrp, -1) != 8)
+                    rollback(SBUF("Peggy: Internal error writing vault"), 1);
+                if (state_set(SBUF(vault), SBUF(vault_key)) != 16)
+                    rollback(SBUF("Peggy: Could not set state"), 1);
+                accept(SBUF("Peggy: Vault is undercollateralized, absorbing without sending anything."), 0);
+            }
+
+            // execution to here means there is someone taking over the vault by recollateralizing it
+            if (state_set(0, 0, SBUF(vault_key)) < 0)
+                rollback(SBUF("Peggy: Error setting vault state"),1);
+        }
+
+        vault_pusd = float_sum(vault_pusd, pusd_to_send);
+
+        if (float_sto(vault, 8, 0,0,0,0, vault_pusd, -1) != 8 ||
+            float_sto(vault + 8, 8, 0,0,0,0, vault_xrp, -1) != 8)
+            rollback(SBUF("Peggy: Internal error writing vault"), 1);
+
+        if (state_set(SBUF(vault), SBUF(vault_key)) != 16)
+            rollback(SBUF("Peggy: Could not set state"), 1);
 
         int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);
 
@@ -176,19 +232,6 @@ int64_t hook(int64_t reserved)
 
         trace(SBUF(txn_out), 1);
 
-        // update/set state
-        vault_pusd_out = float_sum(pusd_amt, vault_pusd_out);
-
-        vault_xrp_in   = float_sum(amt, vault_xrp_in);
-
-        if (vault_pusd_out < 0 || vault_xrp_in < 0 ||
-            float_sto(vault, 8, 0,0,0,0, vault_pusd_out, -1) != 8 ||
-            float_sto(vault + 8, 8, 0,0,0,0, vault_xrp_in, -1) != 8)
-            rollback(SBUF("Peggy: Internal error writing vault"), 1);
-
-        if (state_set(SBUF(vault), SBUF(vault_key)) != 16)
-            rollback(SBUF("Peggy: Could not set state"), 1);
-
         if (emit(SBUF(txn_out)) < 0)
             rollback(SBUF("Peggy: Emitting txn failed"), 1);
 
@@ -196,29 +239,29 @@ int64_t hook(int64_t reserved)
         return 0;
     }
 
-        // non-xrp incoming
-        uint8_t amount_buffer[48];
-        if (slot(SBUF(amount_buffer), amt_slot) != 48)
-            rollback(SBUF("Peggy: Could not dump sfAmount"), 1);
+    // non-xrp incoming
+    uint8_t amount_buffer[48];
+    if (slot(SBUF(amount_buffer), amt_slot) != 48)
+        rollback(SBUF("Peggy: Could not dump sfAmount"), 1);
 
-        // ensure the issuer is us
-        for (int i = 28; GUARD(20), i < 48; ++i)
-        {
-            if (amount_buffer[i] != hook_accid[i - 28])
-                rollback(SBUF("Peggy: A currency we didn't issue was sent to us."), 1);
-        }
+    // ensure the issuer is us
+    for (int i = 28; GUARD(20), i < 48; ++i)
+    {
+        if (amount_buffer[i] != hook_accid[i - 28])
+            rollback(SBUF("Peggy: A currency we didn't issue was sent to us."), 1);
+    }
 
-        // ensure the currency is PUSD
-        for (int i = 8; GUARD(20), i < 28; ++i)
-        {
-            if (amount_buffer[i] != currency[i - 8])
-                rollback(SBUF("Peggy: A non USD currency was sent to us."), 1);
-        }
+    // ensure the currency is PUSD
+    for (int i = 8; GUARD(20), i < 28; ++i)
+    {
+        if (amount_buffer[i] != currency[i - 8])
+            rollback(SBUF("Peggy: A non USD currency was sent to us."), 1);
+    }
 
-        // execution to here means it was valid PUSD
-        int64_t xrp_amt = float_divide(amt, exchange_rate);
-        trace(SBUF("computed xrp amt: "), 0); 
-        trace_float(xrp_amt);
+    // execution to here means it was valid PUSD
+    int64_t xrp_amt = float_divide(amt, exchange_rate);
+    trace(SBUF("computed xrp amt: "), 0); 
+    trace_float(xrp_amt);
 
 /*
     if (amount_len == 8)
