@@ -1786,16 +1786,15 @@ DEFINE_HOOK_FUNCTION(
         DBG_PRINTF("%02X", c);
     DBG_PRINTF("\n--------\n");
 
-    SerialIter sitTrans(makeSlice(blob));
     std::shared_ptr<STTx const> stpTrans;
     try
     {
-        stpTrans = std::make_shared<STTx const>(std::ref(sitTrans));
+        stpTrans = std::make_shared<STTx const>(SerialIter { memory + read_ptr, read_len });
     }
     catch (std::exception& e)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: " << e.what() << "\n";
+            << "Hook: Emission failure [rippled]: " << e.what() << "\n";
         return EMISSION_FAILURE;
     }
 
@@ -3065,20 +3064,26 @@ DEFINE_HOOK_FUNCTION(
     uint16_t field = field_code & 0xFFFFU;
     uint16_t type  = field_code >> 16U;
 
-    int bytes_needed = 8 +  ( field == 0  && type == 0  ? 0 :
+    bool is_xrp = field_code == 0;
+    bool is_short = field_code == 0xFFFFFFFFU;   // non-xrp value but do not output header or tail, just amount
+
+    std::cout << "fieldcode: " << field_code << "is_xrp: " << (is_xrp ? "true" : "false") << ", is_short: " << (is_short ? "true": "false") << "\n";
+    int bytes_needed = 8 +  
+                            ( field == 0  && type == 0  ? 0 :
+                            ( field == 0xFFFFU  && type == 0xFFFFU  ? 0 :
                             ( field <  16 && type <  16 ? 1 :
                             ( field >= 16 && type <  16 ? 2 :
-                            ( field <  16 && type >= 16 ? 2 : 3 ))));
+                            ( field <  16 && type >= 16 ? 2 : 3 )))));
 
     int64_t bytes_written = 0;
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
+    
+    if (!is_xrp && !is_short && (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0))
+        return INVALID_ARGUMENT;
 
-
-    bool is_xrp = (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0);
-
-    if (!is_xrp)
+    if (!is_xrp && !is_short)
     {
         if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length) ||
             NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
@@ -3094,7 +3099,7 @@ DEFINE_HOOK_FUNCTION(
     if (bytes_needed > write_len)
         return TOO_SMALL;
 
-    if (field == 0 && type == 0)
+    if (is_xrp || is_short)
     {
         // do nothing
     }
@@ -3124,23 +3129,52 @@ DEFINE_HOOK_FUNCTION(
     }
 
     uint64_t man = get_mantissa(float1);
-    int32_t exp = get_exponent(float1) + 97;
+    int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
-
-    /// encode the rippled floating point sto format
     uint8_t out[8];
-    
-    out[0] =  (is_xrp ? 0b00000000U : 0b10000000U);
-    out[0] +=    (neg ? 0b00000000U : 0b01000000U);
-    out[0] += (uint8_t)(exp >> 2U);
-    out[1] =  ((uint8_t)(exp & 0b11U)) << 6U;
-    out[1] += (((uint8_t)(man >> 48U)) & 0b111111U);
-    out[2] = (uint8_t)((man >> 40U) & 0xFFU);
-    out[3] = (uint8_t)((man >> 32U) & 0xFFU);
-    out[4] = (uint8_t)((man >> 24U) & 0xFFU);
-    out[5] = (uint8_t)((man >> 16U) & 0xFFU);
-    out[6] = (uint8_t)((man >>  8U) & 0xFFU);
-    out[7] = (uint8_t)((man >>  0U) & 0xFFU);
+    if (is_xrp)
+    {
+        // we need to normalize to exp -6
+        while (exp < -6)
+        {
+            man /= 10;
+            exp++;
+        }
+
+        while (exp > -6)
+        {
+            man *= 10;
+            exp--;
+        }
+
+        out[0] = (neg ? 0b00000000U : 0b01000000U);
+        out[0] += (uint8_t)((man >> 56U) & 0b111111U);
+        out[1]  = (uint8_t)((man >> 48U) & 0xFF);
+        out[2]  = (uint8_t)((man >> 40U) & 0xFF);
+        out[3]  = (uint8_t)((man >> 32U) & 0xFF);
+        out[4]  = (uint8_t)((man >> 24U) & 0xFF);
+        out[5]  = (uint8_t)((man >> 16U) & 0xFF);
+        out[6]  = (uint8_t)((man >>  8U) & 0xFF);
+        out[7]  = (uint8_t)((man >>  0U) & 0xFF);
+
+    }
+    else
+    {
+        exp += 97;
+
+        /// encode the rippled floating point sto format
+        
+        out[0] = (neg ? 0b10000000U : 0b11000000U);
+        out[0] += (uint8_t)(exp >> 2U);
+        out[1] =  ((uint8_t)(exp & 0b11U)) << 6U;
+        out[1] += (((uint8_t)(man >> 48U)) & 0b111111U);
+        out[2] = (uint8_t)((man >> 40U) & 0xFFU);
+        out[3] = (uint8_t)((man >> 32U) & 0xFFU);
+        out[4] = (uint8_t)((man >> 24U) & 0xFFU);
+        out[5] = (uint8_t)((man >> 16U) & 0xFFU);
+        out[6] = (uint8_t)((man >>  8U) & 0xFFU);
+        out[7] = (uint8_t)((man >>  0U) & 0xFFU);
+    }
 
     WRITE_WASM_MEMORY(
         bytes_written,
@@ -3148,7 +3182,7 @@ DEFINE_HOOK_FUNCTION(
         out, 8,
         memory, memory_length);
 
-    if (!is_xrp)
+    if (!is_xrp && !is_short)
     {
         WRITE_WASM_MEMORY(
             bytes_written,
@@ -3174,31 +3208,36 @@ DEFINE_HOOK_FUNCTION(
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    if (read_len < 9)
+
+    if (read_len < 8)
         return NOT_AN_OBJECT;
 
-    uint8_t hi = memory[read_ptr] >> 4U;
-    uint8_t lo = memory[read_ptr] & 0xFU;
-
     uint8_t* upto = memory + read_ptr;
-    if (hi == 0 && lo == 0)
+
+    if (read_len > 8)
     {
-        // typecode >= 16 && fieldcode >= 16
-        if (read_len < 11)
-            return NOT_AN_OBJECT;
-        upto += 3;
-    }
-    else if (hi == 0 || lo == 0)
-    {
-        // typecode >= 16 && fieldcode < 16
-        if (read_len < 10)
-            return NOT_AN_OBJECT;
-        upto += 2;
-    }
-    else
-    {
-        // typecode < 16 && fieldcode < 16
-        upto++;
+        uint8_t hi = memory[read_ptr] >> 4U;
+        uint8_t lo = memory[read_ptr] & 0xFU;
+
+        if (hi == 0 && lo == 0)
+        {
+            // typecode >= 16 && fieldcode >= 16
+            if (read_len < 11)
+                return NOT_AN_OBJECT;
+            upto += 3;
+        }
+        else if (hi == 0 || lo == 0)
+        {
+            // typecode >= 16 && fieldcode < 16
+            if (read_len < 10)
+                return NOT_AN_OBJECT;
+            upto += 2;
+        }
+        else
+        {
+            // typecode < 16 && fieldcode < 16
+            upto++;
+        }
     }
 
     // check the not-xrp flag

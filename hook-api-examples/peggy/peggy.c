@@ -132,6 +132,25 @@ int64_t hook(int64_t reserved)
     if (is_xrp < 0)
         rollback(SBUF("Peggy: Could not determine sent amount type"), 3);
 
+    uint8_t vault_key[24];
+    for (int i = 0; GUARD(20), i < 20; ++i)
+        vault_key[i] = account_field[i];
+
+    vault_key[20] = (uint8_t)((source_tag >> 24U) & 0xFFU);
+    vault_key[21] = (uint8_t)((source_tag >> 16U) & 0xFFU);
+    vault_key[22] = (uint8_t)((source_tag >>  8U) & 0xFFU);
+    vault_key[23] = (uint8_t)((source_tag >>  0U) & 0xFFU);
+
+    // check if state currently exists
+    uint8_t vault[16];
+    int64_t vault_pusd_out = 0;
+    int64_t vault_xrp_in = 0;
+    if (state(SBUF(vault), SBUF(vault_key)) == 16)
+    {
+        vault_pusd_out = float_sto_set(vault, 8);
+        vault_xrp_in   = float_sto_set(vault + 8, 16);
+    }
+
     if (is_xrp)
     {
         // XRP INCOMING
@@ -143,7 +162,7 @@ int64_t hook(int64_t reserved)
         int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);
 
         uint8_t amt_out[48];
-        if (float_sto(SBUF(amt_out), SBUF(currency), SBUF(hook_accid), pusd_amt, 0) < 0)
+        if (float_sto(SBUF(amt_out), SBUF(currency), SBUF(hook_accid), pusd_amt, -1) < 0)
             rollback(SBUF("Peggy: Could not dump pusd amount into sto"), 1);
 
         for (int i = 0; GUARD(20),i < 20; ++i)
@@ -157,7 +176,20 @@ int64_t hook(int64_t reserved)
 
         trace(SBUF(txn_out), 1);
 
-        if (emit(SBUF(txn_out) < 0))
+        // update/set state
+        vault_pusd_out = float_sum(pusd_amt, vault_pusd_out);
+
+        vault_xrp_in   = float_sum(amt, vault_xrp_in);
+
+        if (vault_pusd_out < 0 || vault_xrp_in < 0 ||
+            float_sto(vault, 8, 0,0,0,0, vault_pusd_out, -1) != 8 ||
+            float_sto(vault + 8, 8, 0,0,0,0, vault_xrp_in, -1) != 8)
+            rollback(SBUF("Peggy: Internal error writing vault"), 1);
+
+        if (state_set(SBUF(vault), SBUF(vault_key)) != 16)
+            rollback(SBUF("Peggy: Could not set state"), 1);
+
+        if (emit(SBUF(txn_out)) < 0)
             rollback(SBUF("Peggy: Emitting txn failed"), 1);
 
         accept(SBUF("Peggy: Sent out PUSD!"), 0);
