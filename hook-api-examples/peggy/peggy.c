@@ -143,7 +143,7 @@ int64_t hook(int64_t reserved)
         int64_t fee = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);
 
         uint8_t amt_out[48];
-        if (float_sto(amt_out, 9, pusd_amt, sfAmount) < 0)
+        if (float_sto(SBUF(amt_out), SBUF(currency), SBUF(hook_accid), pusd_amt, 0) < 0)
             rollback(SBUF("Peggy: Could not dump pusd amount into sto"), 1);
 
         for (int i = 0; GUARD(20),i < 20; ++i)

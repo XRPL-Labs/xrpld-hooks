@@ -3065,9 +3065,10 @@ DEFINE_HOOK_FUNCTION(
     uint16_t field = field_code & 0xFFFFU;
     uint16_t type  = field_code >> 16U;
 
-    int bytes_needed = 8 +  ( field <  16 && type <  16 ? 1 :
+    int bytes_needed = 8 +  ( field == 0  && type == 0  ? 0 :
+                            ( field <  16 && type <  16 ? 1 :
                             ( field >= 16 && type <  16 ? 2 :
-                            ( field <  16 && type >= 16 ? 2 : 3 )));
+                            ( field <  16 && type >= 16 ? 2 : 3 ))));
 
     int64_t bytes_written = 0;
 
@@ -3093,7 +3094,11 @@ DEFINE_HOOK_FUNCTION(
     if (bytes_needed > write_len)
         return TOO_SMALL;
 
-    if (field < 16 && type < 16)
+    if (field == 0 && type == 0)
+    {
+        // do nothing
+    }
+    else if (field < 16 && type < 16)
     {
         *(memory + write_ptr) = (((uint8_t)type) << 4U) + ((uint8_t)field);
         bytes_written++;
