@@ -171,10 +171,17 @@ int64_t hook(int64_t reserved)
     uint8_t vault[16];
     int64_t vault_pusd = 0;
     int64_t vault_xrp = 0;
+    uint8_t vault_exists = 0;
     if (state(SBUF(vault), SBUF(vault_key)) == 16)
     {
+        TRACEHEX(vault);
         vault_pusd = float_sto_set(vault, 8);
+        TRACEVAR(vault_pusd);
+        trace_float(vault_pusd);
         vault_xrp  = float_sto_set(vault + 8, 16);
+        TRACEVAR(vault_xrp);
+        trace_float(vault_xrp);
+        vault_exists = 1;
     }
     else if (is_vault_owner == 0)
         rollback(SBUF("Peggy: You cannot takeover a vault that does not exist!"), 1);
@@ -225,7 +232,7 @@ int64_t hook(int64_t reserved)
                 rollback(SBUF("Peggy: Could not destroy old vault."), 1);
 
             // reset the key
-            CLEAR_BUF(vault_key);
+            CLEARBUF(vault_key);
             for (int i = 0; GUARD(20), i < 20; ++i)
                 vault_key[i] = otxn_accid[i];
 
@@ -272,6 +279,8 @@ int64_t hook(int64_t reserved)
     {
 
         // NON-XRP incoming
+        if (!vault_exists)
+            rollback(SBUF("Peggy: Can only send PUSD back to an existing vault."), 1);
 
         uint8_t amount_buffer[48];
         if (slot(SBUF(amount_buffer), amt_slot) != 48)
@@ -291,18 +300,26 @@ int64_t hook(int64_t reserved)
                 rollback(SBUF("Peggy: A non USD currency was sent to us."), 1);
         }
 
+        TRACEVAR(vault_pusd);
 
         // compute new vault pusd by adding the pusd they just sent
         vault_pusd = float_sum(amt, vault_pusd);
+
+        trace_float(vault_pusd);
 
         // compute the maximum amount of pusd that can be out according to the collateralization
         int64_t max_vault_xrp = float_divide(vault_pusd, exchange_rate);
         max_vault_xrp =
             float_mulratio(max_vault_xrp, 0, COLLATERALIZATION_DENOMINATOR, COLLATERALIZATION_NUMERATOR);
+        
+        trace_float(max_vault_xrp);
+
 
         // compute the amount we can send them
         int64_t xrp_to_send =
             float_sum(max_vault_xrp, float_negate(vault_xrp));
+
+        trace_float(xrp_to_send);
 
         if (xrp_to_send < 0)
             rollback(SBUF("Peggy: Error computing xrp to send"), 1);
@@ -337,7 +354,7 @@ int64_t hook(int64_t reserved)
                 rollback(SBUF("Peggy: Could not destroy old vault."), 1);
 
             // reset the key
-            CLEAR_BUF(vault_key);
+            CLEARBUF(vault_key);
             for (int i = 0; GUARD(20), i < 20; ++i)
                 vault_key[i] = otxn_accid[i];
 

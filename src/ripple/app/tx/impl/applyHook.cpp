@@ -2812,6 +2812,12 @@ DEFINE_HOOK_FUNCTION(
     if (!j.trace())
         return 0;
 
+    if (float1 == 0)
+    {
+        j.trace() << "Hook: [trace()]: <ZERO>";
+        return 0;
+    }
+
     int64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
@@ -2897,6 +2903,8 @@ DEFINE_HOOK_FUNCTION(
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
 
+    if (float1 == 0 || float2 == 0) return 0;
+
     uint64_t man1 = get_mantissa(float1);
     int32_t exp1 = get_exponent(float1);
     bool neg1 = is_negative(float1);
@@ -2957,6 +2965,8 @@ DEFINE_HOOK_FUNCTION(
     uint32_t numerator, uint32_t denominator )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     if (denominator == 0)
         return DIVISION_BY_ZERO;
 
@@ -2974,6 +2984,7 @@ DEFINE_HOOK_FUNCTION(
     float_negate,
     int64_t float1 )
 {
+    if (float1 == 0) return 0;
     RETURN_IF_INVALID_FLOAT(float1);
     return invert_sign(float1);
 }
@@ -3031,6 +3042,9 @@ DEFINE_HOOK_FUNCTION(
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
+
+    if (float1 == 0) return float2;
+    if (float2 == 0) return float1;
 
     int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
     int32_t exp1 = get_exponent(float1);
@@ -3158,8 +3172,15 @@ DEFINE_HOOK_FUNCTION(
         out[7]  = (uint8_t)((man >>  0U) & 0xFF);
 
     }
+    else if (man == 0)
+    {
+        out[0] = 0b11000000U;
+        for (int i = 1; i < 8; ++i)
+            out[i] = 0;
+    }
     else
     {
+
         exp += 97;
 
         /// encode the rippled floating point sto format
@@ -3240,14 +3261,12 @@ DEFINE_HOOK_FUNCTION(
         }
     }
 
-    // check the not-xrp flag
-    if (!((*upto) >> 7U))
-        return NOT_IOU_AMOUNT;
 
     bool is_negative = (((*upto) & 0b01000000U) == 0);
-    int16_t exponent = (((*upto++) & 0b00111111U)) << 2U;
+    int32_t exponent = (((*upto++) & 0b00111111U)) << 2U;
     exponent += ((*upto)>>6U);
     exponent -= 97;
+    std::cout << "float_set_sto: exponent parsed:  " << exponent << "\n";
     uint64_t mantissa = (((uint64_t)(*upto++)) & 0b00111111U) << 48U;
     mantissa += ((uint64_t)*upto++) << 40U;
     mantissa += ((uint64_t)*upto++) << 32U;
@@ -3255,10 +3274,12 @@ DEFINE_HOOK_FUNCTION(
     mantissa += ((uint64_t)*upto++) << 16U;
     mantissa += ((uint64_t)*upto++) <<  8U;
     mantissa += ((uint64_t)*upto++);
+    std::cout << "float_set_sto: mantissa parsed: " << mantissa << "\n";
 
-    int64_t out = set_mantissa(0, mantissa);
-    out = set_exponent(out, exponent);
-    return set_sign(out, is_negative);
+    if (mantissa = 0)
+        return 0;
+
+    return hook_float::float_set(exponent, (is_negative ? -1 : 1) * ((int64_t)(mantissa))); 
 }
 inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 {
@@ -3316,6 +3337,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1,     uint32_t negative)
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     return set_sign(float1, negative != 0);
 }
 DEFINE_HOOK_FUNCNARG(
@@ -3330,6 +3353,8 @@ DEFINE_HOOK_FUNCTION(
     float_invert,
     int64_t float1 )
 {
+    if (float1 == 0)
+        return DIVISION_BY_ZERO;
     return float_divide_internal(float_one_internal, float1);
 }
 DEFINE_HOOK_FUNCTION(
@@ -3338,6 +3363,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1 )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     return get_exponent(float1);
 }
 
@@ -3347,6 +3374,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1 )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     return get_mantissa(float1);
 }
 
@@ -3356,6 +3385,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1 )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     return is_negative(float1);
 }
 
@@ -3365,6 +3396,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1, int32_t exponent )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0)
+        return 0;
     return set_exponent(float1, exponent);
 }
 
@@ -3374,6 +3407,8 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1, int64_t mantissa )
 {
     RETURN_IF_INVALID_FLOAT(float1);
+    if (mantissa == 0)
+        return 0;
     return set_mantissa(float1, mantissa);
 }
 
