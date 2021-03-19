@@ -31,7 +31,6 @@ ApplyViewImpl::ApplyViewImpl(ReadView const* base, ApplyFlags flags)
 void
 ApplyViewImpl::apply(OpenView& to, STTx const& tx, TER ter, beast::Journal j)
 {
-    std::cout << "\n\n\n\tApplyViewImpl::apply ("<<(hookExecution_.empty() ? "empty hm" : "full hm")<<"\n\n\n";
     items_.apply(to, tx, ter, deliver_, hookExecution_, j);
 }
 

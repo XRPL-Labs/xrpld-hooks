@@ -697,8 +697,6 @@ Transactor::operator()()
     bool hook_executed = false;
     uint64_t prehook_cycles = rdtsc();
 
-    std::cout << "\n\n\nTRANSACTOR : " << result << "\n\n\n";
-
     if (ctx_.view().rules().enabled(featureHooks) &&
         (result == tesSUCCESS || result == tecHOOK_REJECTED))
     {
@@ -949,7 +947,6 @@ Transactor::operator()()
         if (!view().open() && fee != beast::zero)
             ctx_.destroyXRP(fee);
 
-        std::cout << "\n\n\nCLAIM FEE\n\n\n";
         // Once we call apply, we will no longer be able to look at view()
         ctx_.apply(result);
     }

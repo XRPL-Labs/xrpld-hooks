@@ -31,7 +31,6 @@ using namespace ripple;
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
 {\
     int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
-    std::cout << "write wasm mem bytes: " << bytes_to_write << "\n";\
     if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
     {\
         JLOG(j.trace())\
@@ -170,7 +169,6 @@ namespace hook_float
 
     inline int64_t make_float(int64_t mantissa, int32_t exponent)
     {
-        std::cout << "make_float(" << mantissa << ", " << exponent << ")\n";
         if (mantissa == 0)
             return 0;
         if (mantissa > maxMantissa)
@@ -1437,7 +1435,6 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    std::cout << "slot_subfield 1\n";
     if (hookCtx.slot.find(parent_slot) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
@@ -1456,7 +1453,6 @@ DEFINE_HOOK_FUNCTION(
         ripple::STObject& parent_obj =
             const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STObject>();
 
-        std::cout << "slot_subfield 2\n";
         if (!parent_obj.isFieldPresent(fieldCode))
             return DOESNT_EXIST;
 
@@ -1479,7 +1475,6 @@ DEFINE_HOOK_FUNCTION(
             hookCtx.slot.erase(new_slot);
             hookCtx.slot_free.push(new_slot);
         }
-        std::cout << "slot_subfield 3\n";
         return NOT_AN_OBJECT;
     }
 
@@ -3081,7 +3076,6 @@ DEFINE_HOOK_FUNCTION(
     bool is_xrp = field_code == 0;
     bool is_short = field_code == 0xFFFFFFFFU;   // non-xrp value but do not output header or tail, just amount
 
-    std::cout << "fieldcode: " << field_code << "is_xrp: " << (is_xrp ? "true" : "false") << ", is_short: " << (is_short ? "true": "false") << "\n";
     int bytes_needed = 8 +  
                             ( field == 0  && type == 0  ? 0 :
                             ( field == 0xFFFFU  && type == 0xFFFFU  ? 0 :
