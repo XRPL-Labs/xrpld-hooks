@@ -3270,7 +3270,7 @@ DEFINE_HOOK_FUNCTION(
     mantissa += ((uint64_t)*upto++);
     std::cout << "float_set_sto: mantissa parsed: " << mantissa << "\n";
 
-    if (mantissa = 0)
+    if (mantissa == 0)
         return 0;
 
     return hook_float::float_set(exponent, (is_negative ? -1 : 1) * ((int64_t)(mantissa))); 
@@ -3290,6 +3290,11 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     uint64_t man2 = get_mantissa(float2);
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
+
+    if (neg1)
+        man1 *= -1;
+    if (neg2)
+        man2 *= -1;
 
     exp1 -= exp2;
     man1 /= man2;

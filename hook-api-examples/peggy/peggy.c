@@ -178,7 +178,7 @@ int64_t hook(int64_t reserved)
         vault_pusd = float_sto_set(vault, 8);
         TRACEVAR(vault_pusd);
         trace_float(vault_pusd);
-        vault_xrp  = float_sto_set(vault + 8, 16);
+        vault_xrp  = float_sto_set(vault + 8, 8);
         TRACEVAR(vault_xrp);
         trace_float(vault_xrp);
         vault_exists = 1;
@@ -306,14 +306,25 @@ int64_t hook(int64_t reserved)
         vault_pusd = float_sum(amt, vault_pusd);
 
         trace_float(vault_pusd);
+        trace(SBUF("exchange rate:"), 0);
+        trace_float(exchange_rate);
 
         // compute the maximum amount of pusd that can be out according to the collateralization
         int64_t max_vault_xrp = float_divide(vault_pusd, exchange_rate);
+        trace_float(max_vault_xrp);
         max_vault_xrp =
             float_mulratio(max_vault_xrp, 0, COLLATERALIZATION_DENOMINATOR, COLLATERALIZATION_NUMERATOR);
+
+        trace(SBUF("max_vault_xrp"), 0);
         
         trace_float(max_vault_xrp);
 
+        trace(SBUF("vault_xrp"), 0);
+        trace_float(vault_xrp);
+
+        int64_t neg_vault_xrp = float_negate(vault_xrp);
+        trace(SBUF("neg_vault_xrp:"), 0);
+        trace_float(neg_vault_xrp);
 
         // compute the amount we can send them
         int64_t xrp_to_send =
