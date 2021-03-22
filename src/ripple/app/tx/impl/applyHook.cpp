@@ -14,6 +14,7 @@
 #include <any>
 #include <vector>
 #include "support/span.h"
+#include <libdivide/libdivide.h>
 
 using namespace ripple;
 
@@ -120,7 +121,10 @@ namespace hook_float
 
     inline int64_t invert_sign(int64_t float1)
     {
-        return float1 ^ (1ULL<<62U);
+        std::cout << "invert_sign in:  " << float1 << "\n";
+        int64_t r = (int64_t)(((uint64_t)float1) ^ (1ULL<<62U));
+        std::cout << "invert_sign out: " << r << "\n";
+        return r;
     }
 
     inline int64_t set_sign(int64_t float1, bool set_negative)
@@ -2816,12 +2820,12 @@ DEFINE_HOOK_FUNCTION(
     int64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
-    man *= (neg ? -1 : 1);
     if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
     {
         j.trace() << "Hook: [trace()]: <invalid float>";
         return 0;
     }
+    man *= (neg ? -1 : 1);
 
     j.trace() << "Hook: [trace()]: " << man << "*10^(" << exp << ")";
     return 0;
@@ -2890,24 +2894,14 @@ inline int64_t mulratio_internal
     }
 }
 
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_multiply,
-    int64_t float1, int64_t float2 )
+inline int64_t float_multiply_internal_parts(
+        uint64_t man1,
+        int32_t exp1,
+        bool neg1,
+        uint64_t man2,
+        int32_t exp2,
+        bool neg2)
 {
-    RETURN_IF_INVALID_FLOAT(float1);
-    RETURN_IF_INVALID_FLOAT(float2);
-
-    if (float1 == 0 || float2 == 0) return 0;
-
-    uint64_t man1 = get_mantissa(float1);
-    int32_t exp1 = get_exponent(float1);
-    bool neg1 = is_negative(float1);
-    uint64_t man2 = get_mantissa(float2);
-    int32_t exp2 = get_exponent(float2);
-    bool neg2 = is_negative(float2);
-
-
     int32_t exp_out = exp1 + exp2;
 
     // multiply the mantissas, this could result in upto a 128 bit number, represented as high and low here
@@ -2955,6 +2949,28 @@ DEFINE_HOOK_FUNCTION(
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
+    float_multiply,
+    int64_t float1, int64_t float2 )
+{
+    RETURN_IF_INVALID_FLOAT(float1);
+    RETURN_IF_INVALID_FLOAT(float2);
+
+    if (float1 == 0 || float2 == 0) return 0;
+
+    uint64_t man1 = get_mantissa(float1);
+    int32_t exp1 = get_exponent(float1);
+    bool neg1 = is_negative(float1);
+    uint64_t man2 = get_mantissa(float2);
+    int32_t exp2 = get_exponent(float2);
+    bool neg2 = is_negative(float2);
+
+
+    return float_multiply_internal_parts(man1, exp1, neg1, man2, exp2, neg2);
+}
+
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
     float_mulratio,
     int64_t float1, uint32_t round_up,
     uint32_t numerator, uint32_t denominator )
@@ -2981,7 +2997,7 @@ DEFINE_HOOK_FUNCTION(
 {
     if (float1 == 0) return 0;
     RETURN_IF_INVALID_FLOAT(float1);
-    return invert_sign(float1);
+    return hook_float::invert_sign(float1);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -3291,34 +3307,48 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
 
-    if (neg1)
-        man1 *= -1;
-    if (neg2)
-        man2 *= -1;
+    std::cout << "neg1: " << neg1 << ", exp1: " << exp1 << ", man1: " << man1 << "\n";
+    std::cout << "neg2: " << neg2 << ", exp2: " << exp2 << ", man2: " << man2 << "\n";
 
+    /*
+    // RH TODO: make this division more accurate
     exp1 -= exp2;
+    man2 /= 10000000ULL;
     man1 /= man2;
+    if (man2 == 0)
+        return DIVISION_BY_ZERO;
+    exp1 -= 7;
+    */
 
+    uint64_t r = 0;
+    // first divide (man1 * 2^26) by man2, this will always be 64bit int due to normalization
+    man1 = libdivide::libdivide_128_div_64_to_64(man1, 0ULL, man2, &r);
+    exp1 -= exp2;
+
+
+    // normalize
     while (man1 > maxMantissa)
     {
-        if (exp1 > maxExponent)
-            return OVERFLOW;
         man1 /= 10;
         exp1++;
+        if (exp1 > maxExponent)
+            return INVALID_FLOAT; //overflow
     }
+
+    if (man1 == 0)
+        return 0;
+
     while (man1 < minMantissa)
     {
-        if (exp1 < minExponent)
-            return 0;
         man1 *= 10;
         exp1--;
+        if (exp1 < minExponent)
+            return INVALID_FLOAT; //underflow
     }
 
-    neg1 = (neg1 && !neg2) || (!neg1 && neg2);
-
-    int64_t out = set_mantissa(0, man1);
-    out = set_exponent(out, exp1);
-    return set_sign(out, neg1);
+    // now multiply by 1/(2^64) =
+    // 5421010862427522*10^-35
+    return float_multiply_internal_parts(man1, exp1, neg1, 5421010862427522ULL, -35, neg2);
 }
 DEFINE_HOOK_FUNCTION(
     int64_t,

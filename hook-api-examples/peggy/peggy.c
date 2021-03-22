@@ -322,14 +322,11 @@ int64_t hook(int64_t reserved)
         trace(SBUF("vault_xrp"), 0);
         trace_float(vault_xrp);
 
-        int64_t neg_vault_xrp = float_negate(vault_xrp);
-        trace(SBUF("neg_vault_xrp:"), 0);
-        trace_float(neg_vault_xrp);
 
         // compute the amount we can send them
         int64_t xrp_to_send =
             float_sum(max_vault_xrp, float_negate(vault_xrp));
-
+        trace(SBUF("xrp_to_send:"), 0);
         trace_float(xrp_to_send);
 
         if (xrp_to_send < 0)
