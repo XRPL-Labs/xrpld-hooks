@@ -116,7 +116,7 @@ namespace hook_float
 
     inline bool is_negative(int64_t float1)
     {
-        return (float1 >> 62U) != 0;
+        return ((float1 >> 62U) & 1ULL) == 0;
     }
 
     inline int64_t invert_sign(int64_t float1)
@@ -160,12 +160,13 @@ namespace hook_float
     inline int64_t make_float(ripple::IOUAmount& amt)
     {
         int64_t man_out = amt.mantissa();
+        std::cout << "make_float(iou).man=" << man_out << "\n";
         int64_t float_out = 0;
-        if (man_out < 0)
-        {
+        bool neg = man_out < 0;
+        if (neg)
             man_out *= -1;
-            float_out = set_sign(float_out, true);
-        }
+
+        float_out = set_sign(float_out, neg);
         float_out = set_mantissa(float_out, man_out);
         float_out = set_exponent(float_out, amt.exponent());
         return float_out;

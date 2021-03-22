@@ -75,7 +75,7 @@ function is_negative(xfl)
         throw "Invalid XFL";
     if (xfl == 0n)
         return false;
-    return (xfl >> 62n) != 0n;
+    return ((xfl >> 62n) & 1n) == 0n;
 }
 
 
@@ -116,4 +116,5 @@ function to_string(xfl)
 
 }
 
-console.log(to_string_dec(BigInt(process.argv[2])))
+x = BigInt(process.argv[2])
+console.log(to_string_dec(x))

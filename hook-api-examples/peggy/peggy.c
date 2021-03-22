@@ -79,7 +79,10 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Peggy: Could not parse user trustline limit"), 1);
 
     int64_t required_limit = float_set(10, 1);
-
+    trace(SBUF("required_limit"), 0);
+    trace_float(required_limit);
+    trace(SBUF("user_trustline_limit"), 0);
+    trace_float(user_trustline_limit);
     if (float_compare(user_trustline_limit, required_limit, COMPARE_EQUAL | COMPARE_GREATER) != 1)
         rollback(SBUF("Peggy: You must set a trustline for USD to peggy for limit of at least 10B"), 1);
 
