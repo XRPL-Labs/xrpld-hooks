@@ -349,7 +349,7 @@ extern int64_t  float_mantissa      (int64_t float1 );
 extern int64_t  float_mantissa_set  (int64_t float1,     int64_t mantissa );
 extern int64_t  float_sign          (int64_t float1 );
 extern int64_t  float_sign_set      (int64_t float1,     uint32_t negative );
-
+extern int64_t  float_int           (int64_t float1,     uint32_t decimal_places, uint32_t abs);
 extern int64_t  trace_float         (int64_t float1);
 
 

@@ -328,7 +328,7 @@ int64_t hook(int64_t reserved)
 
         // compute the amount we can send them
         int64_t xrp_to_send =
-            float_sum(max_vault_xrp, float_negate(vault_xrp));
+            float_sum(float_negate(max_vault_xrp), vault_xrp);
         trace(SBUF("xrp_to_send:"), 0);
         trace_float(xrp_to_send);
 
@@ -377,7 +377,7 @@ int64_t hook(int64_t reserved)
 
         // set / update the vault
         if (float_sto(vault, 8, 0,0,0,0, vault_pusd, -1) != 8 ||
-            float_sto(vault + 8, 8, 0,0,0,0, vault_xrp, -1) != 8)
+            float_sto(vault + 8, 8, 0,0,0,0, max_vault_xrp, -1) != 8)
             rollback(SBUF("Peggy: Internal error writing vault"), 1);
 
         if (state_set(SBUF(vault), SBUF(vault_key)) != 16)
@@ -391,7 +391,7 @@ int64_t hook(int64_t reserved)
 
         // finally create the outgoing txn
         uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_SIZE];
-        PREPARE_PAYMENT_SIMPLE(txn_out, xrp_to_send, fee, otxn_accid, source_tag, source_tag);
+        PREPARE_PAYMENT_SIMPLE(txn_out, float_int(xrp_to_send, 6, 0), fee, otxn_accid, source_tag, source_tag);
 
         if (emit(SBUF(txn_out)) < 0)
             rollback(SBUF("Peggy: Emitting txn failed"), 1);

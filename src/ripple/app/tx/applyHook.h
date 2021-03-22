@@ -101,7 +101,8 @@ namespace hook_api {
         OVERFLOW = -30,                 // if an operation with a float results in an overflow
         NOT_IOU_AMOUNT = -31,
         NOT_AN_AMOUNT = -32,
-        INVALID_AMOUNT = -33
+        INVALID_AMOUNT = -33,
+        CANT_RETURN_NEGATIVE = -34
     };
 
     enum ExitType : uint8_t {
@@ -244,7 +245,8 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa_set, int64_t float1,     int64_t mantissa );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign,         int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set,     int64_t float1,     uint32_t negative );
-    
+    DECLARE_HOOK_FUNCTION(int64_t,  float_int,          int64_t float1,     uint32_t decimal_places, uint32_t abs );
+
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
@@ -429,6 +431,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(float_exponent_set, ctx);
             ADD_HOOK_FUNCTION(float_sign, ctx);
             ADD_HOOK_FUNCTION(float_sign_set, ctx);
+            ADD_HOOK_FUNCTION(float_int, ctx);
 
 
             

@@ -1574,6 +1574,7 @@ DEFINE_HOOK_FUNCTION(
   */
 }
 
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     util_keylet,
@@ -2944,6 +2945,40 @@ inline int64_t float_multiply_internal_parts(
 
     // now we have our product
     return make_float(man_out, exp_out);
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    float_int,
+    int64_t float1,
+    uint32_t decimal_places,
+    uint32_t absolute)
+{
+    RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0) return 0;
+    uint64_t man1 = get_mantissa(float1);
+    int32_t exp1 = get_exponent(float1);
+    bool neg1 = is_negative(float1);
+
+    if (neg1 && !absolute)
+        return CANT_RETURN_NEGATIVE;
+
+    while (exp1 > -6)
+    {
+        man1 *= 10;
+        exp1--;
+    }
+
+    while (exp1 < -6)
+    {
+        man1 /= 10;
+        exp1++;
+    }
+    if (((int64_t)(man1)) < man1)
+        return INVALID_FLOAT;
+
+    return man1;
+
 }
 
 

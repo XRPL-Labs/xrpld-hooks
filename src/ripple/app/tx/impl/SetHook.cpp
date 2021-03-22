@@ -95,6 +95,7 @@ const std::set<std::string> import_whitelist
     "float_mantissa_set",
     "float_mulratio",
     "float_multiply",
+    "float_int",
     "float_negate",
     "float_one",
     "float_set",
