@@ -14,7 +14,6 @@
 #include <any>
 #include <vector>
 #include "support/span.h"
-#include <libdivide/libdivide.h>
 
 using namespace ripple;
 
@@ -3308,53 +3307,78 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
 
-    std::cout << "neg1: " << neg1 << ", exp1: " << exp1 << ", man1: " << man1 << "\n";
-    std::cout << "neg2: " << neg2 << ", exp2: " << exp2 << ", man2: " << man2 << "\n";
-
-    /*
-    // RH TODO: make this division more accurate
-    exp1 -= exp2;
-    man2 /= 10000000ULL;
-    man1 /= man2;
-    if (man2 == 0)
-        return DIVISION_BY_ZERO;
-    exp1 -= 7;
-    */
-
-    if (man2 == 0)
-        return DIVISION_BY_ZERO;
-
-    uint64_t r = 0;
-    std::cout << "float_divide man1 = " << man1 << " / man2 = " << man2 << "\n";
-
-    // first divide (man1 * 2^26) by man2, this will always be 64bit int due to normalization
-    man1 = libdivide::libdivide_128_div_64_to_64(man1, 0ULL, man2, &r);
-    exp1 -= exp2;
-
-
-    // normalize
     while (man1 > maxMantissa)
     {
         man1 /= 10;
         exp1++;
         if (exp1 > maxExponent)
-            return INVALID_FLOAT; //overflow
+            return INVALID_FLOAT;
     }
-
-    if (man1 == 0)
-        return 0;
 
     while (man1 < minMantissa)
     {
         man1 *= 10;
         exp1--;
         if (exp1 < minExponent)
-            return INVALID_FLOAT; //underflow
+            return 0;
     }
 
-    // now multiply by 1/(2^64) =
-    // 5421010862427522*10^-35
-    return float_multiply_internal_parts(man1, exp1, neg1, 5421010862427522ULL, -35, neg2);
+    
+    while (man2 > man1)
+    {
+        man2 /= 10;
+        exp2++;
+    }
+
+    if (man2 == 0)
+        return DIVISION_BY_ZERO;
+
+    while (man2 < man1)
+    {
+        if (man2*10 > man1)
+            break;
+        man2 *= 10;
+        exp2--;
+    }
+
+    uint64_t man3 = 0;
+    int32_t exp3 = exp1 - exp2;
+    while (man2 > 0)
+    {
+        int i = 0;
+        for (; man1 > man2; man1 -= man2, ++i);
+            
+        man3 *= 10;
+        man3 += i;
+        man2 /= 10;
+        if (man2 == 0)
+            break;
+        exp3--;
+    }
+
+    // normalize
+    while (man3 < minMantissa)
+    {
+        man3 *= 10;
+        exp3--;
+        if (exp3 < minExponent)
+            return 0;
+    }
+
+    while (man3 > maxMantissa)
+    {
+        man3 /= 10;
+        exp3++;
+        if (exp3 > maxExponent)
+            return INVALID_FLOAT;
+    }
+
+    bool neg3 = !((neg1 && neg2) || (!neg1 && !neg2));
+    int64_t float_out = set_sign(0, neg3);
+    float_out = set_exponent(float_out, exp3);
+    float_out = set_mantissa(float_out, man3);
+    return float_out;
+
 }
 DEFINE_HOOK_FUNCTION(
     int64_t,
