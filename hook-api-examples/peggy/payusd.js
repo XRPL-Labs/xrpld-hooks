@@ -14,13 +14,18 @@ api.on('connected', () => {
 api.on('disconnected', (code) => {
     console.log('disconnected, code:', code);
 });
+
+var amount = 1;
+if (process.argv.length >= 3)
+    amount = parseInt(process.argv[2])
+
 api.connect().then(() => {
     j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
         Amount: {
             currency: "USD",
-            value: "1",
+            value: amount + '',
             issuer: "rECE33X6yXqM7MpjXCqG8nsdSWtSFzeGrS"
         },
         Destination: "rECE33X6yXqM7MpjXCqG8nsdSWtSFzeGrS",
@@ -32,7 +37,7 @@ api.connect().then(() => {
         console.log(s)
         api.submit(s.signedTransaction).then( response => {
             console.log(response.resultCode, response.resultMessage)
-            console.log("Done!")
+            console.log("Done! Paid "+amount+" USD to Hook")
             process.exit()  
         }).catch ( e=> { console.log(e) } );
      });

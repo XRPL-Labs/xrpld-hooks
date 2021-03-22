@@ -3321,7 +3321,12 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     exp1 -= 7;
     */
 
+    if (man2 == 0)
+        return DIVISION_BY_ZERO;
+
     uint64_t r = 0;
+    std::cout << "float_divide man1 = " << man1 << " / man2 = " << man2 << "\n";
+
     // first divide (man1 * 2^26) by man2, this will always be 64bit int due to normalization
     man1 = libdivide::libdivide_128_div_64_to_64(man1, 0ULL, man2, &r);
     exp1 -= exp2;

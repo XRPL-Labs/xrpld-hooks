@@ -92,7 +92,7 @@ function to_string_dec(xfl)
 
     p = ml + e;
 
-    neg = is_negative(xfl) ? '-' : '+';
+    neg = is_negative(xfl) ? '-' : '';
     m = '' + m;
     if (p < 0)
         return neg + '0.' + '0'.repeat(-p) + m;
@@ -111,7 +111,7 @@ function to_string(xfl)
         throw "Invalid XFL";
     if (xfl == 0n)
         return "<zero>";
-    return (is_negative(xfl) ? "-" : "+") +
+    return (is_negative(xfl) ? "-" : "") +
             get_mantissa(xfl) + " * 10^(" + get_exponent(xfl) + ")";
 
 }

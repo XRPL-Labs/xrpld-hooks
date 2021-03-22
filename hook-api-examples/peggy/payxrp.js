@@ -14,11 +14,14 @@ api.on('connected', () => {
 api.on('disconnected', (code) => {
     console.log('disconnected, code:', code);
 });
+var amount = 1000000;
+if (process.argv.length >= 3)
+    amount = parseInt(process.argv[2])*1000000
 api.connect().then(() => {
     j = {
         Account: 'rHb9CJAWyB4rj91VRWn96DkukG4bwdtyTh',
         TransactionType: "Payment",
-        Amount: "100000000",
+        Amount: ""+amount,
         Destination: "rECE33X6yXqM7MpjXCqG8nsdSWtSFzeGrS",
         Fee: "100000"
     }
@@ -28,7 +31,7 @@ api.connect().then(() => {
         console.log(s)
         api.submit(s.signedTransaction).then( response => {
             console.log(response.resultCode, response.resultMessage)
-            console.log("Done!")
+            console.log("Done! Sent Hook " + (amount/1000000) + " XRP")
             process.exit()  
         }).catch ( e=> { console.log(e) } );
      });

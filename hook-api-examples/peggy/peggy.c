@@ -306,7 +306,7 @@ int64_t hook(int64_t reserved)
         TRACEVAR(vault_pusd);
 
         // compute new vault pusd by adding the pusd they just sent
-        vault_pusd = float_sum(amt, vault_pusd);
+        vault_pusd = float_sum(float_negate(amt), vault_pusd);
 
         trace_float(vault_pusd);
         trace(SBUF("exchange rate:"), 0);
