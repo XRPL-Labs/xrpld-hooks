@@ -1,0 +1,3 @@
+#!/bin/bash
+( cd ../../build; ./rippled ledger_accept 2> /dev/null > /dev/null )
+( cd ../../build; ./rippled ledger_accept 2> /dev/null > /dev/null )

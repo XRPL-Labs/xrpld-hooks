@@ -46,7 +46,7 @@ namespace hook_api {
         LINE = 9,
         OFFER = 10,
         QUALITY = 11,
-        NEXT = 12,
+        EMITTED_DIR = 12,
         TICKET = 13,
         SIGNERS = 14,
         CHECK = 15,
@@ -55,7 +55,8 @@ namespace hook_api {
         OWNER_DIR = 18,
         PAGE = 19,
         ESCROW = 20,
-        PAYCHAN = 21
+        PAYCHAN = 21,
+        EMITTED = 22
     };
     }
 

@@ -1593,167 +1593,302 @@ DEFINE_HOOK_FUNCTION(
     if (keylet_type < 1 || keylet_type > 21)
         return INVALID_ARGUMENT;
 
- // TODO try catch the whole switch
-    switch (keylet_type)
+    try
     {
-        case keylet_code::OWNER_DIR:
-        case keylet_code::SIGNERS:
-        case keylet_code::ACCOUNT:
-        case keylet_code::HOOK:
+        switch (keylet_type)
         {
-            if (a == 0 || b == 0)
-               return INVALID_ARGUMENT;
 
-            if (c != 0 || d != 0 || e != 0 || f != 0)
-               return INVALID_ARGUMENT;
+            // keylets that take a keylet and an 8 byte uint
+            case keylet_code::QUALITY:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0)
+                    return INVALID_ARGUMENT;
+                if (e != 0 || f != 0)
+                    return INVALID_ARGUMENT;
 
-            uint32_t read_ptr = a, read_len = b;
+                uint32_t read_ptr = a, read_len = b;
+                
+                if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+                   return OUT_OF_BOUNDS;
+                
+                if (read_len != 34)
+                    return INVALID_ARGUMENT;
 
-            if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
-               return OUT_OF_BOUNDS;
+                std::optional<ripple::Keylet> kl = unserialize_keylet(memory + read_ptr, read_len);
+                if (!kl)
+                    return NO_SUCH_KEYLET;
 
-            if (read_len != 20)
-                return INVALID_ARGUMENT;
+                uint64_t arg = (((uint64_t)c)<<32U)+((uint64_t)d);
 
-            ripple::AccountID id = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
+                ripple::Keylet kl_out =
+                    ripple::keylet::quality(*kl, arg);
+                
+                return serialize_keylet(kl_out, memory, write_ptr, write_len);
+            }
 
-            std::cout << "util_keylet: account(" << id << ")\n";
-            ripple::Keylet kl =
-                keylet_type == keylet_code::HOOK        ? ripple::keylet::hook(id)      :
-                keylet_type == keylet_code::SIGNERS     ? ripple::keylet::signers(id)   :
-                keylet_type == keylet_code::OWNER_DIR   ? ripple::keylet::ownerDir(id)  :
-                ripple::keylet::account(id);
+            // keylets that take a 32 byte uint
+            case keylet_code::CHILD:
+            case keylet_code::EMITTED:
+            case keylet_code::UNCHECKED:
+            {
+                if (a == 0 || b == 0)
+                   return INVALID_ARGUMENT;
 
-            return serialize_keylet(kl, memory, write_ptr, write_len);
+                if (c != 0 || d != 0 || e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t read_ptr = a, read_len = b;
+
+                if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (read_len != 32)
+                    return INVALID_ARGUMENT;
+
+                base_uint<256> id = ripple::base_uint<256>::fromVoid(memory + read_ptr);
+                
+                ripple::Keylet kl =
+                    keylet_type == keylet_code::CHILD        ? ripple::keylet::child(id)            :
+                    keylet_type == keylet_code::EMITTED      ? ripple::keylet::emitted(id)          :
+                    ripple::keylet::unchecked(id);
+                
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            // keylets that take a 20 byte account id
+            case keylet_code::OWNER_DIR:
+            case keylet_code::SIGNERS:
+            case keylet_code::ACCOUNT:
+            case keylet_code::HOOK:
+            {
+                if (a == 0 || b == 0)
+                   return INVALID_ARGUMENT;
+
+                if (c != 0 || d != 0 || e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t read_ptr = a, read_len = b;
+
+                if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (read_len != 20)
+                    return INVALID_ARGUMENT;
+
+                ripple::AccountID id =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
+
+                std::cout << "util_keylet: account(" << id << ")\n";
+                ripple::Keylet kl =
+                    keylet_type == keylet_code::HOOK        ? ripple::keylet::hook(id)      :
+                    keylet_type == keylet_code::SIGNERS     ? ripple::keylet::signers(id)   :
+                    keylet_type == keylet_code::OWNER_DIR   ? ripple::keylet::ownerDir(id)  :
+                    ripple::keylet::account(id);
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            // keylets that take 20 byte account id, and 4 byte uint
+            case keylet_code::OFFER:
+            case keylet_code::CHECK:
+            case keylet_code::ESCROW:
+            {
+                if (a == 0 || b == 0 || c == 0)
+                    return INVALID_ARGUMENT;
+                if (d != 0 || e != 0 || f != 0)
+                    return INVALID_ARGUMENT;
+
+                uint32_t read_ptr = a, read_len = b;
+                
+                if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+                   return OUT_OF_BOUNDS;
+                
+                if (read_len != 20)
+                    return INVALID_ARGUMENT;
+
+                ripple::AccountID id =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
+
+                ripple::Keylet kl = 
+                    keylet_type == keylet_code::CHECK       ? ripple::keylet::check(id, c)      :
+                    keylet_type == keylet_code::ESCROW      ? ripple::keylet::escrow(id, c)     :
+                    ripple::keylet::offer(id, c);
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }        
+
+            // keylets that take a 32 byte uint and an 8byte uint64
+            case keylet_code::PAGE:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0)
+                   return INVALID_ARGUMENT;
+
+                if (e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t kread_ptr = a, kread_len = b;
+                
+                if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+                   return OUT_OF_BOUNDS;
+                
+                if (b != 32)
+                    return INVALID_ARGUMENT;
+
+                uint64_t index = (((uint64_t)c)<<32U) + ((uint64_t)d);
+                ripple::Keylet kl = ripple::keylet::page(ripple::base_uint<256>::fromVoid(memory + a), index);
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            // keylets that take both a 20 byte account id and a 32 byte uint
+            case keylet_code::HOOK_STATE:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0)
+                   return INVALID_ARGUMENT;
+
+                if (e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t aread_ptr = a, aread_len = b, kread_ptr = c, kread_len = d;
+
+                if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+                    NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (aread_len != 20 || kread_len != 32)
+                    return INVALID_ARGUMENT;
+
+                ripple::Keylet kl =
+                    ripple::keylet::hook_state(
+                            ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr),
+                            ripple::base_uint<256>::fromVoid(memory + kread_ptr));
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+
+            // skip is overloaded, has a single, optional 4 byte argument
+            case keylet_code::SKIP:
+            {
+                if (c != 0 || d != 0 || e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                ripple::Keylet kl = 
+                    (b == 0 ? ripple::keylet::skip() :
+                    ripple::keylet::skip(a));
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            // no arguments
+            case keylet_code::AMENDMENTS:
+            case keylet_code::FEES:
+            case keylet_code::NEGATIVE_UNL:
+            case keylet_code::EMITTED_DIR:
+            {
+                if (a != 0 || b != 0 || c != 0 || d != 0 || e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                ripple::Keylet kl =
+                    keylet_type == keylet_code::AMENDMENTS   ? ripple::keylet::amendments()       :
+                    keylet_type == keylet_code::FEES         ? ripple::keylet::fees()             :
+                    keylet_type == keylet_code::NEGATIVE_UNL ? ripple::keylet::negativeUNL()      :
+                    ripple::keylet::emittedDir();
+                
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            case keylet_code::LINE:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0 || f == 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t hi_ptr = a, hi_len = b, lo_ptr = c, lo_len = d, cu_ptr = e, cu_len = f;
+
+                if (NOT_IN_BOUNDS(hi_ptr, hi_len, memory_length) ||
+                    NOT_IN_BOUNDS(lo_ptr, lo_len, memory_length) ||
+                    NOT_IN_BOUNDS(cu_ptr, cu_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (hi_len != 20 || lo_len != 20 || cu_len != 20)
+                    return INVALID_ARGUMENT;
+
+                ripple::AccountID a0 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + hi_ptr);
+                ripple::AccountID a1 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + lo_ptr);
+                ripple::Currency  cu = ripple::base_uint<160, ripple::detail::CurrencyTag>::fromVoid(memory + cu_ptr);
+
+                std::cout << "util_keylet: line(" << a0 << ", " << a1 << ", " << cu << ")\n";
+                ripple::Keylet kl =
+                    ripple::keylet::line(a0, a1, cu);
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+            
+            // keylets that take two 20 byte account ids
+            case keylet_code::DEPOSIT_PREAUTH:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0)
+                   return INVALID_ARGUMENT;
+
+                if (e != 0 || f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t aread_ptr = a, aread_len = b;
+                uint32_t bread_ptr = c, bread_len = d;
+
+                if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+                    NOT_IN_BOUNDS(bread_ptr, bread_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (aread_len != 20 || bread_len != 20)
+                    return INVALID_ARGUMENT;
+
+                ripple::AccountID aid =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr);
+                ripple::AccountID bid =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + bread_ptr);
+
+                ripple::Keylet kl =
+                    ripple::keylet::depositPreauth(aid, bid);
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
+            // keylets that take two 20 byte account ids and a 4 byte uint
+            case keylet_code::PAYCHAN:
+            {
+                if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0)
+                   return INVALID_ARGUMENT;
+
+                if (f != 0)
+                   return INVALID_ARGUMENT;
+
+                uint32_t aread_ptr = a, aread_len = b;
+                uint32_t bread_ptr = c, bread_len = d;
+
+                if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+                    NOT_IN_BOUNDS(bread_ptr, bread_len, memory_length))
+                   return OUT_OF_BOUNDS;
+
+                if (aread_len != 20 || bread_len != 20)
+                    return INVALID_ARGUMENT;
+
+                ripple::AccountID aid =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr);
+                ripple::AccountID bid =
+                    ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + bread_ptr);
+
+                ripple::Keylet kl =
+                    ripple::keylet::payChan(aid, bid, e);
+
+                return serialize_keylet(kl, memory, write_ptr, write_len);
+            }
+
         }
-
-        case keylet_code::HOOK_STATE:
-        {
-            if (a == 0 || b == 0 || c == 0 || d == 0)
-               return INVALID_ARGUMENT;
-
-            if (e != 0 || f != 0)
-               return INVALID_ARGUMENT;
-
-            uint32_t aread_ptr = a, aread_len = b, kread_ptr = c, kread_len = d;
-
-            if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
-                NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
-               return OUT_OF_BOUNDS;
-
-            if (aread_len != 20 || kread_len != 32)
-                return INVALID_ARGUMENT;
-
-            ripple::Keylet kl =
-                ripple::keylet::hook_state(
-                        ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr),
-                        ripple::base_uint<256>::fromVoid(memory + kread_ptr));
-
-
-            return serialize_keylet(kl, memory, write_ptr, write_len);
-        }
-
-
-        case keylet_code::AMENDMENTS:
-        {
-            return 34;
-        }
-
-        case keylet_code::CHILD:
-        {
-            return 34;
-        }
-
-        case keylet_code::SKIP:
-        {
-            return 34;
-        }
-
-        case keylet_code::FEES:
-        {
-            return 34;
-        }
-
-        case keylet_code::NEGATIVE_UNL:
-        {
-            return 34;
-        }
-
-        case keylet_code::LINE:
-        {
-            if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0 || f == 0)
-               return INVALID_ARGUMENT;
-
-            uint32_t hi_ptr = a, hi_len = b, lo_ptr = c, lo_len = d, cu_ptr = e, cu_len = f;
-
-            if (NOT_IN_BOUNDS(hi_ptr, hi_len, memory_length) ||
-                NOT_IN_BOUNDS(lo_ptr, lo_len, memory_length) ||
-                NOT_IN_BOUNDS(cu_ptr, cu_len, memory_length))
-               return OUT_OF_BOUNDS;
-
-            if (hi_len != 20 || lo_len != 20 || cu_len != 20)
-                return INVALID_ARGUMENT;
-
-            ripple::AccountID a0 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + hi_ptr);
-            ripple::AccountID a1 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + lo_ptr);
-            ripple::Currency  cu = ripple::base_uint<160, ripple::detail::CurrencyTag>::fromVoid(memory + cu_ptr);
-
-            std::cout << "util_keylet: line(" << a0 << ", " << a1 << ", " << cu << ")\n";
-            ripple::Keylet kl =
-                ripple::keylet::line(a0, a1, cu);
-            return serialize_keylet(kl, memory, write_ptr, write_len);
-        }
-
-        case keylet_code::OFFER:
-        {
-            return 34;
-        }
-
-        case keylet_code::QUALITY:
-        {
-            return 34;
-        }
-
-        case keylet_code::NEXT:
-        {
-            return 34;
-        }
-
-        case keylet_code::TICKET:
-        {
-            return 34;
-        }
-
-        case keylet_code::CHECK:
-        {
-            return 34;
-        }
-
-        case keylet_code::DEPOSIT_PREAUTH:
-        {
-            return 34;
-        }
-
-        case keylet_code::UNCHECKED:
-        {
-            return 34;
-        }
-
-        case keylet_code::PAGE:
-        {
-            return 34;
-        }
-
-        case keylet_code::ESCROW:
-        {
-            return 34;
-        }
-
-        case keylet_code::PAYCHAN:
-        {
-            return 34;
-        }
-
+    }
+    catch (std::exception& e)
+    {
+        JLOG(j.warn())
+            << "Hook: Keylet exception " << e.what() << "\n";
+        return INTERNAL_ERROR;
     }
 
     return NO_SUCH_KEYLET;

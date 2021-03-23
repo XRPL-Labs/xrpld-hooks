@@ -93,7 +93,7 @@ extern int64_t util_sha512h        (uint32_t write_ptr, uint32_t write_len,
                                     uint32_t read_ptr,  uint32_t read_len);
 /**
  * Index into a xrpld serialized object and return the location and length of a subfield. Except for Array subtypes
- * the offset and length refer to the **payload** of the subfield not the entire subfield. Use SUB_OFFSET and 
+ * the offset and length refer to the **payload** of the subfield not the entire subfield. Use SUB_OFFSET and
  * SUB_LENGTH macros to extract return value.
  * @param read_ptr The memory location of the stobject
  * @param read_len The length of the stobject
@@ -123,7 +123,7 @@ extern int64_t sto_emplace        (uint32_t read_ptr,  uint32_t read_len,
                                    uint32_t sread_ptr, uint32_t sread_len,
                                    uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id);
 
-extern int64_t sto_erase          (uint32_t write_ptr,  uint32_t write_len, 
+extern int64_t sto_erase          (uint32_t write_ptr,  uint32_t write_len,
                                    uint32_t read_ptr,   uint32_t read_len, uint32_t field_id);
 
 extern int64_t util_keylet         (uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
@@ -133,7 +133,7 @@ extern int64_t util_keylet         (uint32_t write_ptr, uint32_t write_len, uint
 /**
  * Compute burden for an emitted transaction.
  * @return the burden a theoretically emitted transaction would have.
- */ 
+ */
 extern int64_t etxn_burden         (void );
 
 /**
@@ -204,7 +204,7 @@ extern int64_t ledger_seq          (void);
  * @param write_ptr A buffer of at least 32 bytes to write into.
  * @param write_len The length of that buffer
  * @return The number of bytes written into the buffer of a negative integer if an error occured.
- */ 
+ */
 extern int64_t nonce               (uint32_t write_ptr,  uint32_t write_len);
 
 
@@ -322,7 +322,7 @@ extern int64_t otxn_id             (uint32_t write_ptr,  uint32_t write_len);
 /**
  * Retrieve the Transaction Type (e.g. ttPayment = 0) of the originating transaction.
  * @return The Transaction Type (tt-code)
- */ 
+ */
 extern int64_t otxn_type           (void);
 
 
@@ -379,27 +379,28 @@ extern int64_t  trace_float         (int64_t float1);
 
 #define INVALID_FLOAT -10024        // if the mantissa or exponent are outside normalized ranges
 
-#define KEYLET_HOOK 1                                                                                                  
-#define KEYLET_HOOK_STATE 2                                                                                            
-#define KEYLET_ACCOUNT 3                                                                                               
-#define KEYLET_AMENDMENTS 4                                                                                            
-#define KEYLET_CHILD 5                                                                                                 
-#define KEYLET_SKIP 6                                                                                                  
-#define KEYLET_FEES 7                                                                                                  
-#define KEYLET_NEGATIVE_UNL 8                                                                                          
-#define KEYLET_LINE 9                                                                                                  
-#define KEYLET_OFFER 10                                                                                                
-#define KEYLET_QUALITY 11                                                                                              
-#define KEYLET_NEXT 12                                                                                                 
-#define KEYLET_TICKET 13                                                                                               
-#define KEYLET_SIGNERS 14                                                                                              
-#define KEYLET_CHECK 15                                                                                                
-#define KEYLET_DEPOSIT_PREAUTH 16                                                                                      
-#define KEYLET_UNCHECKED 17                                                                                            
-#define KEYLET_OWNER_DIR 18                                                                                            
-#define KEYLET_PAGE 19                                                                                                 
-#define KEYLET_ESCROW 20                                                                                               
-#define KEYLET_PAYCHAN 21 
+#define KEYLET_HOOK 1
+#define KEYLET_HOOK_STATE 2
+#define KEYLET_ACCOUNT 3
+#define KEYLET_AMENDMENTS 4
+#define KEYLET_CHILD 5
+#define KEYLET_SKIP 6
+#define KEYLET_FEES 7
+#define KEYLET_NEGATIVE_UNL 8
+#define KEYLET_LINE 9
+#define KEYLET_OFFER 10
+#define KEYLET_QUALITY 11
+#define KEYLET_EMITTED_DIR 12
+#define KEYLET_TICKET 13
+#define KEYLET_SIGNERS 14
+#define KEYLET_CHECK 15
+#define KEYLET_DEPOSIT_PREAUTH 16
+#define KEYLET_UNCHECKED 17
+#define KEYLET_OWNER_DIR 18
+#define KEYLET_PAGE 19
+#define KEYLET_ESCROW 20
+#define KEYLET_PAYCHAN 21
+#define KEYLET_EMITTED 22
 
 #define COMPARE_EQUAL 1U
 #define COMPARE_LESS 2U
