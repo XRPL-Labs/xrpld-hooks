@@ -239,8 +239,11 @@ check_guard(
                     }
 
                     // update the instruction count for this block depth to the largest possible guard
-                    if (instruction_count[block_depth].first < b)
-                        instruction_count[block_depth].first = b;
+                    if (instruction_count[block_depth].first < a)
+                    {
+                        instruction_count[block_depth].first = a;
+                        JLOG(ctx.j.trace()) << "Hook: (cg) Depth " << block_depth << " guard: " << a;
+                    }                   
 
                     // clear stack and maps
                     while (stack.size() > 0)
@@ -506,10 +509,10 @@ check_guard(
         << "Hook: (cg) Total execution count: " << instruction_count[0].second;
 
     // RH TODO: don't hardcode this
-    if (instruction_count[0].second > 0x1FFFF)
+    if (instruction_count[0].second > 0xFFFFF)
     {
         JLOG(ctx.j.trace())
-            << "Hook: (cg) Maximum possible instructions exceed 131071, please make your hook smaller "
+            << "Hook: (cg) Maximum possible instructions exceed 1048575, please make your hook smaller "
             << "or check your guards!";
         return temMALFORMED;
     }
