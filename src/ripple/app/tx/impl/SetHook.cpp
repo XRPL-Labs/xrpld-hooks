@@ -153,7 +153,7 @@ const std::set<std::string> import_whitelist
 NotTEC
 check_guard(
         PreflightContext const& ctx, ripple::Blob& hook, int codesec,
-        int start_offset, int end_offset, int guard_func_idx)
+        int start_offset, int end_offset, int guard_func_idx, int last_import_idx)
 {
     // RH TODO: Guard() should be at the top of functions however better tools need to be created to
     // help hook developers prune unused functions provided by unwanted compiler-included runtimes
@@ -171,6 +171,12 @@ check_guard(
     std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
     std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
     std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
+    
+    // block depth level -> { largest guard, rolling instruction count } //RH UPTO
+    std::map<int, std::pair<uint32_t, uint64_t>> instruction_count;
+
+                        // largest guard  // instr ccount
+    instruction_count[0] = {1,                  0};
 
     if (DEBUG_GUARD_CHECK)
         printf("\n\n\nstart of guard analysis for codesec %d\n", codesec);
@@ -187,12 +193,22 @@ check_guard(
         }
 
         int instr = hook[i++]; CHECK_SHORT_HOOK();
+        instruction_count[block_depth].second++;
 
         if (instr == 0x10) // call instr
         {
             int callee_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             if (DEBUG_GUARD_CHECK)
                 printf("%d - call instruction at %d -- call funcid: %d\n", mode, i, callee_idx);
+
+            // disallow calling of user defined functions inside a hook
+            if (callee_idx > last_import_idx)
+            {
+                JLOG(ctx.j.trace()) << "Hook: (cg) Hook calls a function outside of the whitelisted imports " 
+                        << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+                return temMALFORMED;
+            }
+
             if (callee_idx == guard_func_idx)
             {
                 // found!
@@ -201,7 +217,7 @@ check_guard(
 
                     if (stack.size() < 2)
                     {
-                        JLOG(ctx.j.trace()) << "Hook: (cg) Guard called but could not detect constant parameters"
+                        JLOG(ctx.j.trace()) << "Hook: (cg) Guard called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                         return temMALFORMED;
                     }
@@ -217,10 +233,14 @@ check_guard(
                     {
                         // 0 has a special meaning, generally it's not a constant value
                         // < 0 is a constant but negative, either way this is a reject condition
-                        JLOG(ctx.j.trace()) << "Hook: (cg) Guard called but could not detect constant parameters"
+                        JLOG(ctx.j.trace()) << "Hook: (cg) Guard called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                         return temMALFORMED;
                     }
+
+                    // update the instruction count for this block depth to the largest possible guard
+                    if (instruction_count[block_depth].first < b)
+                        instruction_count[block_depth].first = b;
 
                     // clear stack and maps
                     while (stack.size() > 0)
@@ -235,11 +255,16 @@ check_guard(
 
         if (instr == 0x11) // call indirect [ we don't allow guard to be called this way ]
         {
+            JLOG(ctx.j.trace()) << "Hook: (cg) Call indirect detected and is disallowed in hooks "
+                << "codesec: " << codesec << " hook byte offset: " << i << "\n";
+            return temMALFORMED;
+            /*
             if (DEBUG_GUARD_CHECK)
                 printf("%d - call_indirect instruction at %d\n", mode, i);
             parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             ++i; CHECK_SHORT_HOOK(); //absorb 0x00 trailing
             continue;
+            */
         }
 
         // unreachable and nop instructions
@@ -270,6 +295,7 @@ check_guard(
 
                 ++i; CHECK_SHORT_HOOK();
                 block_depth++;
+                instruction_count[block_depth] = {1, 0};
                 continue;
             }
 
@@ -282,6 +308,7 @@ check_guard(
                 ++i; CHECK_SHORT_HOOK();
                 mode = 0; // we now search for a guard()
                 block_depth++;
+                instruction_count[block_depth] = {1, 0};
                 continue;
             }
 
@@ -292,6 +319,7 @@ check_guard(
                     printf("%d - if instruction at %d\n", mode, i);
                 ++i; CHECK_SHORT_HOOK();
                 block_depth++;
+                instruction_count[block_depth] = {1, 0};
                 continue;
             }
 
@@ -466,7 +494,24 @@ check_guard(
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return temMALFORMED;
             }
+
+            // perform the instruction count * guard accounting
+            instruction_count[block_depth].second +=
+                instruction_count[block_depth+1].second * instruction_count[block_depth+1].first;
+            instruction_count.erase(block_depth+1);
         }
+    }
+
+    JLOG(ctx.j.trace())
+        << "Hook: (cg) Total execution count: " << instruction_count[0].second;
+
+    // RH TODO: don't hardcode this
+    if (instruction_count[0].second > 0x1FFFF)
+    {
+        JLOG(ctx.j.trace())
+            << "Hook: (cg) Maximum possible instructions exceed 131071, please make your hook smaller "
+            << "or check your guards!";
+        return temMALFORMED;
     }
 
     // if we reach the end of the code looking for another trigger the guards are installed correctly
@@ -531,6 +576,7 @@ SetHook::preflight(PreflightContext const& ctx)
 
         // now we check for guards... first check if _g is imported
         int guard_import_number = -1;
+        int last_import_number = -1;
         for (int i = 8, j = 0; i < hook.size();)
         {
 
@@ -639,6 +685,8 @@ SetHook::preflight(PreflightContext const& ctx)
                     return temMALFORMED;
                 }
 
+                last_import_number = func_upto - 1;
+
                 // we have an imported guard function, so now we need to enforce the guard rules
                 // which are:
                 // 1. all functions must start with a guard call before any branching [ RH TODO ]
@@ -733,7 +781,7 @@ SetHook::preflight(PreflightContext const& ctx)
 
                     // execution to here means we are up to the actual expr for the codesec/function
 
-                    auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number);
+                    auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
                     if (result != tesSUCCESS)
                         return result;
 
