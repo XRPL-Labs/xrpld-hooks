@@ -29,7 +29,7 @@ extern int32_t _g                  (uint32_t id, uint32_t maxiter);
  * @param read_len The length of the string. May be 0.
  * @return Will never return, terminates the hook.
  */
-extern int64_t accept              (uint32_t read_ptr,  uint32_t read_len,   int32_t error_code);
+extern int64_t accept              (uint32_t read_ptr,  uint32_t read_len,   uint32_t error_code);
 
 /**
  * Rollback the originating transaction, discard all hook state changes and emitted transactions.
@@ -78,8 +78,6 @@ extern int64_t util_verify         (uint32_t dread_ptr, uint32_t dread_len,
                                     uint32_t sread_ptr, uint32_t sread_len,
                                     uint32_t kread_ptr, uint32_t kread_len);
 
-// RH TODO comment function
-extern int64_t util_sto            (uint32_t tread_ptr, uint32_t tread_len);
 
 /**
  * Compute the first half of a SHA512 checksum.
@@ -119,7 +117,7 @@ extern int64_t sto_subarray       (uint32_t read_ptr,  uint32_t read_len, uint32
 
 extern int64_t sto_validate       (uint32_t read_ptr,  uint32_t read_len);
 
-extern int64_t sto_emplace        (uint32_t read_ptr,  uint32_t read_len,
+extern int64_t sto_emplace        (uint32_t write_ptr, uint32_t write_len,
                                    uint32_t sread_ptr, uint32_t sread_len,
                                    uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id);
 

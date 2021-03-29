@@ -102,8 +102,7 @@ namespace hook_api {
         OVERFLOW = -30,                 // if an operation with a float results in an overflow
         NOT_IOU_AMOUNT = -31,
         NOT_AN_AMOUNT = -32,
-        INVALID_AMOUNT = -33,
-        CANT_RETURN_NEGATIVE = -34
+        CANT_RETURN_NEGATIVE = -33
     };
 
     enum ExitType : uint8_t {
@@ -194,8 +193,8 @@ namespace hook_api {
 
     DECLARE_HOOK_FUNCTION(int32_t,  _g,                 uint32_t guard_id, uint32_t maxiter );
 
-    DECLARE_HOOK_FUNCTION(int64_t,	accept,             uint32_t read_ptr,  uint32_t read_len, int32_t error_code );
-    DECLARE_HOOK_FUNCTION(int64_t,	rollback,           uint32_t read_ptr,  uint32_t read_len, int32_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	accept,             uint32_t read_ptr,  uint32_t read_len, int64_t error_code );
+    DECLARE_HOOK_FUNCTION(int64_t,	rollback,           uint32_t read_ptr,  uint32_t read_len, int64_t error_code );
     DECLARE_HOOK_FUNCTION(int64_t,	util_raddr,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,	util_accid,         uint32_t write_ptr, uint32_t write_len,

@@ -59,7 +59,7 @@ using namespace ripple;
 
 #define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
 {\
-    if (read_len > 1024) read_len = 1024;\
+    if (read_len > 64) read_len = 64;\
     if (read_ptr) {\
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
             JLOG(j.trace())\
@@ -70,7 +70,7 @@ using namespace ripple;
         /* assembly script and some other languages use utf16 for strings */\
         if (is_UTF16LE(read_ptr + memory, read_len))\
         {\
-            uint8_t output[512];\
+            uint8_t output[32];\
             int len = read_len / 2; /* is_UTF16LE will only return true if read_len is even */\
             for (int i = 0; i < len; ++i)\
                 output[i] = memory[read_ptr + i * 2];\
@@ -745,7 +745,7 @@ void hook::commitChangesToLedger(
     ApplyViewImpl& avi = dynamic_cast<ApplyViewImpl&>(applyCtx.view());
 
     uint16_t exec_index = avi.nextHookExecutionIndex();
-
+    uint16_t emission_count = 0;
     // apply emitted transactions to the ledger (by adding them to the emitted directory) if we are allowed to
     if (cclMode & cclAPPLY)
     {
@@ -770,6 +770,7 @@ void hook::commitChangesToLedger(
             JLOG(j.info()) << "sleEmittedId: " << emittedId.type << "|" << emittedId.key;
             if (!sleEmitted)
             {
+                ++emission_count;
                 JLOG(j.info())
                     << "^^^^^^^^^^^^^^^^^ Creating sleEmitted";
                 sleEmitted = std::make_shared<SLE>(emittedId);
@@ -841,10 +842,17 @@ void hook::commitChangesToLedger(
     meta.setFieldU8(sfHookResult, hookResult.exitType );
     meta.setFieldH256(sfHookHash, hookResult.hookSetTxnID);
     meta.setAccountID(sfHookAccount, hookResult.account);
-    meta.setFieldU64(sfHookReturnCode, (uint64_t)(hookResult.exitCode));
+
+    // RH NOTE: this is probably not necessary, a direct cast should always put the (negative) 1 bit at the MSB
+    // however to ensure this is consistent across different arch/compilers it's done explicitly here.
+    uint64_t unsigned_exit_code =
+        ( hookResult.exitCode >= 0 ? hookResult.exitCode :
+            0x8000000000000000ULL + (-1 * hookResult.exitCode ));
+
+    meta.setFieldU64(sfHookReturnCode, unsigned_exit_code);
     meta.setFieldVL(sfHookReturnString, ripple::Slice{hookResult.exitReason.data(), hookResult.exitReason.size()});
     meta.setFieldU64(sfHookInstructionCount, hookResult.instructionCount);
-    meta.setFieldU16(sfHookEmitCount, (uint16_t)(hookResult.emittedTxn.size())); // this will never wrap, hard limit
+    meta.setFieldU16(sfHookEmitCount, emission_count); // this will never wrap, hard limit
     meta.setFieldU16(sfHookExecutionIndex, exec_index );
     meta.setFieldU16(sfHookStateChangeCount, change_count );
     avi.addHookMetaData(std::move(meta));
@@ -962,8 +970,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     accept,
-    uint32_t read_ptr, uint32_t read_len,
-    int32_t error_code )
+    uint32_t read_ptr, uint32_t read_len, int64_t error_code )
 {
     HOOK_SETUP();
     HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ACCEPT);
@@ -973,8 +980,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     rollback,
-    uint32_t read_ptr, uint32_t read_len,
-    int32_t error_code )
+    uint32_t read_ptr, uint32_t read_len, int64_t error_code )
 {
     HOOK_SETUP();
     HOOK_EXIT(read_ptr, read_len, error_code, hook_api::ExitType::ROLLBACK);
@@ -1246,15 +1252,15 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_clear,
-    uint32_t slot_id )
+    uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (hookCtx.slot.find(slot_id) == hookCtx.slot.end())
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
-    hookCtx.slot.erase(slot_id);
-    hookCtx.slot_free.push(slot_id);
+    hookCtx.slot.erase(slot_no);
+    hookCtx.slot_free.push(slot_no);
 
     return 1;
 }
@@ -1286,22 +1292,22 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-/*
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
+    
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
-    auto const& key = hookCtx.slot[slot_no].first;
 
-    if (key.size() > write_len)
+    auto& e = hookCtx.slot[slot_no].id;
+
+    if (write_len < e.size())
         return TOO_SMALL;
-
+    
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
     WRITE_WASM_MEMORY_AND_RETURN(
-        write_ptr, key.size(),
-        key.data(), key.size(),
+        write_ptr, write_len,
+        e.data(), e.size(),
         memory, memory_length);
-        */
-    return NOT_IMPLEMENTED;
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -1377,9 +1383,15 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_size,
-    uint32_t slot_id )
+    uint32_t slot_no )
 {
-    return NOT_IMPLEMENTED;
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
+        return DOESNT_EXIST;
+
+    //RH TODO: this is a very expensive way of computing size, fix it
+    Serializer s;
+    hookCtx.slot[slot_no].entry->add(s);
+    return s.getDataLength();
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -1557,21 +1569,31 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     trace_slot,
-    uint32_t slot )
+    uint32_t slot_no )
 {
 
-    return NOT_IMPLEMENTED;
-/*
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (hookCtx.slot.find(slot) == hookCtx.slot.end())
+    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
-    auto const& node = hookCtx.slot[slot];
-    std::cout << "debug: object in slot " << slot << ":\n" << hookCtx.slot[slot] << "\n";
+    uint8_t* id = hookCtx.slot[slot_no].id.data();
+    size_t id_size = hookCtx.slot[slot_no].id.size();
+    uint8_t output[64];
+    if (id_size > 32) id_size = 32;
+    for (int i = 0; i < id_size; ++i)
+    {
+        unsigned char high = (id[i] >> 4) & 0xF;
+        unsigned char low  = (id[i] & 0xF);
+        high += ( high < 10U ? '0' : 'A' - 10 );
+        low  += ( low  < 10U ? '0' : 'A' - 10 );
+        output[i*2 + 0] = high;
+        output[i*2 + 1] = low;
+    }
+    j.trace()
+        << "Hook: [trace_slot("<<slot_no<<")]:'" << std::string_view((const char*)output, (size_t)(id_size*2));
 
-    return slot;
-  */
+    return 0;
 }
 
 
@@ -2113,10 +2135,20 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     hook_hash,
-    uint32_t write_ptr, uint32_t ptr_len )
+    uint32_t write_ptr, uint32_t write_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    return NOT_IMPLEMENTED; // RH TODO implement
+
+    if (write_len < 32)
+        return TOO_SMALL;
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, write_len,
+        hookCtx.result.hookHash.data(), 32,
+        memory, memory_length);
 }
 
 // Write the account id that the running hook is installed on into write_ptr
@@ -2224,9 +2256,6 @@ DEFINE_HOOK_FUNCTION(
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
-
-    if (hookCtx.nonce_counter > hook_api::max_nonce)
-        return TOO_MANY_NONCES;
 
     auto hash = ripple::sha512Half(
        ripple::Slice { memory + read_ptr, read_len }
@@ -2748,26 +2777,37 @@ DEFINE_HOOK_FUNCTION(
 
 
 
-// when implemented this function will validate an st-object
 DEFINE_HOOK_FUNCTION(
     int64_t,
     sto_validate,
-    uint32_t tread_ptr, uint32_t tread_len )
+    uint32_t read_ptr, uint32_t read_len )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    return NOT_IMPLEMENTED;
-/*
-    ripple::Serializer ss { (void*)(memory + tread_ptr), tread_len };
-    auto const sig = get(st, sigField);
-    if (!sig)
-        return false;
-    Serializer ss;
-    ss.add32(prefix);
-    st.addWithoutSigningFields(ss);
-    return verify(
-        pk, Slice(ss.data(), ss.size()), Slice(sig->data(), sig->size()));
-*/
+
+    // RH TODO: see if an internal ripple function/class would do this better    
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (read_len < 1)
+        return TOO_SMALL;
+
+    unsigned char* start = (unsigned char*)(memory + read_ptr);
+    unsigned char* upto = start;
+    unsigned char* end = start + read_len;
+
+
+    for (int i = 0; i < 1024 && upto < end; ++i)
+    {
+        int type = -1, field = -1, payload_start = -1, payload_length = -1;
+        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
+        if (length < 0)
+            return 0;
+        upto += length;
+    }
+
+    return 1;
 }
 
 
@@ -2917,8 +2957,9 @@ DEFINE_HOOK_FUNCTION(
             JLOG(j.trace()) << "Hook: Guard violation. Src line: " << id <<
                 " Iterations: " << hookCtx.guard_map[id];
         }
-
-        return rollback(hookCtx, memoryCtx, 0, 0, GUARD_VIOLATION);
+        hookCtx.result.exitType = hook_api::ExitType::ROLLBACK;
+        hookCtx.result.exitCode = GUARD_VIOLATION;
+        return RC_ROLLBACK;
     }
     return 1;
 }
