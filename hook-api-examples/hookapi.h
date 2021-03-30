@@ -220,7 +220,7 @@ extern int64_t slot_subarray       (uint32_t parent_slot, uint32_t array_id, uin
 extern int64_t slot_subfield       (uint32_t parent_slot, uint32_t field_id, uint32_t new_slot);
 extern int64_t slot_type           (uint32_t slot, uint32_t flags);
 extern int64_t slot_float          (uint32_t slot);
-extern int64_t trace_slot          (uint32_t slot);
+extern int64_t trace_slot          (uint32_t mread_ptr, uint32_t mread_len, uint32_t slot);
 extern int64_t otxn_slot           (uint32_t slot);
 
 
@@ -267,7 +267,8 @@ extern int64_t state_foreign       (uint32_t write_ptr,  uint32_t write_len,
  * @param as_hex If 0 treat the read_ptr as pointing at a string of text, otherwise treat it as data and print hex
  * @return The number of bytes output or a negative integer if an error occured.
  */
-extern int64_t trace               (uint32_t read_ptr,   uint32_t read_len,   uint32_t as_hex);
+extern int64_t trace               (uint32_t mread_ptr, uint32_t mread_len,
+                                    uint32_t dread_ptr, uint32_t dread_len,   uint32_t as_hex);
 
 /**
  * Print some output to the trace log on xrpld along with a decimal number. Any xrpld instance set to "trace" log
@@ -348,7 +349,7 @@ extern int64_t  float_mantissa_set  (int64_t float1,     int64_t mantissa );
 extern int64_t  float_sign          (int64_t float1 );
 extern int64_t  float_sign_set      (int64_t float1,     uint32_t negative );
 extern int64_t  float_int           (int64_t float1,     uint32_t decimal_places, uint32_t abs);
-extern int64_t  trace_float         (int64_t float1);
+extern int64_t  trace_float         (uint32_t mread_ptr, uint32_t mread_len, int64_t float1);
 
 
 

@@ -33,8 +33,9 @@ using namespace ripple;
     int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
     if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
     {\
-        JLOG(j.trace())\
-            << "Hook: " << __func__ << " tried to retreive blob of " << host_src_len\
+        JLOG(j.warn())\
+            << "HookError[" << hookCtx.result.account << "]: "\
+            << __func__ << " tried to retreive blob of " << host_src_len\
             << " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
     }\
@@ -52,6 +53,40 @@ using namespace ripple;
     return bytes_written;\
 }
 
+#define RETURN_HOOK_TRACE(read_ptr, read_len, t)\
+{\
+    int rl = read_len;\
+    if (rl > 1024)\
+        rl = 1024;\
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
+    {\
+        return OUT_OF_BOUNDS;\
+    }\
+    else if (read_ptr == 0 && read_len == 0)\
+    {\
+        JLOG(j.trace()) \
+            << "HookTrace[" << hookCtx.result.account << "]: " << t;\
+    }\
+    else if (is_UTF16LE(memory + read_ptr, rl))\
+    {\
+        uint8_t output[1024];\
+        int len = rl / 2;\
+        for (int i = 0; i < len && i < 512; ++i)\
+            output[i] = memory[read_ptr + i * 2];\
+        JLOG(j.trace()) \
+            << "HookTrace[" << hookCtx.result.account << "]: "\
+            << std::string_view((const char*)output, (size_t)(len)) << " "\
+            << t;\
+    }\
+    else\
+    {\
+        JLOG(j.trace()) \
+            << "HookTrace[" << hookCtx.result.account << "]: "\
+            << std::string_view((const char*)(memory + read_ptr), (size_t)rl) << " "\
+            << t;\
+    }\
+    return 0;\
+}
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\
     (ptr > memory_length || \
@@ -62,8 +97,9 @@ using namespace ripple;
     if (read_len > 64) read_len = 64;\
     if (read_ptr) {\
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
-            JLOG(j.trace())\
-                << "Hook: tried to accept/rollback but specified memory outside of the wasm instance " <<\
+            JLOG(j.warn())\
+                << "HookError[" << hookCtx.result.account << "]: "\
+                << "Tried to accept/rollback but specified memory outside of the wasm instance " <<\
                 "limit when specifying a reason string";\
             return OUT_OF_BOUNDS;\
         }\
@@ -120,9 +156,7 @@ namespace hook_float
 
     inline int64_t invert_sign(int64_t float1)
     {
-        std::cout << "invert_sign in:  " << float1 << "\n";
         int64_t r = (int64_t)(((uint64_t)float1) ^ (1ULL<<62U));
-        std::cout << "invert_sign out: " << r << "\n";
         return r;
     }
 
@@ -159,7 +193,6 @@ namespace hook_float
     inline int64_t make_float(ripple::IOUAmount& amt)
     {
         int64_t man_out = amt.mantissa();
-        std::cout << "make_float(iou).man=" << man_out << "\n";
         int64_t float_out = 0;
         bool neg = man_out < 0;
         if (neg)
@@ -278,13 +311,6 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
         ((uint16_t)ptr[1]);
 
     ripple::Keylet reconstructed { (ripple::LedgerEntryType)ktype, ripple::uint256::fromVoid(ptr + 2) };
-
-
-    printf("unserialize_keylet: type: %d key: ", reconstructed.type);
-    for (int i = 0; i < 32; ++i)
-        printf("%02X", reconstructed.key.data()[i]);
-
-    printf("\n");
     return reconstructed;
 }
 
@@ -362,8 +388,9 @@ hook::setHookState(
 
     auto const hook = view.peek(hookResult.hookKeylet);
     if (!hook) {
-        JLOG(j.warn()) <<
-            "Hook: Attempted to set a hook state for a hook that doesnt exist " << toBase58(hookResult.account);
+        JLOG(j.warn())
+            << "HookError[" << hookResult.account << "]: "
+            << "Attempted to set a hook state for a hook that doesnt exist";
         return tefINTERNAL;
     }
 
@@ -455,9 +482,9 @@ hook::setHookState(
             describeOwnerDir(hookResult.account),
             j);
 
-        JLOG(j.trace()) << "Hook: Create/update hook state: "
-            << key << " for account " << toBase58(hookResult.account)
-            << ": " << (page ? "success" : "failure");
+        JLOG(j.trace()) << "HookInfo[" << hookResult.account << "]: "
+            << "Create/update hook state: "
+            << (page ? "success" : "failure");
 
         if (!page)
             return tecDIR_FULL;
@@ -492,7 +519,7 @@ hook::HookResult
             .changedState =
                 std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
-            .exitReason = std::string("<not set by hook>"),
+            .exitReason = std::string(""),
             .exitCode = -1
         }
     };
@@ -507,7 +534,8 @@ hook::HookResult
     std::vector<SSVM::ValVariant> params, results;
     params.push_back(0UL);
 
-    JLOG(j.trace()) << "Hook: Creating wasm instance for " << account << "\n";
+    JLOG(j.trace())
+        << "HookInfo[" << hookCtx.result.account << "]: Creating wasm instance";
     if (auto result =
             vm.runWasmFile(
                 SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
@@ -518,19 +546,17 @@ hook::HookResult
         uint32_t ssvm_error = static_cast<uint32_t>(result.error());
         if (ssvm_error > 1)
         {
-            JLOG(j.warn()) << "Hook: Hook was malformed for " << account
-                << ", SSVM error code:" << ssvm_error << "\n";
+            JLOG(j.warn())
+                << "HookError[" << hookCtx.result.account << "]: SSVM error " << ssvm_error;
             hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
             return hookCtx.result;
         }
     }
 
     JLOG(j.trace()) <<
-        "Hook: Exited with " <<
-            ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" :
-            ( hookCtx.result.exitType == hook_api::ExitType::ACCEPT ? "ACCEPT" : "REJECT" ) ) <<
-        ", Reason: '" <<  hookCtx.result.exitReason.c_str() << "', Exit Code: " << hookCtx.result.exitCode <<
-        ", Ledger Seq: " << hookCtx.applyCtx.view().info().seq << "\n";
+        "HookInfo[" << hookCtx.result.account << "]: " <<
+            ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : "ACCEPT" ) <<
+        " RS: '" <<  hookCtx.result.exitReason.c_str() << "' RC: " << hookCtx.result.exitCode;
 
     // callback auto-commits on non-rollback
     if (callback)
@@ -543,9 +569,6 @@ hook::HookResult
         commitChangesToLedger(hookCtx.result, applyCtx, cclMode);
     }
 
-    JLOG(j.trace()) <<
-        "Hook: Destroying instance for " << account << "\n";
-
     return hookCtx.result;
 }
 
@@ -556,64 +579,58 @@ DEFINE_HOOK_FUNCTION(
     trace_num,
     uint32_t read_ptr, uint32_t read_len, int64_t number)
 {
-
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
-    if (read_len > 1024) read_len = 1024;
-    if (!j.trace())
-        return read_len;
-    j.trace() << "Hook: [trace()]: " << std::string_view((const char*)(memory + read_ptr), (size_t)read_len) <<
-        ": " << number;
-    return read_len;
 
+    RETURN_HOOK_TRACE(read_ptr, read_len, number);
 }
 
 
-/* If XRPLD is running with trace log level hooks may produce debugging output to the trace log
- * specifying as_hex dumps memory as hex */
 DEFINE_HOOK_FUNCTION(
     int64_t,
     trace,
-    uint32_t read_ptr, uint32_t read_len, uint32_t as_hex )
+    uint32_t mread_ptr, uint32_t mread_len,
+    uint32_t dread_ptr, uint32_t dread_len, uint32_t as_hex )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
-    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+    if (NOT_IN_BOUNDS(mread_ptr, mread_len, memory_length) ||
+        NOT_IN_BOUNDS(dread_ptr, dread_len, memory_length))
         return OUT_OF_BOUNDS;
-    if (read_len > 1024) read_len = 1024; // max trace is 1 kib
+    
     if (!j.trace())
-        return read_len;
+        return 0;
+
+    if (mread_len > 128)
+        mread_len = 128;
+    
+    if (dread_len > 1024)
+        dread_len = 1024;
+
+    uint8_t output[2048];
+    size_t out_len = 0;
     if (as_hex)
     {
-        uint8_t output[2048];
-        for (int i = 0; i < read_len && i < memory_length; ++i)
+        out_len = dread_len * 2;
+        for (int i = 0; i < dread_len && i < memory_length; ++i)
         {
-            unsigned char high = (memory[read_ptr + i] >> 4) & 0xF;
-            unsigned char low  = (memory[read_ptr + i] & 0xF);
+            unsigned char high = (memory[dread_ptr + i] >> 4) & 0xF;
+            unsigned char low  = (memory[dread_ptr + i] & 0xF);
             high += ( high < 10U ? '0' : 'A' - 10 );
             low  += ( low  < 10U ? '0' : 'A' - 10 );
             output[i*2 + 0] = high;
             output[i*2 + 1] = low;
         }
-        j.trace()
-            << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(read_len*2));
     }
-    else if (is_UTF16LE(memory + read_ptr, read_len))
+    else if (is_UTF16LE(memory + dread_ptr, dread_len))
     {
-        uint8_t output[1024];
-        int len = read_len / 2; //is_UTF16LE will only return true if read_len is even
-        for (int i = 0; i < len; ++i)
-            output[i] = memory[read_ptr + i * 2];
-        j.trace()
-            << "Hook: [trace()]: '" << std::string_view((const char*)output, (size_t)(len));
+        out_len = dread_len / 2; //is_UTF16LE will only return true if read_len is even
+        for (int i = 0; i < out_len; ++i)
+            output[i] = memory[dread_ptr + i * 2];
     }
-    else
-    {
-
-        j.trace()
-            << "Hook: [trace()]: '" << std::string_view((const char*)(memory + read_ptr), (size_t)read_len);
-    }
-    return read_len;
+   
+    RETURN_HOOK_TRACE(mread_ptr, mread_len, 
+           std::string_view((const char*)output, out_len));
 }
 
 
@@ -658,18 +675,21 @@ DEFINE_HOOK_FUNCTION(
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (kread_ptr + 32 > memory_length || read_ptr + hook::maxHookStateDataSize() > memory_length) {
-        JLOG(j.trace())
-            << "Hook: tried to state_set using memory outside of the wasm instance limit";
+    if (NOT_IN_BOUNDS(kread_ptr, 32, memory_length))
         return OUT_OF_BOUNDS;
+
+    if (read_ptr == 0 && read_len == 0)
+    {
+        // valid, this is a delete operation
     }
+    else if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
 
     if (kread_len > 32)
         return TOO_BIG;
 
     if (kread_len < 1)
         return TOO_SMALL;
-
 
     auto const sle = view.peek(hookCtx.result.hookKeylet);
     if (!sle)
@@ -711,7 +731,7 @@ void hook::commitChangesToLedger(
     if (cclMode == 0)
     {
         JLOG(j.warn()) <<
-            "commitChangesToLedger called with invalid mode (00)";
+            "HookError[" << hookResult.account << "]: commitChangesToLedger called with invalid mode (00)";
         return;
     }
 
@@ -750,13 +770,12 @@ void hook::commitChangesToLedger(
     if (cclMode & cclAPPLY)
     {
         DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
-        printf("applyHook.cpp open view? %s\n", (applyCtx.view().open() ? "open" : "closed"));
         for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
         {
             auto& tpTrans = hookResult.emittedTxn.front();
             auto& id = tpTrans->getID();
             JLOG(j.trace())
-                << "Hook: " << " emitted tx: " << id << "\n";
+                << "HookEmit[" << hookResult.account << "]: " << id;
 
             std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
 
@@ -767,18 +786,13 @@ void hook::commitChangesToLedger(
             auto emittedId = keylet::emitted(id);
 
             auto sleEmitted = applyCtx.view().peek(keylet::emitted(id));
-            JLOG(j.info()) << "sleEmittedId: " << emittedId.type << "|" << emittedId.key;
             if (!sleEmitted)
             {
                 ++emission_count;
-                JLOG(j.info())
-                    << "^^^^^^^^^^^^^^^^^ Creating sleEmitted";
                 sleEmitted = std::make_shared<SLE>(emittedId);
-                //sleEmitted->delField(sfEmittedTxn);
                 sleEmitted->emplace_back(
                     ripple::STObject(sit, sfEmittedTxn)
                 );
-
                 auto page = applyCtx.view().dirAppend(
                     keylet::emittedDir(),
                     emittedId,
@@ -793,8 +807,9 @@ void hook::commitChangesToLedger(
                 }
                 else
                 {
-                    JLOG(j.warn())
-                        << "Hook: Emitted Directory full when trying to insert " << id;
+                    JLOG(j.warn()) << "HookError[" << hookResult.account << "]: " <<
+                        "Emission Directory full when trying to insert " << id;
+                    break;
                 }
             }
         }
@@ -807,8 +822,6 @@ void hook::commitChangesToLedger(
         {
             auto const& tx = applyCtx.tx;
             if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
-//                JLOG(j.warn())
-//                    << "Hook: Tried to cclREMOVE on non-emitted tx";
                 break;
 
             auto key = keylet::emitted(tx.getTransactionID());
@@ -818,7 +831,7 @@ void hook::commitChangesToLedger(
             if (!sle)
             {
                 JLOG(j.warn())
-                    << "Hook: ccl tried to remove already removed emittedtxn";
+                    << "HookError[" << hookResult.account << "]: ccl tried to remove already removed emittedtxn";
                 break;
             }
 
@@ -829,7 +842,7 @@ void hook::commitChangesToLedger(
                     false))
             {
                 JLOG(j.fatal())
-                    << "Hook: ccl tefBAD_LEDGER";
+                    << "HookError[" << hookResult.account << "]: ccl tefBAD_LEDGER";
                 break;
             }
 
@@ -856,7 +869,6 @@ void hook::commitChangesToLedger(
     meta.setFieldU16(sfHookExecutionIndex, exec_index );
     meta.setFieldU16(sfHookStateChangeCount, change_count );
     avi.addHookMetaData(std::move(meta));
-    std::cout << "\n\n{{{{ HOOK META }}}}\n\n";
 }
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
@@ -895,14 +907,10 @@ DEFINE_HOOK_FUNCTION(
         is_foreign = true;
     } else return INVALID_ARGUMENT;
 
-    if (kread_ptr + kread_len > memory_length ||
-        aread_ptr + aread_len > memory_length || // if ain/aread_len are 0 this will always be true
-        write_ptr + write_len > memory_length)
-    {
-        JLOG(j.trace())
-            << "Hook: tried to state using memory outside of the wasm instance limit";
+    if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
+        NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
-    }
 
     if (kread_len > 32)
         return TOO_BIG;
@@ -1034,7 +1042,7 @@ DEFINE_HOOK_FUNCTION(
     // check if we can emplace the object to a slot
     if (slot_into == 0 && no_free_slots(hookCtx))
         return NO_FREE_SLOTS;
-    
+
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
@@ -1070,8 +1078,8 @@ DEFINE_HOOK_FUNCNARG(
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
     if (!pd.isFieldPresent(sfEmitBurden)) {
-        JLOG(j.trace())
-            << "Hook: found sfEmitDetails but sfEmitBurden was not in the object? ... ignoring";
+        JLOG(j.warn())
+            << "HookError[" << hookCtx.result.account << "]: found sfEmitDetails but sfEmitBurden was not present";
         return 1;
     }
 
@@ -1100,8 +1108,8 @@ DEFINE_HOOK_FUNCNARG(
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
     if (!pd.isFieldPresent(sfEmitGeneration)) {
-        JLOG(j.trace())
-            << "Hook: found sfEmitDetails but sfEmitGeneration was not in the object? ... ignoring";
+        JLOG(j.warn())
+            << "HookError[" << hookCtx.result.account << "]: found sfEmitDetails but sfEmitGeneration was not present";
         return 1;
     }
 
@@ -1190,8 +1198,6 @@ DEFINE_HOOK_FUNCTION(
         return DOESNT_EXIST;
 
     auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
-
-    printf("field_id: %lu\n", field_id);
 
     bool is_account = field.getSType() == STI_ACCOUNT; //RH TODO improve this hack
 
@@ -1292,7 +1298,7 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    
+
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
@@ -1300,10 +1306,10 @@ DEFINE_HOOK_FUNCTION(
 
     if (write_len < e.size())
         return TOO_SMALL;
-    
+
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
         e.data(), e.size(),
@@ -1359,12 +1365,8 @@ DEFINE_HOOK_FUNCTION(
     else
         return DOESNT_EXIST;
 
-    std::cout << "slot_set: checking has_value...\n";
     if (!slot_value.has_value())
-    {
-        std::cout << "slot_set: !has_value...\n";
         return DOESNT_EXIST;
-    }
 
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
@@ -1417,7 +1419,6 @@ DEFINE_HOOK_FUNCTION(
         ripple::STArray& parent_obj =
             const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STArray>();
 
-        std::cout << "slot_subarray 1 :: " << parent_obj.size() << "\n";
         if (parent_obj.size() <= array_id)
         return DOESNT_EXIST;
         new_slot = ( new_slot == 0 ? get_free_slot(hookCtx) : new_slot );
@@ -1438,7 +1439,6 @@ DEFINE_HOOK_FUNCTION(
             hookCtx.slot.erase(new_slot);
             hookCtx.slot_free.push(new_slot);
         }
-        std::cout << "slot_subarray 2\n";
         return NOT_AN_ARRAY;
     }
 }
@@ -1501,9 +1501,9 @@ DEFINE_HOOK_FUNCTION(
     slot_type,
     uint32_t slot_no, uint32_t flags )
 {
-    
+
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    
+
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
@@ -1515,7 +1515,7 @@ DEFINE_HOOK_FUNCTION(
             const_cast<ripple::STBase&>(*hookCtx.slot[slot_no].entry);//.downcast<ripple::STBase>();
             if (flags == 0)
                 return obj.getFName().fieldCode;
-            
+
             // this flag is for use with an amount field to determine if the amount is native (xrp)
             if (flags == 1)
             {
@@ -1569,6 +1569,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     trace_slot,
+    uint32_t read_ptr, uint32_t read_len,
     uint32_t slot_no )
 {
 
@@ -1576,6 +1577,9 @@ DEFINE_HOOK_FUNCTION(
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
+    
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
 
     uint8_t* id = hookCtx.slot[slot_no].id.data();
     size_t id_size = hookCtx.slot[slot_no].id.size();
@@ -1590,10 +1594,10 @@ DEFINE_HOOK_FUNCTION(
         output[i*2 + 0] = high;
         output[i*2 + 1] = low;
     }
-    j.trace()
-        << "Hook: [trace_slot("<<slot_no<<")]:'" << std::string_view((const char*)output, (size_t)(id_size*2));
 
-    return 0;
+    RETURN_HOOK_TRACE(read_ptr, read_len, 
+            "Slot " << slot_no << " - "
+            << std::string_view((const char*)output, (size_t)(id_size*2)));
 }
 
 
@@ -1629,10 +1633,10 @@ DEFINE_HOOK_FUNCTION(
                     return INVALID_ARGUMENT;
 
                 uint32_t read_ptr = a, read_len = b;
-                
+
                 if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
                    return OUT_OF_BOUNDS;
-                
+
                 if (read_len != 34)
                     return INVALID_ARGUMENT;
 
@@ -1644,7 +1648,7 @@ DEFINE_HOOK_FUNCTION(
 
                 ripple::Keylet kl_out =
                     ripple::keylet::quality(*kl, arg);
-                
+
                 return serialize_keylet(kl_out, memory, write_ptr, write_len);
             }
 
@@ -1668,12 +1672,12 @@ DEFINE_HOOK_FUNCTION(
                     return INVALID_ARGUMENT;
 
                 base_uint<256> id = ripple::base_uint<256>::fromVoid(memory + read_ptr);
-                
+
                 ripple::Keylet kl =
                     keylet_type == keylet_code::CHILD        ? ripple::keylet::child(id)            :
                     keylet_type == keylet_code::EMITTED      ? ripple::keylet::emitted(id)          :
                     ripple::keylet::unchecked(id);
-                
+
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }
 
@@ -1700,7 +1704,6 @@ DEFINE_HOOK_FUNCTION(
                 ripple::AccountID id =
                     ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
 
-                std::cout << "util_keylet: account(" << id << ")\n";
                 ripple::Keylet kl =
                     keylet_type == keylet_code::HOOK        ? ripple::keylet::hook(id)      :
                     keylet_type == keylet_code::SIGNERS     ? ripple::keylet::signers(id)   :
@@ -1721,23 +1724,23 @@ DEFINE_HOOK_FUNCTION(
                     return INVALID_ARGUMENT;
 
                 uint32_t read_ptr = a, read_len = b;
-                
+
                 if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
                    return OUT_OF_BOUNDS;
-                
+
                 if (read_len != 20)
                     return INVALID_ARGUMENT;
 
                 ripple::AccountID id =
                     ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + read_ptr);
 
-                ripple::Keylet kl = 
+                ripple::Keylet kl =
                     keylet_type == keylet_code::CHECK       ? ripple::keylet::check(id, c)      :
                     keylet_type == keylet_code::ESCROW      ? ripple::keylet::escrow(id, c)     :
                     ripple::keylet::offer(id, c);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);
-            }        
+            }
 
             // keylets that take a 32 byte uint and an 8byte uint64
             case keylet_code::PAGE:
@@ -1749,10 +1752,10 @@ DEFINE_HOOK_FUNCTION(
                    return INVALID_ARGUMENT;
 
                 uint32_t kread_ptr = a, kread_len = b;
-                
+
                 if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
                    return OUT_OF_BOUNDS;
-                
+
                 if (b != 32)
                     return INVALID_ARGUMENT;
 
@@ -1794,7 +1797,7 @@ DEFINE_HOOK_FUNCTION(
                 if (c != 0 || d != 0 || e != 0 || f != 0)
                    return INVALID_ARGUMENT;
 
-                ripple::Keylet kl = 
+                ripple::Keylet kl =
                     (b == 0 ? ripple::keylet::skip() :
                     ripple::keylet::skip(a));
 
@@ -1815,7 +1818,7 @@ DEFINE_HOOK_FUNCTION(
                     keylet_type == keylet_code::FEES         ? ripple::keylet::fees()             :
                     keylet_type == keylet_code::NEGATIVE_UNL ? ripple::keylet::negativeUNL()      :
                     ripple::keylet::emittedDir();
-                
+
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }
 
@@ -1838,12 +1841,11 @@ DEFINE_HOOK_FUNCTION(
                 ripple::AccountID a1 = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + lo_ptr);
                 ripple::Currency  cu = ripple::base_uint<160, ripple::detail::CurrencyTag>::fromVoid(memory + cu_ptr);
 
-                std::cout << "util_keylet: line(" << a0 << ", " << a1 << ", " << cu << ")\n";
                 ripple::Keylet kl =
                     ripple::keylet::line(a0, a1, cu);
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }
-            
+
             // keylets that take two 20 byte account ids
             case keylet_code::DEPOSIT_PREAUTH:
             {
@@ -1909,7 +1911,7 @@ DEFINE_HOOK_FUNCTION(
     catch (std::exception& e)
     {
         JLOG(j.warn())
-            << "Hook: Keylet exception " << e.what() << "\n";
+            << "HookError[" << hookCtx.result.account << "]: Keylet exception " << e.what();
         return INTERNAL_ERROR;
     }
 
@@ -1951,7 +1953,7 @@ DEFINE_HOOK_FUNCTION(
     catch (std::exception& e)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure [rippled]: " << e.what() << "\n";
+            << "HookEmit[" << hookCtx.result.account << "]: Failed " << e.what() << "\n";
         return EMISSION_FAILURE;
     }
 
@@ -1970,7 +1972,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfSequence missing or non-zero.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfSequence missing or non-zero";
         return EMISSION_FAILURE;
     }
 
@@ -1978,7 +1980,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfSigningPubKey))
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfSigningPubKey missing.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey missing";
         return EMISSION_FAILURE;
     }
 
@@ -1986,7 +1988,8 @@ DEFINE_HOOK_FUNCTION(
     if (pk.size() != 33 && pk.size() != 0)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfSigningPubKey present but wrong size, expecting 33 bytes.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey present but wrong size"
+            << " expecting 33 bytes";
         return EMISSION_FAILURE;
     }
 
@@ -1994,7 +1997,7 @@ DEFINE_HOOK_FUNCTION(
     if (pk[i] != 0)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfSigningPubKey present but non-zero.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey present but non-zero.";
         return EMISSION_FAILURE;
     }
 
@@ -2002,7 +2005,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfEmitDetails))
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfEmitDetails missing.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitDetails missing.";
         return EMISSION_FAILURE;
     }
 
@@ -2016,7 +2019,7 @@ DEFINE_HOOK_FUNCTION(
         !emitDetails.isFieldPresent(sfEmitCallback))
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: sfEmitDetails malformed.";
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitDetails malformed.";
         return EMISSION_FAILURE;
     }
 
@@ -2031,41 +2034,51 @@ DEFINE_HOOK_FUNCTION(
     if (gen != gen_proper)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: Generation provided in EmitDetails was not correct: " << gen
-            << " should be " << gen_proper;
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitGeneration provided in EmitDetails "
+            << "not correct (" << gen << ") "
+            << "should be " << gen_proper;
         return EMISSION_FAILURE;
     }
 
-    if (bur != etxn_burden(hookCtx, memoryCtx))
+    uint64_t bur_proper = etxn_burden(hookCtx, memoryCtx);
+    if (bur != bur_proper)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: Burden provided in EmitDetails was not correct";
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitBurden provided in EmitDetails "
+            << "was not correct (" << bur << ") "
+            << "should be " << bur_proper;
         return EMISSION_FAILURE;
     }
 
     if (pTxnID != applyCtx.tx.getTransactionID())
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: ParentTxnID provided in EmitDetails was not correct";
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitParentTxnID provided in EmitDetails "
+            << "was not correct";
         return EMISSION_FAILURE;
     }
 
     if (hookCtx.nonce_used.find(nonce) == hookCtx.nonce_used.end())
     {
-        JLOG(j.trace()) << "Hook: Emission failure: Nonce provided in EmitDetails was not generated by nonce";
+        JLOG(j.trace())
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitNonce provided in EmitDetails "
+            << "was not generated by nonce api";
         return EMISSION_FAILURE;
     }
 
     if (callback != hookCtx.result.account)
     {
-        JLOG(j.trace()) << "Hook: Emission failure: Callback account must be the account of the emitting hook";
+        JLOG(j.trace())
+            << "HookEmit[" << hookCtx.result.account << "]: sfEmitCallback account must be the account "
+            << "of the emitting hook";
         return EMISSION_FAILURE;
     }
 
     // rule 4: sfSignature must be absent
     if (stpTrans->isFieldPresent(sfSignature))
     {
-        JLOG(j.trace()) << "Hook: Emission failure: sfSignature is present but should not be.";
+        JLOG(j.trace()) <<
+            "HookEmit[" << hookCtx.result.account << "]: sfSignature is present but should not be";
         return EMISSION_FAILURE;
     }
 
@@ -2076,7 +2089,8 @@ DEFINE_HOOK_FUNCTION(
     uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
     if (!stpTrans->isFieldPresent(sfLastLedgerSequence) || tx_lls < ledgerSeq + 1)
     {
-        JLOG(j.trace()) << "Hook: Emission failure: sfLastLedgerSequence missing or invalid.";
+        JLOG(j.trace())
+            << "HookEmit[" << hookCtx.result.account << "]: sfLastLedgerSequence missing or invalid";
         return EMISSION_FAILURE;
     }
 
@@ -2084,13 +2098,13 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
-        JLOG(j.trace()) << "Hook: Emission failure: FirstLedgerSequence must be present and >= LastLedgerSequence.";
+        JLOG(j.trace())
+            << "HookEmit[" << hookCtx.result.account << "]: sfFirstLedgerSequence must be present and "
+            << ">= LastLedgerSequence";
         return EMISSION_FAILURE;
     }
 
-
     // rule 7 check the emitted txn pays the appropriate fee
-
     if (hookCtx.fee_base == 0)
         hookCtx.fee_base = etxn_fee_base(hookCtx, memoryCtx, read_len);
 
@@ -2098,14 +2112,14 @@ DEFINE_HOOK_FUNCTION(
     if (minfee < 0 || hookCtx.fee_base < 0)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: fee could not be calculated.";
+            << "HookEmit[" << hookCtx.result.account << "]: Fee could not be calculated";
         return EMISSION_FAILURE;
     }
 
     if (!stpTrans->isFieldPresent(sfFee))
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: Fee missing from emitted tx.";
+            << "HookEmit[" << hookCtx.result.account << "]: Fee missing from emitted tx";
         return EMISSION_FAILURE;
     }
 
@@ -2113,7 +2127,7 @@ DEFINE_HOOK_FUNCTION(
     if (fee < minfee)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: Fee on emitted txn is less than the minimum required fee.";
+            << "HookEmit[" << hookCtx.result.account << "]: Fee on emitted txn is less than the minimum required fee";
         return EMISSION_FAILURE;
     }
 
@@ -2122,12 +2136,11 @@ DEFINE_HOOK_FUNCTION(
     if (tpTrans->getStatus() != NEW)
     {
         JLOG(j.trace())
-            << "Hook: Emission failure: tpTrans->getStatus() != NEW";
+            << "HookEmit[" << hookCtx.result.account << "]: tpTrans->getStatus() != NEW";
         return EMISSION_FAILURE;
     }
 
     hookCtx.result.emittedTxn.push(tpTrans);
-
     return read_len;
 }
 
@@ -2209,7 +2222,6 @@ DEFINE_HOOK_FUNCTION(
     etxn_reserve,
     uint32_t count )
 {
-    std::cout << "etxn_reserve called count: " << count << "\n";
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.expected_etxn_count > -1)
@@ -2220,7 +2232,6 @@ DEFINE_HOOK_FUNCTION(
 
     hookCtx.expected_etxn_count = count;
 
-    std::cout << "etxn_reserve returning count: " << count << "\n";
     return count;
 }
 
@@ -2484,11 +2495,12 @@ DEFINE_HOOK_FUNCTION(
     if ((*upto & 0xF0) == 0xF0)
         upto++;
 
+    /*
     DBG_PRINTF("sto_subarray called, looking for index %u\n", index_id);
     for (int j = -5; j < 5; ++j)
         printf(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
     DBG_PRINTF("\n");
-
+    */
     for (int i = 0; i < 1024 && upto < end; ++i)
     {
         int type = -1, field = -1, payload_start = -1, payload_length = -1;
@@ -2568,8 +2580,6 @@ DEFINE_HOOK_FUNCTION(
     buffer[read_len] = 0;
 
     std::string raddr{buffer};
-    std::cout << "util_accid raddr: " << raddr << "\n";
-
     auto const result = decodeBase58Token(raddr, TokenType::AccountID);
     if (result.empty())
         return INVALID_ARGUMENT;
@@ -2657,20 +2667,12 @@ DEFINE_HOOK_FUNCTION(
     // part 1
     if (inject_start - start > 0)
     {
-        std::cout << "inject_start: " << (inject_start - start) << "\n";
         WRITE_WASM_MEMORY(
             bytes_written,
             write_ptr, write_len,
             start, (inject_start - start),
             memory, memory_length);
-        std::cout << "bytes_written: " << bytes_written << "\n";
     }
-
-    std::cout << "writing the field at: " << (write_ptr + bytes_written) << ", "
-        << (write_len - bytes_written) << "\n";
-
-    std::cout << "field: " << (fread_ptr) << ", "
-        << (fread_len) << "\n";
 
     // write the field
     WRITE_WASM_MEMORY(
@@ -2684,8 +2686,6 @@ DEFINE_HOOK_FUNCTION(
     // part 2
     if (end - inject_end > 0)
     {
-        std::cout << "writing the end at: " << (write_ptr + bytes_written) << ", "
-            << (write_len - bytes_written) << "\n";
         WRITE_WASM_MEMORY(
             bytes_written,
             (write_ptr + bytes_written), (write_len - bytes_written),
@@ -2785,7 +2785,7 @@ DEFINE_HOOK_FUNCTION(
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    // RH TODO: see if an internal ripple function/class would do this better    
+    // RH TODO: see if an internal ripple function/class would do this better
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
@@ -2949,13 +2949,18 @@ DEFINE_HOOK_FUNCTION(
     {
         if (id > 0xFFFFU)
         {
-            JLOG(j.trace()) << "Hook: Macro guard violation. Src line: " << (id & 0xFFFFU) <<
-                              " Macro line: " << (id >> 16) << " Iterations: " << hookCtx.guard_map[id];
+            JLOG(j.trace())
+                << "HookInfo[" << hookCtx.result.account << "]: Macro guard violation. "
+                << "Src line: " << (id & 0xFFFFU) << " "
+                << "Macro line: " << (id >> 16) << " "
+                << "Iterations: " << hookCtx.guard_map[id];
         }
         else
         {
-            JLOG(j.trace()) << "Hook: Guard violation. Src line: " << id <<
-                " Iterations: " << hookCtx.guard_map[id];
+            JLOG(j.trace())
+                << "HookInfo[" << hookCtx.result.account << "]: Guard violation. "
+                << "Src line: " << id
+                << "Iterations: " << hookCtx.guard_map[id];
         }
         hookCtx.result.exitType = hook_api::ExitType::ROLLBACK;
         hookCtx.result.exitCode = GUARD_VIOLATION;
@@ -2979,33 +2984,32 @@ DEFINE_HOOK_FUNCTION(
     }\
 }
 
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     trace_float,
+    uint32_t read_ptr, uint32_t read_len,
     int64_t float1)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
     if (!j.trace())
         return 0;
 
-    if (float1 == 0)
-    {
-        j.trace() << "Hook: [trace()]: <ZERO>";
-        return 0;
-    }
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
 
+    if (float1 == 0)
+        RETURN_HOOK_TRACE(read_ptr, read_len, "Float 0*10^(0) <ZERO>");
+        
     int64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
     if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
-    {
-        j.trace() << "Hook: [trace()]: <invalid float>";
-        return 0;
-    }
+        RETURN_HOOK_TRACE(read_ptr, read_len, "Float <INVALID>");
+
     man *= (neg ? -1 : 1);
 
-    j.trace() << "Hook: [trace()]: " << man << "*10^(" << exp << ")";
-    return 0;
+    RETURN_HOOK_TRACE(read_ptr, read_len, "Float " << man << "*10^(" << exp << ")");
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -3303,7 +3307,7 @@ DEFINE_HOOK_FUNCTION(
     bool is_xrp = field_code == 0;
     bool is_short = field_code == 0xFFFFFFFFU;   // non-xrp value but do not output header or tail, just amount
 
-    int bytes_needed = 8 +  
+    int bytes_needed = 8 +
                             ( field == 0  && type == 0  ? 0 :
                             ( field == 0xFFFFU  && type == 0xFFFFU  ? 0 :
                             ( field <  16 && type <  16 ? 1 :
@@ -3314,7 +3318,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     if (!is_xrp && !is_short && (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0))
         return INVALID_ARGUMENT;
 
@@ -3323,14 +3327,14 @@ DEFINE_HOOK_FUNCTION(
         if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length) ||
             NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
             return OUT_OF_BOUNDS;
-    
+
         if (cread_len != 20 || iread_len != 20)
             return INVALID_ARGUMENT;
 
         bytes_needed += 40;
 
     }
-   
+
     if (bytes_needed > write_len)
         return TOO_SMALL;
 
@@ -3405,7 +3409,7 @@ DEFINE_HOOK_FUNCTION(
         exp += 97;
 
         /// encode the rippled floating point sto format
-        
+
         out[0] = (neg ? 0b10000000U : 0b11000000U);
         out[0] += (uint8_t)(exp >> 2U);
         out[1] =  ((uint8_t)(exp & 0b11U)) << 6U;
@@ -3431,7 +3435,7 @@ DEFINE_HOOK_FUNCTION(
             write_ptr + bytes_written, write_len - bytes_written,
             memory + cread_ptr, 20,
             memory, memory_length);
-        
+
         WRITE_WASM_MEMORY(
             bytes_written,
             write_ptr + bytes_written, write_len - bytes_written,
@@ -3487,7 +3491,6 @@ DEFINE_HOOK_FUNCTION(
     int32_t exponent = (((*upto++) & 0b00111111U)) << 2U;
     exponent += ((*upto)>>6U);
     exponent -= 97;
-    std::cout << "float_set_sto: exponent parsed:  " << exponent << "\n";
     uint64_t mantissa = (((uint64_t)(*upto++)) & 0b00111111U) << 48U;
     mantissa += ((uint64_t)*upto++) << 40U;
     mantissa += ((uint64_t)*upto++) << 32U;
@@ -3495,12 +3498,11 @@ DEFINE_HOOK_FUNCTION(
     mantissa += ((uint64_t)*upto++) << 16U;
     mantissa += ((uint64_t)*upto++) <<  8U;
     mantissa += ((uint64_t)*upto++);
-    std::cout << "float_set_sto: mantissa parsed: " << mantissa << "\n";
 
     if (mantissa == 0)
         return 0;
 
-    return hook_float::float_set(exponent, (is_negative ? -1 : 1) * ((int64_t)(mantissa))); 
+    return hook_float::float_set(exponent, (is_negative ? -1 : 1) * ((int64_t)(mantissa)));
 }
 inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 {
@@ -3534,7 +3536,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
             return 0;
     }
 
-    
+
     while (man2 > man1)
     {
         man2 /= 10;
@@ -3558,7 +3560,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     {
         int i = 0;
         for (; man1 > man2; man1 -= man2, ++i);
-            
+
         man3 *= 10;
         man3 += i;
         man2 /= 10;

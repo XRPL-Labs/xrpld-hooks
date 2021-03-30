@@ -518,8 +518,6 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
         if (!preclaimResult.likelyToClaimFee)
             return {preclaimResult.ter, false};
 
-        printf("doApply: View is %s\n", ( view.open() ? "open" : "closed" )); 
-
         ApplyContext ctx(
             app,
             view,

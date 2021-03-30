@@ -272,10 +272,11 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	state_foreign,      uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t kread_ptr, uint32_t kread_len,
                                                         uint32_t aread_ptr, uint32_t aread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t read_ptr, uint32_t read_len, uint32_t as_hex );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t read_ptr, uint32_t read_len, uint32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t mread_ptr, uint32_t mread_len,
+                                                        uint32_t dread_ptr, uint32_t dread_len, uint32_t as_hex );
     DECLARE_HOOK_FUNCTION(int64_t,	trace_num,          uint32_t read_ptr, uint32_t read_len, int64_t number );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace_float,        int64_t  float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,	trace_float,        uint32_t read_ptr, uint32_t read_len, int64_t  float1 );
 
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_burden         );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_field,         uint32_t write_ptr, uint32_t write_len, uint32_t field_id );

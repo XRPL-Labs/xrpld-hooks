@@ -729,7 +729,6 @@ Transactor::operator()()
             if (fireSendingHook)
             {
                 // execute the hook on the sending account
-                std::cout << "=>>>>> EXECUTE HOOK ON SENDING ACCOUNT " << accountID << "\n";
                 hook_executed = true;
                 sendResult =
                     hook::apply(
@@ -751,7 +750,6 @@ Transactor::operator()()
                 if (hookReceiving &&
                     hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
                 {
-                    std::cout << "=>>>>> EXECUTE HOOK ON RECEIVING ACCOUNT " << destAccountID << "\n";
                     // execute the hook on the receiving account
                     hook_executed = true;
                     recvResult =
@@ -770,54 +768,37 @@ Transactor::operator()()
             // Finally check if there is a callback
             if (ctx_.tx.isFieldPresent(sfEmitDetails))
             {
-                //try {
-                    auto const& emitDetails =
-                        const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
+                auto const& emitDetails =
+                    const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
 
-                    if (!emitDetails.isFieldPresent(sfEmitCallback))
-                    {
-                        JLOG(j_.fatal()) << "Hook Callback Processing: Failure: sfEmitCallback missing\n";
-                        break;
-                    }
+                if (!emitDetails.isFieldPresent(sfEmitCallback))
+                {
+                    JLOG(j_.fatal()) 
+                        << "HookError[]: Callback Processing: Failure: sfEmitCallback missing";
+                    break;
+                }
 
-                    AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+                AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
 
-                    std::cout << "=>>>>> EXECUTE HOOK ON CALLBACK ACCOUNT " << callbackAccountID << " TX: "
-                        << ctx_.tx.getTransactionID() << "\n";
+                hook_executed = true;
+                auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
 
-                    hook_executed = true;
-                    auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
+                // this call will clean up ltEMITTED_NODE as well
+                try {
+                 hook::apply(
+                        hookCallback->getFieldH256(sfHookSetTxnID),
+                        hookCallback->getFieldH256(sfHookHash),
+                        hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
 
-                    // this call will clean up ltEMITTED_NODE as well
-                    try {
-                     hook::apply(
-                            hookCallback->getFieldH256(sfHookSetTxnID),
-                            hookCallback->getFieldH256(sfHookHash),
-                            hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
-
-                    }
-                    catch (std::exception& e)
-                    {
-                        JLOG(j_.fatal()) << "%%%%%%%%%Hook Callback Processing: Failure: " << e.what() << "\n";
-                    }
-                    // callback is unable to affect the application of an already Emitted Tx to the ledger
-                    // so we're done
-                /*}
+                }
                 catch (std::exception& e)
                 {
-                    JLOG(j_.fatal()) << "Hook Callback Processing: Failure: " << e.what() << "\n";
-                } */
-                    /*
-                } catch ( ... )
-                {
-                    if (auto stream = j_.fatal())
-                        stream << "invalid emitDetails block in applied transaction";
-                    assert(false);
-                }*/
+                    JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
+                }
             }
 
         }
-        while (0); // do {} while(0) used to make above control flow easy
+        while (0); // used to make above control flow easy
 
 
         // Three possible outcomes after execution: An error, a rollback or an accept
@@ -839,7 +820,7 @@ Transactor::operator()()
 
     uint64_t posthook_cycles = rdtsc();
     JLOG(j_.trace())
-        << "Hook: Transactor: " << (hook_executed ? "hook " : "non-hook ") << "execution took "
+        << "HookStats[]: " << (hook_executed ? "hook " : "non-hook ") << " txn execution took "
         << (posthook_cycles - prehook_cycles);
 
     // fall through allows normal apply

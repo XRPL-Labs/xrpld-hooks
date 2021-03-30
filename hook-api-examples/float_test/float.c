@@ -16,13 +16,13 @@ int64_t hook(int64_t reserved ) {
     int64_t y = float_set(-81, 1);
     
     // print it
-    trace_float(y);
+    TRACEXFL(y);
 
     //multiply it by 2
     y = float_mulratio(y, 1 /* round up */, 2 /* numerator */, 1 /* denominator */);
 
     // print it again
-    trace_float(y);
+    TRACEXFL(y);
 
 
     // serialize the float to an sfAmount STO and print it to log

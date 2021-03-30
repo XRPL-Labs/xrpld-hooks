@@ -79,10 +79,6 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Peggy: Could not parse user trustline limit"), 1);
 
     int64_t required_limit = float_set(10, 1);
-    trace(SBUF("required_limit"), 0);
-    trace_float(required_limit);
-    trace(SBUF("user_trustline_limit"), 0);
-    trace_float(user_trustline_limit);
     if (float_compare(user_trustline_limit, required_limit, COMPARE_EQUAL | COMPARE_GREATER) != 1)
         rollback(SBUF("Peggy: You must set a trustline for USD to peggy for limit of at least 10B"), 1);
 
@@ -118,7 +114,7 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Peggy: Could not get exchange rate float"), 20);
    
     // execution to here means we have retrieved the exchange rate from the oracle
-    trace_float(exchange_rate);
+    TRACEXFL(exchange_rate);
    
     // process the amount sent, which could be either xrp or pusd
     // to do this we 'slot' the originating txn, that is: we place it into a slot so we can use the slot api
@@ -177,13 +173,8 @@ int64_t hook(int64_t reserved)
     uint8_t vault_exists = 0;
     if (state(SBUF(vault), SBUF(vault_key)) == 16)
     {
-        TRACEHEX(vault);
         vault_pusd = float_sto_set(vault, 8);
-        TRACEVAR(vault_pusd);
-        trace_float(vault_pusd);
         vault_xrp  = float_sto_set(vault + 8, 8);
-        TRACEVAR(vault_xrp);
-        trace_float(vault_xrp);
         vault_exists = 1;
     }
     else if (is_vault_owner == 0)
@@ -308,29 +299,15 @@ int64_t hook(int64_t reserved)
         // compute new vault pusd by adding the pusd they just sent
         vault_pusd = float_sum(float_negate(amt), vault_pusd);
 
-        trace_float(vault_pusd);
-        trace(SBUF("exchange rate:"), 0);
-        trace_float(exchange_rate);
-
         // compute the maximum amount of pusd that can be out according to the collateralization
         int64_t max_vault_xrp = float_divide(vault_pusd, exchange_rate);
-        trace_float(max_vault_xrp);
         max_vault_xrp =
             float_mulratio(max_vault_xrp, 0, COLLATERALIZATION_DENOMINATOR, COLLATERALIZATION_NUMERATOR);
-
-        trace(SBUF("max_vault_xrp"), 0);
-        
-        trace_float(max_vault_xrp);
-
-        trace(SBUF("vault_xrp"), 0);
-        trace_float(vault_xrp);
 
 
         // compute the amount we can send them
         int64_t xrp_to_send =
             float_sum(float_negate(max_vault_xrp), vault_xrp);
-        trace(SBUF("xrp_to_send:"), 0);
-        trace_float(xrp_to_send);
 
         if (xrp_to_send < 0)
             rollback(SBUF("Peggy: Error computing xrp to send"), 1);

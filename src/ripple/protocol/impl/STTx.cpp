@@ -67,7 +67,6 @@ STTx::STTx(SerialIter& sit) noexcept(false) : STObject(sfTransaction)
 {
     int length = sit.getBytesLeft();
 
-    std::cout << "STTx constructor length: " << length << "\n";
     if ((length < txMinSizeBytes) || (length > txMaxSizeBytes))
         Throw<std::runtime_error>("Transaction length invalid");
 
