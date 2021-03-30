@@ -17,6 +17,9 @@
 
 using namespace ripple;
 
+#define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
+#define HC_ACC() hookCtx.result.account << "-" << hookCtx.result.otxnAccount
+
 #define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
     (std::ceil( (double)state_count/(double)5.0 ))
 
@@ -34,7 +37,7 @@ using namespace ripple;
     if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
     {\
         JLOG(j.warn())\
-            << "HookError[" << hookCtx.result.account << "]: "\
+            << "HookError[" << HC_ACC() << "]: "\
             << __func__ << " tried to retreive blob of " << host_src_len\
             << " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
@@ -65,7 +68,7 @@ using namespace ripple;
     else if (read_ptr == 0 && read_len == 0)\
     {\
         JLOG(j.trace()) \
-            << "HookTrace[" << hookCtx.result.account << "]: " << t;\
+            << "HookTrace[" << HC_ACC() << "]: " << t;\
     }\
     else if (is_UTF16LE(memory + read_ptr, rl))\
     {\
@@ -74,14 +77,14 @@ using namespace ripple;
         for (int i = 0; i < len && i < 512; ++i)\
             output[i] = memory[read_ptr + i * 2];\
         JLOG(j.trace()) \
-            << "HookTrace[" << hookCtx.result.account << "]: "\
+            << "HookTrace[" << HC_ACC() << "]: "\
             << std::string_view((const char*)output, (size_t)(len)) << " "\
             << t;\
     }\
     else\
     {\
         JLOG(j.trace()) \
-            << "HookTrace[" << hookCtx.result.account << "]: "\
+            << "HookTrace[" << HC_ACC() << "]: "\
             << std::string_view((const char*)(memory + read_ptr), (size_t)rl) << " "\
             << t;\
     }\
@@ -98,7 +101,7 @@ using namespace ripple;
     if (read_ptr) {\
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
             JLOG(j.warn())\
-                << "HookError[" << hookCtx.result.account << "]: "\
+                << "HookError[" << HC_ACC() << "]: "\
                 << "Tried to accept/rollback but specified memory outside of the wasm instance " <<\
                 "limit when specifying a reason string";\
             return OUT_OF_BOUNDS;\
@@ -389,7 +392,7 @@ hook::setHookState(
     auto const hook = view.peek(hookResult.hookKeylet);
     if (!hook) {
         JLOG(j.warn())
-            << "HookError[" << hookResult.account << "]: "
+            << "HookError[" << HR_ACC() << "]: "
             << "Attempted to set a hook state for a hook that doesnt exist";
         return tefINTERNAL;
     }
@@ -482,7 +485,7 @@ hook::setHookState(
             describeOwnerDir(hookResult.account),
             j);
 
-        JLOG(j.trace()) << "HookInfo[" << hookResult.account << "]: "
+        JLOG(j.trace()) << "HookInfo[" << HR_ACC() << "]: "
             << "Create/update hook state: "
             << (page ? "success" : "failure");
 
@@ -516,6 +519,7 @@ hook::HookResult
             .ownerDirKeylet = keylet::ownerDir(account),
             .hookKeylet = keylet::hook(account),
             .account = account,
+            .otxnAccount = applyCtx.tx.getAccountID(sfAccount),
             .changedState =
                 std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
@@ -535,11 +539,10 @@ hook::HookResult
     params.push_back(0UL);
 
     JLOG(j.trace())
-        << "HookInfo[" << hookCtx.result.account << "]: Creating wasm instance";
+        << "HookInfo[" << HC_ACC() << "]: creating wasm instance";
     if (auto result =
             vm.runWasmFile(
                 SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
-//        results = *result;
         hookCtx.result.instructionCount = vm.getStatistics().getInstrCount();
     else
     {
@@ -547,14 +550,14 @@ hook::HookResult
         if (ssvm_error > 1)
         {
             JLOG(j.warn())
-                << "HookError[" << hookCtx.result.account << "]: SSVM error " << ssvm_error;
+                << "HookError[" << HC_ACC() << "]: SSVM error " << ssvm_error;
             hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
             return hookCtx.result;
         }
     }
 
     JLOG(j.trace()) <<
-        "HookInfo[" << hookCtx.result.account << "]: " <<
+        "HookInfo[" << HC_ACC() << "]: " <<
             ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : "ACCEPT" ) <<
         " RS: '" <<  hookCtx.result.exitReason.c_str() << "' RC: " << hookCtx.result.exitCode;
 
@@ -731,7 +734,7 @@ void hook::commitChangesToLedger(
     if (cclMode == 0)
     {
         JLOG(j.warn()) <<
-            "HookError[" << hookResult.account << "]: commitChangesToLedger called with invalid mode (00)";
+            "HookError[" << HR_ACC() << "]: commitChangesToLedger called with invalid mode (00)";
         return;
     }
 
@@ -775,7 +778,7 @@ void hook::commitChangesToLedger(
             auto& tpTrans = hookResult.emittedTxn.front();
             auto& id = tpTrans->getID();
             JLOG(j.trace())
-                << "HookEmit[" << hookResult.account << "]: " << id;
+                << "HookEmit[" << HR_ACC() << "]: " << id;
 
             std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
 
@@ -807,7 +810,7 @@ void hook::commitChangesToLedger(
                 }
                 else
                 {
-                    JLOG(j.warn()) << "HookError[" << hookResult.account << "]: " <<
+                    JLOG(j.warn()) << "HookError[" << HR_ACC() << "]: " <<
                         "Emission Directory full when trying to insert " << id;
                     break;
                 }
@@ -831,7 +834,7 @@ void hook::commitChangesToLedger(
             if (!sle)
             {
                 JLOG(j.warn())
-                    << "HookError[" << hookResult.account << "]: ccl tried to remove already removed emittedtxn";
+                    << "HookError[" << HR_ACC() << "]: ccl tried to remove already removed emittedtxn";
                 break;
             }
 
@@ -842,7 +845,7 @@ void hook::commitChangesToLedger(
                     false))
             {
                 JLOG(j.fatal())
-                    << "HookError[" << hookResult.account << "]: ccl tefBAD_LEDGER";
+                    << "HookError[" << HR_ACC() << "]: ccl tefBAD_LEDGER";
                 break;
             }
 
@@ -1079,7 +1082,7 @@ DEFINE_HOOK_FUNCNARG(
 
     if (!pd.isFieldPresent(sfEmitBurden)) {
         JLOG(j.warn())
-            << "HookError[" << hookCtx.result.account << "]: found sfEmitDetails but sfEmitBurden was not present";
+            << "HookError[" << HC_ACC() << "]: found sfEmitDetails but sfEmitBurden was not present";
         return 1;
     }
 
@@ -1109,7 +1112,7 @@ DEFINE_HOOK_FUNCNARG(
 
     if (!pd.isFieldPresent(sfEmitGeneration)) {
         JLOG(j.warn())
-            << "HookError[" << hookCtx.result.account << "]: found sfEmitDetails but sfEmitGeneration was not present";
+            << "HookError[" << HC_ACC() << "]: found sfEmitDetails but sfEmitGeneration was not present";
         return 1;
     }
 
@@ -1911,7 +1914,7 @@ DEFINE_HOOK_FUNCTION(
     catch (std::exception& e)
     {
         JLOG(j.warn())
-            << "HookError[" << hookCtx.result.account << "]: Keylet exception " << e.what();
+            << "HookError[" << HC_ACC() << "]: Keylet exception " << e.what();
         return INTERNAL_ERROR;
     }
 
@@ -1953,7 +1956,7 @@ DEFINE_HOOK_FUNCTION(
     catch (std::exception& e)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: Failed " << e.what() << "\n";
+            << "HookEmit[" << HC_ACC() << "]: Failed " << e.what() << "\n";
         return EMISSION_FAILURE;
     }
 
@@ -1972,7 +1975,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfSequence missing or non-zero";
+            << "HookEmit[" << HC_ACC() << "]: sfSequence missing or non-zero";
         return EMISSION_FAILURE;
     }
 
@@ -1980,7 +1983,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfSigningPubKey))
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey missing";
+            << "HookEmit[" << HC_ACC() << "]: sfSigningPubKey missing";
         return EMISSION_FAILURE;
     }
 
@@ -1988,7 +1991,7 @@ DEFINE_HOOK_FUNCTION(
     if (pk.size() != 33 && pk.size() != 0)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey present but wrong size"
+            << "HookEmit[" << HC_ACC() << "]: sfSigningPubKey present but wrong size"
             << " expecting 33 bytes";
         return EMISSION_FAILURE;
     }
@@ -1997,7 +2000,7 @@ DEFINE_HOOK_FUNCTION(
     if (pk[i] != 0)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfSigningPubKey present but non-zero.";
+            << "HookEmit[" << HC_ACC() << "]: sfSigningPubKey present but non-zero.";
         return EMISSION_FAILURE;
     }
 
@@ -2005,7 +2008,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfEmitDetails))
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitDetails missing.";
+            << "HookEmit[" << HC_ACC() << "]: sfEmitDetails missing.";
         return EMISSION_FAILURE;
     }
 
@@ -2019,7 +2022,7 @@ DEFINE_HOOK_FUNCTION(
         !emitDetails.isFieldPresent(sfEmitCallback))
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitDetails malformed.";
+            << "HookEmit[" << HC_ACC() << "]: sfEmitDetails malformed.";
         return EMISSION_FAILURE;
     }
 
@@ -2034,7 +2037,7 @@ DEFINE_HOOK_FUNCTION(
     if (gen != gen_proper)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitGeneration provided in EmitDetails "
+            << "HookEmit[" << HC_ACC() << "]: sfEmitGeneration provided in EmitDetails "
             << "not correct (" << gen << ") "
             << "should be " << gen_proper;
         return EMISSION_FAILURE;
@@ -2044,7 +2047,7 @@ DEFINE_HOOK_FUNCTION(
     if (bur != bur_proper)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitBurden provided in EmitDetails "
+            << "HookEmit[" << HC_ACC() << "]: sfEmitBurden provided in EmitDetails "
             << "was not correct (" << bur << ") "
             << "should be " << bur_proper;
         return EMISSION_FAILURE;
@@ -2053,7 +2056,7 @@ DEFINE_HOOK_FUNCTION(
     if (pTxnID != applyCtx.tx.getTransactionID())
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitParentTxnID provided in EmitDetails "
+            << "HookEmit[" << HC_ACC() << "]: sfEmitParentTxnID provided in EmitDetails "
             << "was not correct";
         return EMISSION_FAILURE;
     }
@@ -2061,7 +2064,7 @@ DEFINE_HOOK_FUNCTION(
     if (hookCtx.nonce_used.find(nonce) == hookCtx.nonce_used.end())
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitNonce provided in EmitDetails "
+            << "HookEmit[" << HC_ACC() << "]: sfEmitNonce provided in EmitDetails "
             << "was not generated by nonce api";
         return EMISSION_FAILURE;
     }
@@ -2069,7 +2072,7 @@ DEFINE_HOOK_FUNCTION(
     if (callback != hookCtx.result.account)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfEmitCallback account must be the account "
+            << "HookEmit[" << HC_ACC() << "]: sfEmitCallback account must be the account "
             << "of the emitting hook";
         return EMISSION_FAILURE;
     }
@@ -2078,7 +2081,7 @@ DEFINE_HOOK_FUNCTION(
     if (stpTrans->isFieldPresent(sfSignature))
     {
         JLOG(j.trace()) <<
-            "HookEmit[" << hookCtx.result.account << "]: sfSignature is present but should not be";
+            "HookEmit[" << HC_ACC() << "]: sfSignature is present but should not be";
         return EMISSION_FAILURE;
     }
 
@@ -2090,7 +2093,7 @@ DEFINE_HOOK_FUNCTION(
     if (!stpTrans->isFieldPresent(sfLastLedgerSequence) || tx_lls < ledgerSeq + 1)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfLastLedgerSequence missing or invalid";
+            << "HookEmit[" << HC_ACC() << "]: sfLastLedgerSequence missing or invalid";
         return EMISSION_FAILURE;
     }
 
@@ -2099,7 +2102,7 @@ DEFINE_HOOK_FUNCTION(
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: sfFirstLedgerSequence must be present and "
+            << "HookEmit[" << HC_ACC() << "]: sfFirstLedgerSequence must be present and "
             << ">= LastLedgerSequence";
         return EMISSION_FAILURE;
     }
@@ -2112,14 +2115,14 @@ DEFINE_HOOK_FUNCTION(
     if (minfee < 0 || hookCtx.fee_base < 0)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: Fee could not be calculated";
+            << "HookEmit[" << HC_ACC() << "]: Fee could not be calculated";
         return EMISSION_FAILURE;
     }
 
     if (!stpTrans->isFieldPresent(sfFee))
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: Fee missing from emitted tx";
+            << "HookEmit[" << HC_ACC() << "]: Fee missing from emitted tx";
         return EMISSION_FAILURE;
     }
 
@@ -2127,7 +2130,7 @@ DEFINE_HOOK_FUNCTION(
     if (fee < minfee)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: Fee on emitted txn is less than the minimum required fee";
+            << "HookEmit[" << HC_ACC() << "]: Fee on emitted txn is less than the minimum required fee";
         return EMISSION_FAILURE;
     }
 
@@ -2136,7 +2139,7 @@ DEFINE_HOOK_FUNCTION(
     if (tpTrans->getStatus() != NEW)
     {
         JLOG(j.trace())
-            << "HookEmit[" << hookCtx.result.account << "]: tpTrans->getStatus() != NEW";
+            << "HookEmit[" << HC_ACC() << "]: tpTrans->getStatus() != NEW";
         return EMISSION_FAILURE;
     }
 
@@ -2950,7 +2953,7 @@ DEFINE_HOOK_FUNCTION(
         if (id > 0xFFFFU)
         {
             JLOG(j.trace())
-                << "HookInfo[" << hookCtx.result.account << "]: Macro guard violation. "
+                << "HookInfo[" << HC_ACC() << "]: Macro guard violation. "
                 << "Src line: " << (id & 0xFFFFU) << " "
                 << "Macro line: " << (id >> 16) << " "
                 << "Iterations: " << hookCtx.guard_map[id];
@@ -2958,7 +2961,7 @@ DEFINE_HOOK_FUNCTION(
         else
         {
             JLOG(j.trace())
-                << "HookInfo[" << hookCtx.result.account << "]: Guard violation. "
+                << "HookInfo[" << HC_ACC() << "]: Guard violation. "
                 << "Src line: " << id
                 << "Iterations: " << hookCtx.guard_map[id];
         }
