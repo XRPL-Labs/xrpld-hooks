@@ -91,6 +91,7 @@ int out_len = 0;\
 #define TRACEVAR(v) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
 #define TRACEHEX(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), (uint32_t)(v), (uint32_t)(sizeof(v)), 1);
 #define TRACEXFL(v) trace_float((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
+#define TRACESTR(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), (uint32_t)(v), sizeof(v), 0);
 
 #define CLEARBUF(b)\
 {\

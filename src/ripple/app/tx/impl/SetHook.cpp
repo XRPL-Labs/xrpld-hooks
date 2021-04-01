@@ -1023,6 +1023,7 @@ SetHook::setHook()
         view().insert(hook);
 
         hook->setFieldVL(sfCreateCode, hook_);
+        hook->setAccountID(sfAccount, ctx_.tx.getAccountID(sfAccount));
         hook->setFieldU32(sfHookStateCount, stateCount);
         hook->setFieldU32(sfHookReserveCount, newReserveUnits);
         hook->setFieldU32(sfHookStateDataMaxSize, blobMax);

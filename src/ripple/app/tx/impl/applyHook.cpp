@@ -318,7 +318,8 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
 }
 
 
-// RH TODO: fetch this value from the hook sle
+// RH TODO: this is used by sethook to determine the value stored in ltHOOK
+// replace this with votable value
 int hook::maxHookStateDataSize(void) {
     return 128;
 }
@@ -474,6 +475,7 @@ hook::setHookState(
     view.insert(newHookState);
     newHookState->setFieldVL(sfHookStateData, data);
     newHookState->setFieldH256(sfHookStateKey, key);
+    newHookState->setAccountID(sfAccount, hookResult.account);
 
     if (!oldHookState) {
         // Add the hook to the account's directory if it wasn't there already

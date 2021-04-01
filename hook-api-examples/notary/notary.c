@@ -187,9 +187,6 @@ int64_t hook(int64_t reserved)
         uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
         uint32_t  memo_len = SUB_LENGTH(memo_lookup);
 
-        trace(SBUF("MEMO:"), 0);
-        trace(memo_ptr, memo_len, 1);
-
         // memos are nested inside an actual memo object, so we need to subfield
         // equivalently in JSON this would look like memo_array[i]["Memo"]
         memo_lookup = sto_subfield(memo_ptr, memo_len, sfMemo);
@@ -301,15 +298,11 @@ int64_t hook(int64_t reserved)
     uint8_t* buffer2 = buffer;
     uint8_t* buffer1 = tx_blob;
 
-    trace(buffer1, tx_len, 1);
-
     result = sto_erase(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, sfSigners);
     if (result > 0)
         tx_len = result;
     else
         BUFFER_SWAP(buffer1, buffer2);
-
-    trace(buffer2, tx_len, 1);
 
     // next zero sfSequence
     uint8_t zeroed[6];
@@ -321,8 +314,6 @@ int64_t hook(int64_t reserved)
         rollback(SBUF("Notary: Emplacing sfSequence failed."), 1);
 
 
-    trace(buffer1, tx_len, 1);
-
     // next set sfTxnSignature to 0
     zeroed[0] = 0x74U; // lead byte for sfTxnSignature, next byte is length which is 0
     tx_len = sto_emplace(buffer2, MAX_MEMO_SIZE, buffer1, tx_len, zeroed, 2, sfTxnSignature);
@@ -330,16 +321,12 @@ int64_t hook(int64_t reserved)
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfTxnSignature failed."), 1);
     
-    trace(buffer2, tx_len, 1);
-
     // next set sfSigningPubKey to 0
     zeroed[0] = 0x73U;  // this is the lead byte for sfSigningPubkey, note that the next byte is 0 which is the length
     tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, zeroed, 2, sfSigningPubKey);
     TRACEVAR(tx_len);
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfSigningPubKey failed."), 1);
-
-    trace(buffer1, tx_len, 1);
 
     // finally set FirstLedgerSeq appropriately
     uint32_t fls = ledger_seq() + 1;
@@ -351,16 +338,9 @@ int64_t hook(int64_t reserved)
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfFirstLedgerSequence failed."), 1);
 
-    
-    trace(buffer2, tx_len, 1);
-
     // finally add emit details
     uint8_t emitdet[105];
     result = etxn_details(emitdet, 105);
-
-
-    TRACEVAR(result);
-    trace(emitdet, 105, 1);
 
     if (result < 0)
         rollback(SBUF("Notary: EmitDetails failed to generate."), 1);
@@ -368,8 +348,6 @@ int64_t hook(int64_t reserved)
     tx_len = sto_emplace(buffer1, MAX_MEMO_SIZE, buffer2, tx_len, SBUF(emitdet), sfEmitDetails);
     if (tx_len < 0)
         rollback(SBUF("Notary: Emplacing sfEmitDetails failed."), 1);
-
-    trace(buffer1, tx_len, 1);
 
     // replace fee with something currently appropriate
     uint8_t fee[ENCODE_DROPS_SIZE];
@@ -381,8 +359,6 @@ int64_t hook(int64_t reserved)
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfFee failed."), 1);
     
-    trace(buffer2, tx_len, 1);
-
     if (emit(buffer2, tx_len) < 0)
         accept(SBUF("Notary: All conditions met but emission failed: proposed txn was malformed."), 1);
 
