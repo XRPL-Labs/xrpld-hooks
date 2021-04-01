@@ -251,6 +251,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
+    DECLARE_HOOK_FUNCTION(int64_t,  ledger_last_hash,   uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
 
 
@@ -448,6 +449,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(hook_hash, ctx);
             ADD_HOOK_FUNCTION(fee_base, ctx);
             ADD_HOOK_FUNCTION(ledger_seq, ctx);
+            ADD_HOOK_FUNCTION(ledger_last_hash, ctx);
             ADD_HOOK_FUNCTION(nonce, ctx);
             ADD_HOOK_FUNCTION(state, ctx);
             ADD_HOOK_FUNCTION(state_foreign, ctx);

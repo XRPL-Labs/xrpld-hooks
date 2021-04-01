@@ -197,6 +197,8 @@ extern int64_t fee_base            (void);
  */
 extern int64_t ledger_seq          (void);
 
+extern int64_t ledger_last_hash    (uint32_t write_ptr,  uint32_t write_len);
+
 /**
  * Retrieve a nonce for use in an emitted transaction (or another task). Can be called repeatedly for multiple nonces.
  * @param write_ptr A buffer of at least 32 bytes to write into.

@@ -111,6 +111,7 @@ const std::set<std::string> import_whitelist
     "hook_account",
     "hook_hash",
     "ledger_seq",
+    "ledger_last_hash",
     "nonce",
     "otxn_burden",
     "otxn_field",

@@ -52,7 +52,7 @@ int64_t hook(int64_t reserved )
     for (int i = 0; GUARD(3), i < 3; ++i)
     {
         // the memos are presented in an array object, which we must index into
-        int64_t memo_lookup = util_subarray(memos, memos_len, i);
+        int64_t memo_lookup = sto_subarray(memos, memos_len, i);
 
         TRACEVAR(memo_lookup);
         if (memo_lookup < 0)
@@ -63,19 +63,18 @@ int64_t hook(int64_t reserved )
         uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
         uint32_t  memo_len = SUB_LENGTH(memo_lookup);
 
-        trace(SBUF("MEMO:"), 0);
-        trace(memo_ptr, memo_len, 1);
+        trace(SBUF("MEMO:"), memo_ptr, memo_len, 1);
 
         // memos are nested inside an actual memo object, so we need to subfield
         // equivalently in JSON this would look like memo_array[i]["Memo"]
-        memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
+        memo_lookup = sto_subfield(memo_ptr, memo_len, sfMemo);
         memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
         memo_len = SUB_LENGTH(memo_lookup);
 
         // now we lookup the subfields of the memo itself
         // again, equivalently this would look like memo_array[i]["Memo"]["MemoData"], ... etc.
-        int64_t data_lookup = util_subfield(memo_ptr, memo_len, sfMemoData);
-        int64_t format_lookup = util_subfield(memo_ptr, memo_len, sfMemoFormat);
+        int64_t data_lookup = sto_subfield(memo_ptr, memo_len, sfMemoData);
+        int64_t format_lookup = sto_subfield(memo_ptr, memo_len, sfMemoFormat);
 
         TRACEVAR(data_lookup);
         TRACEVAR(format_lookup);
@@ -144,9 +143,9 @@ int64_t hook(int64_t reserved )
     // Sequence prevents replay attacks
     // ARRAY must contain at least one sfAccount
 
-    int64_t lookup_flags    = util_subfield(payload_ptr, payload_len, sfFlags);
-    int64_t lookup_seq      = util_subfield(payload_ptr, payload_len, sfSequence);
-    int64_t lookup_array    = util_subfield(payload_ptr, payload_len, sfTemplate);
+    int64_t lookup_flags    = sto_subfield(payload_ptr, payload_len, sfFlags);
+    int64_t lookup_seq      = sto_subfield(payload_ptr, payload_len, sfSequence);
+    int64_t lookup_array    = sto_subfield(payload_ptr, payload_len, sfTemplate);
 
     TRACEVAR(lookup_flags);
     TRACEVAR(lookup_seq);
@@ -183,7 +182,7 @@ int64_t hook(int64_t reserved )
     int processed_count = 0;
     for (int i = 0; GUARD(50), i < 50; ++i)
     {
-        int64_t lookup_array_entry = util_subarray(array_ptr, array_len, i);
+        int64_t lookup_array_entry = sto_subarray(array_ptr, array_len, i);
 
         TRACEVAR(lookup_array_entry);
         if (lookup_array_entry < 0)
@@ -193,7 +192,7 @@ int64_t hook(int64_t reserved )
         uint32_t array_entry_len = SUB_LENGTH(lookup_array_entry);
 
         // this will return the actual payload inside the sfAccount inside the array entry
-        int64_t lookup_acc = util_subfield(array_entry_ptr, array_entry_len, sfAccount);
+        int64_t lookup_acc = sto_subfield(array_entry_ptr, array_entry_len, sfAccount);
         if (lookup_acc < 0)
             rollback(SBUF("Blacklist: Invalid array entry, expecting sfAccount."), 80);
 
@@ -207,13 +206,9 @@ int64_t hook(int64_t reserved )
         uint8_t buffer[1] = {1}; // nominally we will simply a store a single byte = 1 for a blacklisted account
         uint32_t len = flags == 1 ? 1 : 0; // we will pass length = 0 to state_set for a delete operation
         if (state_set(buffer, len, acc_ptr, acc_len) == len)
-        {
             processed_count++;
-        } else
-        {
-            trace(SBUF("Blacklist: Failed to update state for the following account."), 0);
-            trace(acc_ptr, acc_len, 1);
-        }
+        else
+            trace(SBUF("Blacklist: Failed to update state for the following account."), acc_ptr, acc_len, 1);
     }
 
     RBUF(result_buffer, result_len, "Blacklist: Processed + ", processed_count);

@@ -1145,6 +1145,26 @@ DEFINE_HOOK_FUNCNARG(
 }
 
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    ledger_last_hash,
+    uint32_t write_ptr, uint32_t write_len)
+{
+    HOOK_SETUP();
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+    if (write_len < 32)
+        return TOO_SMALL;
+
+    uint256 hash = applyCtx.app.getLedgerMaster().getValidatedLedger()->info().hash;
+    
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, write_len,
+        hash.data(), 32,
+        memory, memory_length);
+
+}
+
 // Dump a field in 'full text' form into the hook's memory
 DEFINE_HOOK_FUNCTION(
     int64_t,
