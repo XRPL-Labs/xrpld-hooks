@@ -3,7 +3,6 @@
 
 int64_t cbak(int64_t reserved)
 {
-    accept(0,0,0);
     return 0;
 }
 
@@ -87,17 +86,6 @@ int64_t hook(int64_t reserved ) {
 
     // emit the transaction
     emit(SBUF(tx));
- // we can emit two additional tx here for testing
-    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
-
-    // emit the transaction
-    emit(SBUF(tx));
-    
-    PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
-
-    // emit the transaction
-    emit(SBUF(tx));
-
 
     // accept and allow the original transaction through
     accept(SBUF("Carbon: Emitted transaction"), 0);
