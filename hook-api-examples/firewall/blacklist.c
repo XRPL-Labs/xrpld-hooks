@@ -1,8 +1,16 @@
 #include "../hookapi.h"
-
-// this key is used by the blacklist hook to check if an add/remove instruction is legitimate
-#define ADMIN_PUBLIC_KEY {0xED, 0xDC, 0x6D, 0x9E, 0x28, 0xCA, 0x0F, 0xE2, 0xD4, 0x75, 0xFC, 0x02, 0x1D, 0x22, 0x68,\
-         0x81, 0x66, 0x6E, 0xA1, 0x06, 0xFB, 0xD2, 0x22, 0x2C, 0x8C, 0x21, 0x10, 0x36, 0x8A, 0x49, 0xC9, 0x51, 0x3C}
+/*
+    Blacklist signing keys ((( you should change these )))
+    r.deriveKeypair('sEd7CGWXiFPazNncZJsxD11h1sHJCtm')
+    {
+      privateKey: 'ED55D3A139AF8F069FE93BB943FE3A46BAF70EA61E0DD02192D4A532D8E87627F0',
+      publicKey: 'EDDC6D9E28CA0FE2D475FC021D226881666EA106FBD2222C8C2110368A49C9513C'
+    }
+    the public key is encoded below, you should change this
+*/
+#define ADMIN_PUBLIC_KEY {\
+    0xED, 0xDC, 0x6D, 0x9E, 0x28, 0xCA, 0x0F, 0xE2, 0xD4, 0x75, 0xFC, 0x02, 0x1D, 0x22, 0x68, 0x81, 0x66,\
+          0x6E, 0xA1, 0x06, 0xFB, 0xD2, 0x22, 0x2C, 0x8C, 0x21, 0x10, 0x36, 0x8A, 0x49, 0xC9, 0x51, 0x3C}
     
 // this hook has no emitted tx and therefore no callbacks
 int64_t cbak(int64_t reserved)
@@ -12,25 +20,6 @@ int64_t cbak(int64_t reserved)
 
 int64_t hook(int64_t reserved )
 {
-
-    GUARD(1);
-
-    // this api fetches the AccountID of the account the hook currently executing is installed on
-    // since hooks can be triggered by both incoming and ougoing transactions this is important to know
-    unsigned char hook_accid[20];
-    hook_account((uint32_t)hook_accid, 20);
-
-    // next fetch the sfAccount field from the originating transaction
-    uint8_t account_field[20];
-    int32_t account_field_len = otxn_field(SBUF(account_field), sfAccount);
-    if (account_field_len < 20)                                   // negative values indicate errors from every api
-        rollback(SBUF("Blacklist: sfAccount field missing!!!"), 10); // this code could never be hit in prod
-                                                                  // but it's here for completeness
-    // compare the "From Account" (sfAccount) on the transaction with the account the hook is running on
-    int equal = 0; BUFFER_EQUAL(equal, hook_accid, account_field, 20);
-    if (equal)
-        accept(SBUF("Blacklist: Passing outgoing transaction"), 0);
-
     // check for the presence of a memo
     uint8_t memos[2048];
     int64_t memos_len = otxn_field(SBUF(memos), sfMemos);
@@ -56,14 +45,14 @@ int64_t hook(int64_t reserved )
 
         TRACEVAR(memo_lookup);
         if (memo_lookup < 0)
-            rollback(SBUF("Blacklist: Memo transaction did not contain XLS14 format."), 30);
+            rollback(SBUF("Blacklist: Memo transaction did not contain correct format."), 30);
 
         // if the subfield/array lookup is successful we must extract the two pieces of returned data
         // which are, respectively, the offset at which the field occurs and the field's length
         uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
         uint32_t  memo_len = SUB_LENGTH(memo_lookup);
 
-        trace(SBUF("MEMO:"), memo_ptr, memo_len, 1);
+        trace(SBUF("Memo: "), memo_ptr, memo_len, 1);
 
         // memos are nested inside an actual memo object, so we need to subfield
         // equivalently in JSON this would look like memo_array[i]["Memo"]
@@ -123,7 +112,7 @@ int64_t hook(int64_t reserved )
         rollback(SBUF("Blacklist: Memo public key wrong length."), 55);
 
     uint8_t blacklist_key[33] = ADMIN_PUBLIC_KEY;
-    equal = 0;
+    int equal = 0;
     BUFFER_EQUAL(equal, blacklist_key, publickey_ptr, 33);
     if (!equal)
         rollback(SBUF("Blacklist: Invalid admin public key."), 57);
