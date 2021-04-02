@@ -10,15 +10,9 @@
 #include <stdint.h>
 #include "../hookapi.h"
 
-/**
- * RH TODO
- *  - handle a callback
- *  - rollback a send (minus a fee) if callback doesnt trigger within X ledgers
- */
 
 int64_t cbak(int64_t reserved)
 {
-    accept(0,0,0);
     return 0;
 }
 
@@ -26,15 +20,6 @@ int64_t cbak(int64_t reserved)
 #define MAX_MEMO_SIZE 4096
 // LastLedgerSeq must be this far ahead of current to submit a new txn blob
 #define MINIMUM_FUTURE_LEDGER 60
-//
-/**
-sto_erase( ... sfLastLedgerSequence )
-sto_erase( ... sfFirstLedgerSequence)
-sto_erase( ... sfSequence )
-sto_erase( ... sfTxnSignature )
-sto_erase( ... sfSigningPubkey )
-sto_erase( ... sfSigners )
-*/
 
 int64_t hook(int64_t reserved)
 {
@@ -259,7 +244,24 @@ int64_t hook(int64_t reserved)
     TRACEVAR(total);
     TRACEVAR(signer_quorum);
     if (total < signer_quorum)
-        accept(SBUF("Notary: Accepted signature/txn, waiting for other signers..."), 0);
+    {
+        uint8_t header[] = "Notary: Accepted waiting for other signers...: ";
+        uint8_t returnval[112]; 
+        uint8_t* ptr = returnval;
+        for (int i = 0; GUARD(47), i < 47; ++i)
+            *ptr++ = header[i];
+        for (int i = 0; GUARD(32),i < 32; ++i)
+        {
+            uint8_t hi = (invoice_id[i] >> 4U);
+            uint8_t lo = (invoice_id[i] & 0xFU);
+
+            hi += ( hi > 9 ? ('A'-10) : '0' );
+            lo += ( lo > 9 ? ('A'-10) : '0' );
+            *ptr++ = hi;
+            *ptr++ = lo;
+        }
+        accept(SBUF(returnval), 0);
+    }
 
     // execution to here means we must emit the txn then clean up
     int should_emit = 1;

@@ -97,7 +97,7 @@ using namespace ripple;
 
 #define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
 {\
-    if (read_len > 64) read_len = 64;\
+    if (read_len > 256) read_len = 256;\
     if (read_ptr) {\
         if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
             JLOG(j.warn())\
@@ -109,7 +109,7 @@ using namespace ripple;
         /* assembly script and some other languages use utf16 for strings */\
         if (is_UTF16LE(read_ptr + memory, read_len))\
         {\
-            uint8_t output[32];\
+            uint8_t output[128];\
             int len = read_len / 2; /* is_UTF16LE will only return true if read_len is even */\
             for (int i = 0; i < len; ++i)\
                 output[i] = memory[read_ptr + i * 2];\
