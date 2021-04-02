@@ -1,6 +1,6 @@
 #include "../hookapi.h"
 
-#define BLACKLIST_ACCOUNT "rNsA4VzfZZydhGAvfHX3gdpcQMMoJafd6v"
+#define BLACKLIST_ACCOUNT "rno8D3qi5VrBvxTUE7nsem5kcJDnQUooQy"
 
 int64_t cbak(int64_t reserved)
 {

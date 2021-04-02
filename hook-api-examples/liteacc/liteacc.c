@@ -13,15 +13,8 @@
 #include <stdint.h>
 #include "../hookapi.h"
 
-/**
- * RH TODO
- *  - handle a callback
- *  - rollback a send (minus a fee) if callback doesnt trigger within X ledgers
- */
-
 int64_t cbak(int64_t reserved)
 {
-    accept(0,0,0);
     return 0;
 }
 
@@ -108,7 +101,7 @@ int64_t hook(int64_t reserved )
         for (int i = 0; GUARD(3), i < 3; ++i)
         {
             // the memos are presented in an array object, which we must index into
-            int64_t memo_lookup = util_subarray(memos, memos_len, i);
+            int64_t memo_lookup = sto_subarray(memos, memos_len, i);
 
             TRACEVAR(memo_lookup);
             if (memo_lookup < 0)
@@ -119,19 +112,18 @@ int64_t hook(int64_t reserved )
             uint8_t*  memo_ptr = SUB_OFFSET(memo_lookup) + memos;
             uint32_t  memo_len = SUB_LENGTH(memo_lookup);
 
-            trace(SBUF("MEMO:"), 0);
-            trace(memo_ptr, memo_len, 1);
+            trace(SBUF("MEMO:"), memo_ptr, memo_len, 1);
 
             // memos are nested inside an actual memo object, so we need to subfield
             // equivalently in JSON this would look like memo_array[i]["Memo"]
-            memo_lookup = util_subfield(memo_ptr, memo_len, sfMemo);
+            memo_lookup = sto_subfield(memo_ptr, memo_len, sfMemo);
             memo_ptr = SUB_OFFSET(memo_lookup) + memo_ptr;
             memo_len = SUB_LENGTH(memo_lookup);
 
             // now we lookup the subfields of the memo itself
             // again, equivalently this would look like memo_array[i]["Memo"]["MemoData"], ... etc.
-            int64_t data_lookup = util_subfield(memo_ptr, memo_len, sfMemoData);
-            int64_t format_lookup = util_subfield(memo_ptr, memo_len, sfMemoFormat);
+            int64_t data_lookup = sto_subfield(memo_ptr, memo_len, sfMemoData);
+            int64_t format_lookup = sto_subfield(memo_ptr, memo_len, sfMemoFormat);
 
             // if any of these lookups fail the request is malformed
             if (data_lookup < 0 || format_lookup < 0)
@@ -187,12 +179,12 @@ int64_t hook(int64_t reserved )
         // Sequence must be greater than the previously used Sequence (timestamp is desirable but not mandated)
         // Last sequence is encoded by state loop key = [0xFFFFFFFF ... <src tag>]
 
-        int64_t lookup_seq      = util_subfield(payload_ptr, payload_len, sfSequence);
-        int64_t lookup_stag     = util_subfield(payload_ptr, payload_len, sfSourceTag);
-        int64_t lookup_dest     = util_subfield(payload_ptr, payload_len, sfDestination);
-        int64_t lookup_dtag     = util_subfield(payload_ptr, payload_len, sfDestinationTag);
-        int64_t lookup_amt      = util_subfield(payload_ptr, payload_len, sfAmount);
-        int64_t lookup_pubkey   = util_subfield(payload_ptr, payload_len, sfPublicKey);
+        int64_t lookup_seq      = sto_subfield(payload_ptr, payload_len, sfSequence);
+        int64_t lookup_stag     = sto_subfield(payload_ptr, payload_len, sfSourceTag);
+        int64_t lookup_dest     = sto_subfield(payload_ptr, payload_len, sfDestination);
+        int64_t lookup_dtag     = sto_subfield(payload_ptr, payload_len, sfDestinationTag);
+        int64_t lookup_amt      = sto_subfield(payload_ptr, payload_len, sfAmount);
+        int64_t lookup_pubkey   = sto_subfield(payload_ptr, payload_len, sfPublicKey);
 
         if (lookup_seq < 0 || lookup_stag < 0 || lookup_dest < 0 || lookup_amt < 0 || lookup_pubkey < 0)
             rollback(SBUF("Liteacc: [3] Validly signed memo lacked required STObject fields."), 70);
