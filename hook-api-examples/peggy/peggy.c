@@ -9,14 +9,27 @@
 #include <stdint.h>
 #include "../hookapi.h"
 
-// e.g. you get back 2/3rds of your xrp as pusd
-#define COLLATERALIZATION_NUMERATOR 2
-#define COLLATERALIZATION_DENOMINATOR 3
+// your vault starts at 150% collateralization
+#define NEW_COLLATERALIZATION_NUMERATOR 2
+#define NEW_COLLATERALIZATION_DENOMINATOR 3 
 
+// at 120% collateralization your vault may be taken over
+#define LIQ_COLLATERALIZATION_NUMERATOR 5
+#define LIQ_COLLATERALIZATION_DENOMINATOR 6
+
+
+// the oracle is the limit set on a trustline established between two special oracle accounts
+
+uint8_t oracle_lo[20] = { // require('ripple-address-codec').decodeAccountID('rXUMMaPpZqPutoRszR29jtC8amWq3APkx')
+    0x05U, 0xb5U, 0xf4U, 0x3aU, 0xf7U, 
+    0x17U, 0xb8U, 0x19U, 0x48U, 0x49U, 0x1fU, 0xb7U, 0x07U, 0x9eU, 0x4fU, 0x17U, 0x3fU, 0x4eU, 0xceU, 0xb3U};
+
+uint8_t oracle_hi[20] = { // require('ripple-address-codec').decodeAccountID('r9PfV3sQpKLWxccdg3HL2FXKxGW2orAcLE')
+    0x5bU, 0xefU, 0x92U, 0x1aU, 0x21U,
+    0x7dU, 0x57U, 0xfdU, 0xa5U, 0xb5U, 0x6dU, 0x5bU, 0x40U, 0xbeU, 0xe4U, 0x0dU, 0x1aU, 0xc1U, 0x12U, 0x7fU};
 
 int64_t cbak(int64_t reserved)
 {
-    accept(0,0,0);
     return 0;
 }
 
@@ -85,16 +98,6 @@ int64_t hook(int64_t reserved)
     // execution to here means the invoking account has the required trustline with the required limit
     // now fetch the price oracle data (which also lives in a trustline)
     
-    // the oracle is the limit set on a trustline established between two special oracle accounts
-    uint8_t oracle_lo[20] = {
-        0x2dU,0xd8U,0xaaU,0xdbU,0x4eU,0x15U,
-        0xebU,0xeaU,0xeU,0xfdU,0x78U,0xd1U,0xb0U,\
-        0x35U,0x91U,0x4U,0x7bU,0xfaU,0x1eU,0xeU};
-
-    uint8_t oracle_hi[20] = {
-        0xb5U,0xc6U,0x32U,0xd4U,0x7cU,0x3dU,
-        0x37U,0x24U,0x20U,0xabU,0x3dU,0x31U,0x50U,\
-        0xdcU,0x5U,0x51U,0xceU,0x9cU,0x5aU,0xf3U};
 
     CLEARBUF(keylet);
     if (util_keylet(SBUF(keylet), KEYLET_LINE, SBUF(oracle_lo), SBUF(oracle_hi), SBUF(currency)) != 34)
@@ -184,13 +187,19 @@ int64_t hook(int64_t reserved)
     {
         // XRP INCOMING
         
+        // decide whether the vault is liquidatable
+        int64_t required_vault_xrp = float_divide(vault_pusd, exchange_rate);
+        required_vault_xrp =
+            float_mulratio(required_vault_xrp, 0, LIQ_COLLATERALIZATION_DENOMINATOR, LIQ_COLLATERALIZATION_NUMERATOR);
+        uint8_t can_liq = (required_vault_xrp < vault_xrp);
+        
         // compute new vault xrp by adding the xrp they just sent
         vault_xrp = float_sum(amt, vault_xrp);
 
         // compute the maximum amount of pusd that can be out according to the collateralization
         int64_t max_vault_pusd = float_multiply(vault_xrp, exchange_rate);
         max_vault_pusd =
-            float_mulratio(max_vault_pusd, 0, COLLATERALIZATION_NUMERATOR, COLLATERALIZATION_DENOMINATOR);
+            float_mulratio(max_vault_pusd, 0, NEW_COLLATERALIZATION_NUMERATOR, NEW_COLLATERALIZATION_DENOMINATOR);
 
         // compute the amount we can send them
         int64_t pusd_to_send =
@@ -212,6 +221,9 @@ int64_t hook(int64_t reserved)
                 accept(SBUF("Peggy: Vault is undercollateralized, absorbing without sending anything."), 0);
             }
         }
+
+        if (!is_vault_owner && !can_liq)
+            rollback(SBUF("Peggy: Vault is not sufficiently undercollateralized to take over yet."), 2);
 
         // execution to here means we will send out pusd
 
@@ -296,13 +308,20 @@ int64_t hook(int64_t reserved)
 
         TRACEVAR(vault_pusd);
 
+        // decide whether the vault is liquidatable
+        int64_t required_vault_xrp = float_divide(vault_pusd, exchange_rate);
+        required_vault_xrp =
+            float_mulratio(required_vault_xrp, 0, LIQ_COLLATERALIZATION_DENOMINATOR, LIQ_COLLATERALIZATION_NUMERATOR);
+        uint8_t can_liq = (required_vault_xrp < vault_xrp);
+
+
         // compute new vault pusd by adding the pusd they just sent
         vault_pusd = float_sum(float_negate(amt), vault_pusd);
 
         // compute the maximum amount of pusd that can be out according to the collateralization
         int64_t max_vault_xrp = float_divide(vault_pusd, exchange_rate);
         max_vault_xrp =
-            float_mulratio(max_vault_xrp, 0, COLLATERALIZATION_DENOMINATOR, COLLATERALIZATION_NUMERATOR);
+            float_mulratio(max_vault_xrp, 0, NEW_COLLATERALIZATION_DENOMINATOR, NEW_COLLATERALIZATION_NUMERATOR);
 
 
         // compute the amount we can send them
@@ -328,6 +347,9 @@ int64_t hook(int64_t reserved)
                 accept(SBUF("Peggy: Vault is undercollateralized, absorbing without sending anything."), 0);
             }
         }
+
+        if (!is_vault_owner && !can_liq)
+            rollback(SBUF("Peggy: Vault is not sufficiently undercollateralized to take over yet."), 2);
 
         // execution to here means we will send out pusd
 

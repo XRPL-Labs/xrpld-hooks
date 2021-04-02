@@ -81,6 +81,8 @@ function is_negative(xfl)
 
 function to_string_dec(xfl)
 {
+    if (typeof(xfl) == 'string')
+        xfl = BigInt('0x'+xfl)
     if (xfl < 0n)
         throw "Invalid XFL";
     if (xfl == 0n)
@@ -107,6 +109,8 @@ function to_string_dec(xfl)
 
 function to_string(xfl)
 {
+    if (typeof(xfl) == 'string')
+        xfl = BigInt('0x'+xfl)
     if (xfl < 0n)
         throw "Invalid XFL";
     if (xfl == 0n)
@@ -116,5 +120,5 @@ function to_string(xfl)
 
 }
 
-x = BigInt(process.argv[2])
-console.log(to_string_dec(x))
+exports.xls17StringDec = to_string_dec;
+
