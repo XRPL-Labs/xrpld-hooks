@@ -1,5 +1,5 @@
 # RH Note: this readme is out of date ... soon to be updated for public testnet.
-The public testnet docker is here richardah/xrpld-hooks-testnet and works much the same as what appears below
+The public testnet docker is here `richardah/xrpld-hooks-testnet`and works much the same as what appears below
 
 # Hooks Technology Preview
 This is a fork of the rippled codebase incorporating the work-in-progress "Hooks" amendment. This amendment will allow web assembly smart contracts to run directly on the XRP ledger when completed and adopted.
