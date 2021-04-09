@@ -33,16 +33,13 @@ docker container prune -f
 ### Interacting with the container
 After following the above steps you will be inside a shell inside the container. Rippled will already be running with the correct settings. Read the README.md in the container for further instructions on installing and interacting with the example hooks.
                                                                                                                       
-## Usage                                                                                                               
-Note: Examples are provided under `hook-api-examples/`
-
 ## What's in this docker?
 1. An `rippled` instance connected to the Hooks Public Testnet.
 2. A compiler toolchain for building hooks (wasmcc, wasm2wat, etc...)
 3. Example hooks and support scripts to install them on your account.
 
 ## Get testnet XRP
-The Faucet is on the (main page)[https://hooks-testnet.xrpl-labs.com/]. Make a note of your secret (family seed) because you will need it for all the examples.
+The Faucet is on the [main page](https://hooks-testnet.xrpl-labs.com/). Make a note of your secret (family seed) because you will need it for all the examples.
 
 ## Testnet explorer
 Use the [Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/) to view transactions, accounts and hook state objects as you go.
