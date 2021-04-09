@@ -34,7 +34,7 @@ docker container prune -f
 After following the above steps you will be inside a shell inside the container. Rippled will already be running with the correct settings. Read the README.md in the container for further instructions on installing and interacting with the example hooks.
                                                                                                                       
 ## What's in this docker?
-1. An `rippled` instance connected to the Hooks Public Testnet.
+1. A `rippled` instance connected to the Hooks Public Testnet.
 2. A compiler toolchain for building hooks (wasmcc, wasm2wat, etc...)
 3. Example hooks and support scripts to install them on your account.
 
