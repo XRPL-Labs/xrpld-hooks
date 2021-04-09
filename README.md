@@ -1,20 +1,17 @@
-# RH Note: this readme is out of date ... soon to be updated for public testnet.
-The public testnet docker is here `richardah/xrpld-hooks-testnet`and works much the same as what appears below
-
-# Hooks Technology Preview
+# Hooks Public Testnet
 This is a fork of the rippled codebase incorporating the work-in-progress "Hooks" amendment. This amendment will allow web assembly smart contracts to run directly on the XRP ledger when completed and adopted.
 
 ## Docker Container
-Building rippled can be non-trivial, especially in this case since modified libraries are used. We have provided a tech-preview docker container for your convenience. Follow the steps below to use it.
+Building `rippled` can be non-trivial, especially in this case since modified libraries are used. We have provided a testnet docker container for your convenience. This container contains an instance of `rippled` configured as a "Hooks stock node" running on the Public Testnet. You can interact with it using the steps below:
 ### Starting the container
 1. Download and install docker.
 2. To download the container use:
 ```bash
-docker pull richardah/xrpld-hooks-tech-preview
+docker pull richardah/xrpld-hooks-testnet
 ```
 3. Then to run the container interactively use:
 ```bash
-docker run --name xrpld-hooks richardah/xrpld-hooks-tech-preview &
+docker run --name xrpld-hooks richardah/xrpld-hooks-testnet &
 docker exec -it xrpld-hooks /bin/bash
 ```
 4. Set up a second terminal to view the log:
@@ -35,13 +32,9 @@ docker container prune -f
 
 ### Interacting with the container
 After following the above steps you will be inside a shell inside the container. Rippled will already be running with the correct settings. Read the README.md in the container for further instructions on installing and interacting with the example hooks.
-
-## Compilation
-- Compile and install the modified Wasmer from https://github.com/RichardAH/wasmer
-- Compile rippled as per usual
-                                                                                                                       
+                                                                                                                      
 ## Usage                                                                                                               
-Note: Examples are provided under hook-api-examples.
+Note: Examples are provided under `hook-api-examples/`
 
 ## SetHook Transaction
 Set a Hook on an activated account using a SetHook Transaction (ttHOOK_SET = 22). This must contain the following fields:
@@ -77,11 +70,14 @@ Examples:
 ```
 
 ## Hook API
-- Documentation for the Hook API can be found in `hook-api-examples/hookapi.h`.
+- Documentation for the Hook API can be found at the [Hooks Testnet Site](https://hooks-testnet.xrpl-labs.com/).
 - For further details check:
-1. `src/ripple/app/tx/applyHook.h` and
-2. `src/ripple/app/tx/impl/applyHook.cpp`
-(Further documentation to be released in future.)
+1. `hook-api-examples/hookapi.h`
+2. `src/ripple/app/tx/applyHook.h`
+3. `src/ripple/app/tx/impl/applyHook.cpp`
+
+
+-------
 
 # The XRP Ledger
 
