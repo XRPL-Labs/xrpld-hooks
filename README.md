@@ -77,7 +77,7 @@ Finally run the additional `.js` files to interact with the Hook or write your o
 3. `src/ripple/app/tx/impl/applyHook.cpp`
 
 ## Viewing state
-You can view the current Hook State for your Hook by locating the account it is installed on with the (Hooks Testnet Explorer)[https://hooks-testnet-explorer.xrpl-labs.com/].
+You can view the current Hook State for your Hook by locating the account it is installed on with the [Hooks Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/).
 
 You can also run `./rippled account_objects <account on which the hook is installed on>` to inspect the Hook's State Data. 
 
