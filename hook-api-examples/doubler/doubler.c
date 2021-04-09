@@ -55,7 +55,6 @@ int64_t hook(int64_t reserved ) {
     int64_t amount_len = otxn_field(SBUF(amount_buffer), sfAmount);
     int64_t drops_to_send = AMOUNT_TO_DROPS(amount_buffer) * 2; // doubler pays back 2x received
 
-    // you can trace the behaviour of your hook using the trace(buf, size, as_hex) api
     if (amount_len != 8)
         rollback(SBUF("Doubler: Rejecting incoming non-XRP transaction"), 5);
 
@@ -70,7 +69,7 @@ int64_t hook(int64_t reserved ) {
     emit(SBUF(tx));
 
     // accept and allow the original transaction through
-    accept(SBUF("Doubler: You won! Funds emitted!"), 0);
+    accept(SBUF("Doubler: Heads, you won! Funds emitted!"), 0);
     return 0;
 
 }

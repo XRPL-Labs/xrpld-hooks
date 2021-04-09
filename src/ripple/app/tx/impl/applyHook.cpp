@@ -176,6 +176,8 @@ namespace hook_float
     {
         if (mantissa > maxMantissa)
             return MANTISSA_OVERSIZED;
+        if (mantissa < minMantissa)
+            return MANTISSA_UNDERSIZED;
         return float1 - get_mantissa(float1) + mantissa;
     }
 
@@ -3165,16 +3167,20 @@ DEFINE_HOOK_FUNCTION(
     int32_t exp1 = get_exponent(float1);
     bool neg1 = is_negative(float1);
 
+    if (decimal_places > 15)
+        return INVALID_ARGUMENT;
+    
     if (neg1 && !absolute)
         return CANT_RETURN_NEGATIVE;
 
-    while (exp1 > -6)
+
+    while (exp1 > -decimal_places)
     {
         man1 *= 10;
         exp1--;
     }
 
-    while (exp1 < -6)
+    while (exp1 < -decimal_places)
     {
         man1 /= 10;
         exp1++;
@@ -3482,6 +3488,9 @@ DEFINE_HOOK_FUNCTION(
 
     if (read_len < 8)
         return NOT_AN_OBJECT;
+    
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
 
     uint8_t* upto = memory + read_ptr;
 

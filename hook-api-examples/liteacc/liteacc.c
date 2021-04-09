@@ -89,7 +89,7 @@ int64_t hook(int64_t reserved )
     if (memos_len > 0)  // mode [3]
     {
         /**
-         * 'Signed Memos' for hooks are supplied in triples in the following 'default' format as per XLS-14d:
+         * 'Signed Memos' for hooks are supplied in triples in the following 'default' format: 
          * NB: The +1 identifies the payload, you may provide multiple payloads
          * Memo: { MemoData: <app data>,   MemoFormat: "signed/payload+1",   MemoType: [application defined] }
          * Memo: { MemoData: <signature>,  MemoFormat: "signed/signature+1", MemoType: [application defined] }

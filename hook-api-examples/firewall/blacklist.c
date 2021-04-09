@@ -30,7 +30,7 @@ int64_t hook(int64_t reserved )
        accept(SBUF("Blacklist: Passing non-memo incoming transaction."), 0);
         
     /**
-     * 'Signed Memos' for hooks are supplied in triples in the following 'default' format as per XLS-14d:
+     * 'Signed Memos' for hooks are supplied in triples in the following 'default' format:
      * NB: The +1 identifies the payload, you may provide multiple payloads
      * Memo: { MemoData: <app data>,   MemoFormat: "signed/payload+1",   MemoType: [application defined] }
      * Memo: { MemoData: <signature>,  MemoFormat: "signed/signature+1", MemoType: [application defined] }
@@ -70,7 +70,7 @@ int64_t hook(int64_t reserved )
 
         // if any of these lookups fail the request is malformed
         if (data_lookup < 0 || format_lookup < 0)
-            rollback(SBUF("Blacklist: Memo transaction did not contain XLS14 format."), 40);
+            rollback(SBUF("Blacklist: Memo transaction did not contain correct memo format."), 40);
 
         // care must be taken to add the correct pointer to an offset returned by sub_array or sub_field
         // since we are working relative to the specific memo we must add memo_ptr, NOT memos or something else
