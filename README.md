@@ -7,11 +7,11 @@ Building `rippled` can be non-trivial, especially in this case since modified li
 1. Download and install docker.
 2. To download the container use:
 ```bash
-docker pull richardah/xrpld-hooks-testnet
+docker pull xrpllabsofficial/xrpld-hooks-testnet
 ```
 3. Then to run the container interactively use:
 ```bash
-docker run --name xrpld-hooks richardah/xrpld-hooks-testnet &
+docker run --name xrpld-hooks xrpllabsofficial/xrpld-hooks-testnet &
 docker exec -it xrpld-hooks /bin/bash
 ```
 4. Set up a second terminal to view the log:
