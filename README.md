@@ -10,17 +10,13 @@ If you already have the docker image and need to update then use this instructio
    docker rmi -f xrpllabsofficial/xrpld-hooks-testnet
    ```
 ### Starting the container
-1. Download and install docker.
-2. To download the container use:
-```bash
-docker pull xrpllabsofficial/xrpld-hooks-testnet
-```
-3. Then to run the container interactively use:
+1. Download and install docker: https://docs.docker.com/get-docker/
+2. Then to run the container interactively use:
 ```bash
 docker run -d --name xrpld-hooks xrpllabsofficial/xrpld-hooks-testnet
-docker exec -it xrpld-hooks /bin/bash
+docker exec -it xrpld-hooks bash
 ```
-4. Set up a second terminal to view the log:
+3. Set up a second terminal to view the log:
 
 Open a new terminal window on your system and run.
 ```bash
@@ -30,12 +26,11 @@ docker exec -it xrpld-hooks tail -f log
  Since there is rather a lot of log output you might find it useful to run this with  `grep -a <your account>` after you obtain an account you are interested in.
  E.g. `docker exec -it xrpld-hooks tail -f log | grep -a rEy6oGFEeKNiMUTTEzTDnMVfe7SvcBsHZK`
 
-5. If you need to kill and destroy the container and restart it:
+4. If you need to kill and destroy the container and restart it (if you are still attached to the container, type `exit` there to quit the container terminal):
 ```bash
-exit #from the container
 docker rm -f xrpld-hooks
 ```
- Then repeat step 3.
+ Then repeat step 2. If you need to fetch a newly published image, check the `Update an existing container` step above.
 
 ### Interacting with the container
 After following the above steps you will be inside a shell inside the container. Rippled will already be running with the correct settings. Read the README.md in the container for further instructions on installing and interacting with the example hooks.
