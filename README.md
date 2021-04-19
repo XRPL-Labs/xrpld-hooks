@@ -11,7 +11,7 @@ docker pull xrpllabsofficial/xrpld-hooks-testnet
 ```
 3. Then to run the container interactively use:
 ```bash
-docker run --name xrpld-hooks xrpllabsofficial/xrpld-hooks-testnet &
+docker run -d --name xrpld-hooks xrpllabsofficial/xrpld-hooks-testnet
 docker exec -it xrpld-hooks /bin/bash
 ```
 4. Set up a second terminal to view the log:
@@ -21,12 +21,13 @@ Open a new terminal window on your system and run.
 docker exec -it xrpld-hooks tail -f log
 ```
  This will show you the trace log of xrpld as it runs, which will be important for knowing if your transactions fail or succeed and what actions the hooks take.
+ Since there is rather a lot of log output you might find it useful to run this with  `grep -a <your account>` after you obtain an account you are interested in.
+ E.g. `docker exec -it xrpld-hooks tail -f log | grep -a rEy6oGFEeKNiMUTTEzTDnMVfe7SvcBsHZK`
 
-5. If you need to kill the container and restart it:
+5. If you need to kill and destroy the container and restart it:
 ```bash
 exit #from the container
-docker kill xrpld-hooks
-docker container prune -f
+docker rm -f xrpld-hooks
 ```
  Then repeat step 3.
 
@@ -43,6 +44,9 @@ The Faucet is on the [main page](https://hooks-testnet.xrpl-labs.com/). Make a n
 
 ## Testnet explorer
 Use the [Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/) to view transactions, accounts and hook state objects as you go.
+
+## Using Rippled commands
+Ensure you load `rippled` with the testnet config file. E.g. `./rippled --conf testnet.cfg server_info`
 
 ## File types
 1. The example hooks are written in C. Any file ending in `.c` is a hook. Any file ending in `.h` is a header file used by
