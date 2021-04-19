@@ -3,6 +3,12 @@ This is a fork of the rippled codebase incorporating the work-in-progress "Hooks
 
 ## Docker Container
 Building `rippled` can be non-trivial, especially in this case since modified libraries are used. We have provided a testnet docker container for your convenience. This container contains an instance of `rippled` configured as a "Hooks stock node" running on the Public Testnet. You can interact with it using the steps below:
+
+### Updating an existing container
+If you already have the docker image and need to update then use this instruction to pull and run the new version
+   ```bash
+   docker rmi -f xrpllabsofficial/xrpld-hooks-testnet
+   ```
 ### Starting the container
 1. Download and install docker.
 2. To download the container use:
