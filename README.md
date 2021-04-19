@@ -45,9 +45,6 @@ The Faucet is on the [main page](https://hooks-testnet.xrpl-labs.com/). Make a n
 ## Testnet explorer
 Use the [Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/) to view transactions, accounts and hook state objects as you go.
 
-## Using Rippled commands
-Ensure you load `rippled` with the testnet config file. E.g. `./rippled --conf testnet.cfg server_info`
-
 ## File types
 1. The example hooks are written in C. Any file ending in `.c` is a hook. Any file ending in `.h` is a header file used by
 all hooks.
