@@ -1,11 +1,15 @@
 /**
- * Hook API include for Webassembly XRPLD Hooks
+ * Hook API include file
  *
  * Note to the reader:
  * This include defines two types of things: external functions and macros
  * Functions are used sparingly because a non-inlining compiler may produce
  * undesirable output.
+ *
+ * Find documentation here: https://xrpl-hooks.readme.io/reference/
  */
+
+
 
 #ifndef HOOKAPI_INCLUDED
 #define HOOKAPI_INCLUDED 1

@@ -1,3 +1,7 @@
+/**
+ * These are helper macros for writing hooks, all of them are optional as is including hookmacro.h at all
+ */
+
 #include <stdint.h>
 #include "hookapi.h"
 #include "sfcodes.h"
