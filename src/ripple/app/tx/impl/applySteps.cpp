@@ -90,6 +90,7 @@ invoke_preflight(PreflightContext const& ctx)
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return Change ::preflight(ctx);
         default:
             assert(false);

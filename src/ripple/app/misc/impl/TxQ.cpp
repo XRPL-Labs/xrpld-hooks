@@ -1285,12 +1285,32 @@ TxQ::accept(Application& app, OpenView& view)
                     continue;
                 }
                 
-                /*if (stpTrans->getFieldU32(sfLastLedgerSequence) < view.info().seq)
+                auto seq = view.info().seq;
+                auto txnHash = stpTrans->getTransactionID();
+
+                if (stpTrans->getFieldU32(sfLastLedgerSequence) < seq)
                 {
-                    JLOG(j_.warn())
-                        << "Hook: Emitted transaction expired before it could be processed.";
+                    JLOG(j_.trace())
+                        << "Hook: Emission failure, adding cleanup pseudotxn to ledger " << seq;
+
+                    STTx efTx (
+                        ttEMIT_FAILURE,
+                        [seq, txnHash](auto& obj) {
+                            obj[sfLedgerSequence] = seq;
+                            obj[sfTransactionHash] = txnHash;
+                        });
+
+                    uint256 txID = efTx.getTransactionID();
+
+                    auto s = std::make_shared<ripple::Serializer>();
+                    efTx.add(*s);
+
+                    app.getHashRouter().setFlags(txID, SF_PRIVATE2);
+                    view.rawTxInsert(txID, std::move(s), nullptr);
+                    ledgerChanged = true;
+
                     continue;
-                }*/
+                }
 
                 auto fls = stpTrans->getFieldU32(sfFirstLedgerSequence);
                 if (fls > view.info().seq)
@@ -1303,7 +1323,7 @@ TxQ::accept(Application& app, OpenView& view)
                 // execution to here means we are adding the tx to the local set
                 if (fls >= view.info().seq)
                 {
-                    app.getHashRouter().setFlags(stpTrans->getTransactionID(), SF_PRIVATE2);
+                    app.getHashRouter().setFlags(txnHash, SF_PRIVATE2);
                     view.rawTxInsert(stpTrans->getTransactionID(), std::move(s), nullptr);
                     ledgerChanged = true;
                 }

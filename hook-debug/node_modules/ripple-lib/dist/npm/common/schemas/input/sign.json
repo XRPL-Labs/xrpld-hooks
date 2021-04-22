@@ -1,0 +1,55 @@
+{
+  "$schema": "http://json-schema.org/draft-04/schema#",
+  "title": "signParameters",
+  "type": "object",
+  "properties": {
+    "txJSON": {
+      "type": "string",
+      "description": "Transaction represented as a JSON string in rippled format."
+    },
+    "secret": {
+      "type": "string",
+      "format": "secret",
+      "description": "The secret of the account that is initiating the transaction. (This field cannot be used with keypair)."
+    },
+    "keypair": {
+      "type": "object",
+      "properties": {
+        "privateKey": {
+          "type": "privateKey",
+          "description": "The uppercase hexadecimal representation of the secp256k1 or Ed25519 private key."
+        },
+        "publicKey": {
+          "type": "publicKey",
+          "description": "The uppercase hexadecimal representation of the secp256k1 or Ed25519 public key."
+        }
+      },
+      "description": "The private and public key of the account that is initiating the transaction. (This field cannot be used with secret).",
+      "required": ["privateKey", "publicKey"],
+      "additionalProperties": false
+    },
+    "options": {
+      "type": "object",
+      "description": "Options that control the type of signature that will be generated.",
+      "properties": {
+        "signAs": {
+          "$ref": "address",
+          "description": "The account that the signature should count for in multisigning."
+        }
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false,
+  "required": ["txJSON"],
+  "oneOf": [
+    {
+      "required": ["secret"],
+      "not": {"required": ["keypair"]}
+    },
+    {
+      "required": ["keypair"],
+      "not": {"required": ["secret"]}
+    }
+  ]
+}

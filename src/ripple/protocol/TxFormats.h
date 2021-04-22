@@ -63,6 +63,7 @@ enum TxType {
     ttAMENDMENT = 100,
     ttFEE = 101,
     ttUNL_MODIFY = 102,
+    ttEMIT_FAILURE = 103,
 };
 
 /** Manages the list of known transaction formats.

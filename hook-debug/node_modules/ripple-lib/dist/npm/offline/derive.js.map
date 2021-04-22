@@ -1,0 +1,1 @@
+{"version":3,"file":"derive.js","sourceRoot":"","sources":["../../../src/offline/derive.ts"],"names":[],"mappings":";;AAAA,qDAA4D;AAYpD,wBAZA,+BAAa,CAYA;AAAE,wBAZA,+BAAa,CAYA;AAXpC,+DAA6D;AAE7D,SAAS,cAAc,CAAC,OAIvB;IACC,MAAM,cAAc,GAAG,+BAAa,CAAC,OAAO,CAAC,SAAS,CAAC,CAAA;IACvD,OAAO,+CAAwB,CAAC,cAAc,EAAE,OAAO,CAAC,GAAG,EAAE,OAAO,CAAC,IAAI,CAAC,CAAA;AAC5E,CAAC;AAEqC,wCAAc"}

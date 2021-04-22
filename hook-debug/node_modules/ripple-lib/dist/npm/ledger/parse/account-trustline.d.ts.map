@@ -1,0 +1,1 @@
+{"version":3,"file":"account-trustline.d.ts","sourceRoot":"","sources":["../../../../src/ledger/parse/account-trustline.ts"],"names":[],"mappings":"AAEA,OAAO,EACL,SAAS,EACT,kBAAkB,EACnB,MAAM,uCAAuC,CAAA;AAI9C,iBAAS,qBAAqB,CAAC,SAAS,EAAE,SAAS,GAAG,kBAAkB,CAsBvE;AAED,eAAe,qBAAqB,CAAA"}

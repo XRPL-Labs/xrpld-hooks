@@ -1,0 +1,13 @@
+export declare const computeBinaryTransactionHash: (txBlobHex: string) => string;
+export declare const computeTransactionHash: (txJSON: any) => string;
+export declare const computeBinaryTransactionSigningHash: (txBlobHex: string) => string;
+export declare const computeAccountLedgerObjectID: (address: string) => string;
+export declare const computeSignerListLedgerObjectID: (address: string) => string;
+export declare const computeOrderID: (address: string, sequence: number) => string;
+export declare const computeTrustlineHash: (address1: string, address2: string, currency: string) => string;
+export declare const computeTransactionTreeHash: (transactions: any[]) => string;
+export declare const computeStateTreeHash: (entries: any[]) => string;
+export declare const computeLedgerHash: (ledgerHeader: any) => string;
+export declare const computeEscrowHash: (address: any, sequence: any) => string;
+export declare const computePaymentChannelHash: (address: any, dstAddress: any, sequence: any) => string;
+//# sourceMappingURL=index.d.ts.map

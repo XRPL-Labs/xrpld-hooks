@@ -1,0 +1,1 @@
+{"version":3,"file":"accountobjects.d.ts","sourceRoot":"","sources":["../../../src/ledger/accountobjects.ts"],"names":[],"mappings":"AACA,OAAO,EAAC,SAAS,EAAC,MAAM,IAAI,CAAA;AAC5B,OAAO,EACL,wBAAwB,EACxB,sBAAsB,EACvB,MAAM,0CAA0C,CAAA;AAEjD,wBAA8B,iBAAiB,CAC7C,IAAI,EAAE,SAAS,EACf,OAAO,EAAE,MAAM,EACf,OAAO,GAAE,wBAA6B,GACrC,OAAO,CAAC,sBAAsB,CAAC,CAkBjC"}

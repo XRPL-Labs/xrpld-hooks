@@ -62,6 +62,9 @@ private:
 
     TER
     applyUNLModify();
+
+    TER
+    applyEmitFailure();
 };
 
 }  // namespace ripple

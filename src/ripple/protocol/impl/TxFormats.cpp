@@ -143,6 +143,14 @@ TxFormats::TxFormats()
         },
         commonFields);
 
+    add(jss::EmitFailure,
+        ttEMIT_FAILURE,
+        {
+            {sfLedgerSequence, soeREQUIRED},
+            {sfTransactionHash, soeREQUIRED},
+        },
+        commonFields);
+
     add(jss::SetFee,
         ttFEE,
         {
