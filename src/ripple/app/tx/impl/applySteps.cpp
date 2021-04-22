@@ -182,6 +182,7 @@ invoke_preclaim(PreclaimContext const& ctx)
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return invoke_preclaim<Change>(ctx);
         default:
             assert(false);
@@ -239,6 +240,7 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             return Change::calculateBaseFee(view, tx);
         default:
             assert(false);
@@ -309,6 +311,7 @@ invoke_calculateConsequences(STTx const& tx)
         case ttAMENDMENT:
         case ttFEE:
         case ttUNL_MODIFY:
+        case ttEMIT_FAILURE:
             [[fallthrough]];
         default:
             assert(false);
@@ -411,7 +414,8 @@ invoke_apply(ApplyContext& ctx)
         }
         case ttAMENDMENT:
         case ttFEE:
-        case ttUNL_MODIFY: {
+        case ttUNL_MODIFY: 
+        case ttEMIT_FAILURE: {
             Change p(ctx);
             return p();
         }
