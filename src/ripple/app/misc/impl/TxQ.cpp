@@ -1293,11 +1293,20 @@ TxQ::accept(Application& app, OpenView& view)
                     JLOG(j_.trace())
                         << "Hook: Emission failure, adding cleanup pseudotxn to ledger " << seq;
 
+                    auto const& emitDetails =
+                        const_cast<ripple::STTx&>(*stpTrans).getField(sfEmitDetails).downcast<STObject>();
+
                     STTx efTx (
                         ttEMIT_FAILURE,
-                        [seq, txnHash](auto& obj) {
+                        [seq, txnHash, emitDetails](auto& obj) {
                             obj[sfLedgerSequence] = seq;
                             obj[sfTransactionHash] = txnHash;
+                            obj.emplace_back(emitDetails);
+                            /*std::unique_ptr<STBase> ed = 
+                                std::make_unique<STBase>(emitDetails);
+                            ed->setFName(sfEmitDetails);
+                            obj.set(std::move(ed));*/
+
                         });
 
                     uint256 txID = efTx.getTransactionID();
@@ -1305,6 +1314,7 @@ TxQ::accept(Application& app, OpenView& view)
                     auto s = std::make_shared<ripple::Serializer>();
                     efTx.add(*s);
 
+                    // RH TODO: should this txn be added in a different way to prevent any chance of failure
                     app.getHashRouter().setFlags(txID, SF_PRIVATE2);
                     view.rawTxInsert(txID, std::move(s), nullptr);
                     ledgerChanged = true;
