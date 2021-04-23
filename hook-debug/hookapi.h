@@ -15,8 +15,8 @@
 #define HOOKAPI_INCLUDED 1
 #include <stdint.h>
 
-int64_t hook(int64_t reserved) __attribute__((used));
-int64_t cbak(int64_t reserved) __attribute__((used));
+int64_t hook(uint32_t reserved) __attribute__((used));
+int64_t cbak(uint32_t reserved) __attribute__((used));
 
 /**
  * Guard function. Each time a loop appears in your code a call to this must be the first branch instruction after the

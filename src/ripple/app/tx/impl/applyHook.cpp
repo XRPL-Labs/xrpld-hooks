@@ -509,7 +509,8 @@ hook::HookResult
         ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */
         Blob hook, ApplyContext& applyCtx,
         const AccountID& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
-        bool callback = false)
+        bool callback = false,
+        uint32_t param)
 {
 
     HookContext hookCtx =
@@ -528,7 +529,9 @@ hook::HookResult
                 std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
-            .exitCode = -1
+            .exitCode = -1,
+            .callback = callback,
+            .param = param
         }
     };
 
@@ -540,7 +543,7 @@ hook::HookResult
     vm.registerModule(env);
 
     std::vector<SSVM::ValVariant> params, results;
-    params.push_back(0UL);
+    params.push_back(param);
 
     JLOG(j.trace())
         << "HookInfo[" << HC_ACC() << "]: creating wasm instance";
@@ -1951,6 +1954,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     emit,
+    uint32_t write_ptr, uint32_t write_len,
     uint32_t read_ptr, uint32_t read_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -1990,10 +1994,12 @@ DEFINE_HOOK_FUNCTION(
      * 2. PubSigningKey: 000000000000000
      * 3. sfEmitDetails present and valid
      * 4. No sfSignature
-     * 5. LastLedgerSeq > current ledger, > firstledgerseq
+     * 5. LastLedgerSeq > current ledger, > firstledgerseq & LastLedgerSeq < seq + 5
      * 6. FirstLedgerSeq > current ledger
      * 7. Fee must be correctly high
+     * 8. The generation cannot be higher than 10
      */
+
 
     // rule 1: sfSequence must be present and 0
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
@@ -2047,6 +2053,14 @@ DEFINE_HOOK_FUNCTION(
     {
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: sfEmitDetails malformed.";
+        return EMISSION_FAILURE;
+    }
+
+    // rule 8: emit generation cannot exceed 10
+    if (emitDetails.getFieldU32(sfEmitGeneration) >= 10)
+    {
+        JLOG(j.trace())
+            << "HookEmit[" << HC_ACC() << "]: sfEmitGeneration was 10 or more.";
         return EMISSION_FAILURE;
     }
 
@@ -2110,7 +2124,6 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // rule 5: LastLedgerSeq must be present and after current ledger
-    // RH TODO: limit lastledgerseq, is this needed?
 
     uint32_t tx_lls = stpTrans->getFieldU32(sfLastLedgerSequence);
     uint32_t ledgerSeq = applyCtx.app.getLedgerMaster().getValidLedgerIndex() + 1;
@@ -2121,13 +2134,20 @@ DEFINE_HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
+    if (tx_lls > ledgerSeq + 5)
+    {
+        JLOG(j.trace())
+            << "HookEmit[" << HC_ACC() << "]: sfLastLedgerSequence cannot be greater than current seq + 5";
+        return EMISSION_FAILURE;
+    }
+
     // rule 6
     if (!stpTrans->isFieldPresent(sfFirstLedgerSequence) ||
             stpTrans->getFieldU32(sfFirstLedgerSequence) > tx_lls)
     {
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: sfFirstLedgerSequence must be present and "
-            << ">= LastLedgerSequence";
+            << "<= LastLedgerSequence";
         return EMISSION_FAILURE;
     }
 

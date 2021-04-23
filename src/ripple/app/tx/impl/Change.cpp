@@ -260,8 +260,10 @@ Change::applyEmitFailure()
 
         if (!sle)
         {
-            JLOG(j_.warn())
-                << "HookError[" << txnID << "]: ttEmitFailure (Change) tried to remove already removed emittedtxn";
+            // RH NOTE: This will now be the normal execution path, the alternative will only occur if something
+            // went really wrong with the hook callback
+//            JLOG(j_.warn())
+//                << "HookError[" << txnID << "]: ttEmitFailure (Change) tried to remove already removed emittedtxn";
             break;
         }
 

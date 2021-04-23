@@ -1,3 +1,5 @@
+const port = (process.env['P'] ? process.env['P'] : 6005)
+
 if (process.argv.length < 3)
 {
     console.log("Usage: node carbon <account family seed>")
@@ -9,7 +11,7 @@ const address = keypairs.deriveAddress(keypairs.deriveKeypair(secret).publicKey)
 
 const RippleAPI = require('ripple-lib').RippleAPI;
 const fs = require('fs');
-const api = new RippleAPI({server: 'ws://localhost:6005'});
+const api = new RippleAPI({server: 'ws://localhost:' + port});
 api.on('error', (errorCode, errorMessage) => {console.log(errorCode + ': ' + errorMessage);});
 api.on('connected', () => {console.log('connected');});
 api.on('disconnected', (code) => {console.log('disconnected, code:', code);});

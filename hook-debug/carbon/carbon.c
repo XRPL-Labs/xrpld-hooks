@@ -1,12 +1,13 @@
 #include <stdint.h>
 #include "../hookapi.h"
 
-int64_t cbak(int64_t reserved)
+int64_t cbak(uint32_t reserved)
 {
+    trace_num(SBUF("cbak: "), reserved);
     return 0;
 }
 
-int64_t hook(int64_t reserved ) {
+int64_t hook(uint32_t reserved ) {
 
     TRACESTR("Carbon: started");
 

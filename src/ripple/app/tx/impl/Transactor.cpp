@@ -788,7 +788,12 @@ Transactor::operator()()
                  hook::apply(
                         hookCallback->getFieldH256(sfHookSetTxnID),
                         hookCallback->getFieldH256(sfHookHash),
-                        hookCallback->getFieldVL(sfCreateCode), ctx_, callbackAccountID, true);
+                        hookCallback->getFieldVL(sfCreateCode),
+                        ctx_,
+                        callbackAccountID,
+                        true, 
+                        safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ?
+                                1UL : 0UL);
 
                 }
                 catch (std::exception& e)

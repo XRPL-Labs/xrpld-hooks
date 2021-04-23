@@ -221,7 +221,8 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base,      uint32_t tx_byte_count);
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve,       uint32_t count );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
-    DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t read_ptr,  uint32_t read_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len );
 
     DECLARE_HOOK_FUNCTION(int64_t,  float_set,          int32_t exponent,   int64_t mantissa );
     DECLARE_HOOK_FUNCTION(int64_t,  float_multiply,     int64_t float1,     int64_t float2 );
@@ -305,7 +306,8 @@ namespace hook {
             ripple::Blob,
             ripple::ApplyContext&,
             const ripple::AccountID&,
-            bool callback);
+            bool callback,
+            uint32_t param = 0);
 
     struct HookContext;
 
@@ -328,6 +330,8 @@ namespace hook {
         std::string exitReason {""};
         int64_t exitCode {-1};
         uint64_t instructionCount {0};
+        bool callback = false;
+        int64_t param = 0;
     };
 
     class HookModule;
