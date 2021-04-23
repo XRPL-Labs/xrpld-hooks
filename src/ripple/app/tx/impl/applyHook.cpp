@@ -532,8 +532,17 @@ hook::HookResult
             .exitCode = -1,
             .callback = callback,
             .param = param
-        }
+        },
+        .emitFailure = 
+                callback && param & 1
+                ? std::optional<ripple::STObject>(
+                    (*(applyCtx.view().peek(
+                        keylet::emitted(applyCtx.tx.getFieldH256(sfTransactionHash)))
+                    )).downcast<STObject>()
+                )
+                : std::optional<ripple::STObject>()
     };
+
 
     auto const& j = applyCtx.app.journal("View");
 
@@ -1009,12 +1018,15 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     otxn_id,
-    uint32_t write_ptr, uint32_t write_len )
+    uint32_t write_ptr, uint32_t write_len, uint32_t flags )
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    auto const& txID = applyCtx.tx.getTransactionID();
+    auto const& txID = 
+        (hookCtx.emitFailure && !flags
+         ? applyCtx.tx.getFieldH256(sfTransactionHash)
+         : applyCtx.tx.getTransactionID());
 
     if (txID.size() > write_len)
         return TOO_SMALL;
@@ -1034,6 +1046,9 @@ DEFINE_HOOK_FUNCNARG(
         otxn_type )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (hookCtx.emitFailure)
+        return safe_cast<TxType>(hookCtx.emitFailure->getFieldU16(sfTransactionType));
 
     return applyCtx.tx.getTxnType();
 }
@@ -1056,10 +1071,18 @@ DEFINE_HOOK_FUNCTION(
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
+    
     auto const& st_tx =
-        std::make_shared<ripple::STObject>(const_cast<ripple::STTx&>(applyCtx.tx).downcast<ripple::STObject>());
+        std::make_shared<ripple::STObject>(
+            hookCtx.emitFailure
+                ? *(hookCtx.emitFailure)
+                : const_cast<ripple::STTx&>(applyCtx.tx).downcast<ripple::STObject>()
+        );
 
-    auto const& txID = applyCtx.tx.getTransactionID();
+    auto const& txID = 
+        hookCtx.emitFailure
+            ? applyCtx.tx.getFieldH256(sfTransactionHash)
+            : applyCtx.tx.getTransactionID();
 
     hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
             .id = std::vector<uint8_t>{ txID.data(), txID.data() + txID.size() },
@@ -1181,17 +1204,19 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    auto const& tx = applyCtx.tx;
 
     SField const& fieldType = ripple::SField::getField( field_id );
 
     if (fieldType == sfInvalid)
         return INVALID_FIELD;
 
-    if (!tx.isFieldPresent(fieldType))
+    if (!applyCtx.tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
-    auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
+    auto const& field = 
+        hookCtx.emitFailure
+        ? hookCtx.emitFailure->getField(fieldType)
+        : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
 
     std::string out = field.getText();
 
@@ -1217,17 +1242,19 @@ DEFINE_HOOK_FUNCTION(
     if (write_ptr != 0 && NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    auto const& tx = applyCtx.tx;
 
     SField const& fieldType = ripple::SField::getField( field_id );
 
     if (fieldType == sfInvalid)
         return INVALID_FIELD;
 
-    if (!tx.isFieldPresent(fieldType))
+    if (!applyCtx.tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
-    auto const& field = const_cast<ripple::STTx&>(tx).getField(fieldType);
+    auto const& field = 
+        hookCtx.emitFailure
+        ? hookCtx.emitFailure->getField(fieldType)
+        : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
 
     bool is_account = field.getSType() == STI_ACCOUNT; //RH TODO improve this hack
 
@@ -2958,7 +2985,7 @@ DEFINE_HOOK_FUNCTION(
     *out++ = ( burden >>  8 ) & 0xFFU;
     *out++ = ( burden >>  0 ) & 0xFFU;
     *out++ = 0x5A; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
-    if (otxn_id(hookCtx, memoryCtx, out - memory, 32) != 32)
+    if (otxn_id(hookCtx, memoryCtx, out - memory, 32, 1) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x5B; // sfEmitNonce                                     /* upto =  49 | size = 33 */

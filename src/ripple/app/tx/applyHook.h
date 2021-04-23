@@ -284,7 +284,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_field,         uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_field_txt,     uint32_t write_ptr, uint32_t write_len, uint32_t field_id );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_generation     );
-    DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len, uint32_t flags );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_slot,          uint32_t slot_no );
 
@@ -331,7 +331,7 @@ namespace hook {
         int64_t exitCode {-1};
         uint64_t instructionCount {0};
         bool callback = false;
-        int64_t param = 0;
+        uint32_t param = 0;
     };
 
     class HookModule;
@@ -360,6 +360,9 @@ namespace hook {
         int64_t fee_base = 0;
         std::map<uint32_t, uint32_t> guard_map {}; // iteration guard map <id -> upto_iteration>
         HookResult result;
+        std::optional<ripple::STObject> emitFailure;    // if this is a callback from a failed 
+                                                        // emitted txn then this optional becomes
+                                                        // populated with the SLE
         const HookModule* module = 0;
     };
 
