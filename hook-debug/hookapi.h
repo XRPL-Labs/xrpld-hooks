@@ -173,7 +173,7 @@ extern int64_t etxn_generation     (void);
  * @param read_len The length of the transaction.
  * @return A negative integer if the emission failed.
  */
-extern int64_t emit                (uint32_t read_ptr,   uint32_t read_len);
+extern int64_t emit                (uint32_t write_ptr, uint32_t write_len, uint32_t read_ptr, uint32_t read_len);
 
 /**
  * Retrieve the account the hook is running on.
@@ -322,7 +322,7 @@ extern int64_t otxn_generation     (void);
  * @param write_len The length of the buffer.
  * @return The number of bytes written into the buffer or a negative integer on failure.
  */
-extern int64_t otxn_id             (uint32_t write_ptr,  uint32_t write_len);
+extern int64_t otxn_id             (uint32_t write_ptr,  uint32_t write_len, uint32_t flags);
 
 /**
  * Retrieve the Transaction Type (e.g. ttPayment = 0) of the originating transaction.

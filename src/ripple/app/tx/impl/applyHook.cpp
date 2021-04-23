@@ -1987,6 +1987,9 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
+    
+    if (NOT_IN_BOUNDS(write_ptr, 32, memory_length))
+        return OUT_OF_BOUNDS;
 
     auto& app = hookCtx.applyCtx.app;
 
@@ -2215,7 +2218,20 @@ DEFINE_HOOK_FUNCTION(
     }
 
     hookCtx.result.emittedTxn.push(tpTrans);
-    return read_len;
+
+    auto const& txID = 
+        tpTrans->getID();
+    
+    if (txID.size() > write_len)
+        return TOO_SMALL;
+
+    if (NOT_IN_BOUNDS(write_ptr, txID.size(), memory_length))
+        return OUT_OF_BOUNDS;
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, txID.size(),
+        txID.data(), txID.size(),
+        memory, memory_length);
 }
 
 // When implemented will return the hash of the current hook
