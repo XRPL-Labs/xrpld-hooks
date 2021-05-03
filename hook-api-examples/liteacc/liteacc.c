@@ -327,7 +327,8 @@ int64_t hook(int64_t reserved )
         PREPARE_PAYMENT_SIMPLE(tx, drops_to_send, fee_base, destination, dest_tag, src_tag);
 
         // emit the transaction
-        emit(SBUF(tx));
+        uint8_t emithash[32];
+        emit(SBUF(emithash), SBUF(tx));
 
         // accept the originating transaction, this will cause the state updates to propagate and the emitted tx
         // to enter the transaction queue atomically.

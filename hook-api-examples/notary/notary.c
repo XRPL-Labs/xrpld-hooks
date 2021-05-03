@@ -430,7 +430,8 @@ int64_t hook(int64_t reserved)
     if (tx_len <= 0)
         rollback(SBUF("Notary: Emplacing sfFee failed."), 1);
     
-    if (emit(buffer2, tx_len) < 0)
+    uint8_t emithash[32];
+    if (emit(SBUF(emithash), buffer2, tx_len) < 0)
         accept(SBUF("Notary: All conditions met but emission failed: proposed txn was malformed."), 1);
 
     accept(SBUF("Notary: Emitted multisigned txn"), 0);

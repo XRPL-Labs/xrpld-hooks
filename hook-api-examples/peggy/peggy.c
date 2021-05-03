@@ -276,7 +276,8 @@ int64_t hook(int64_t reserved)
         uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE];
         PREPARE_PAYMENT_SIMPLE_TRUSTLINE(txn_out, amt_out, fee, otxn_accid, source_tag, source_tag);
 
-        if (emit(SBUF(txn_out)) < 0)
+        uint8_t emithash[32];
+        if (emit(SBUF(emithash), SBUF(txn_out)) < 0)
             rollback(SBUF("Peggy: Emitting txn failed"), 1);
 
         accept(SBUF("Peggy: Sent you PUSD!"), 0);
@@ -392,7 +393,8 @@ int64_t hook(int64_t reserved)
         uint8_t txn_out[PREPARE_PAYMENT_SIMPLE_SIZE];
         PREPARE_PAYMENT_SIMPLE(txn_out, float_int(xrp_to_send, 6, 0), fee, otxn_accid, source_tag, source_tag);
 
-        if (emit(SBUF(txn_out)) < 0)
+        uint8_t emithash[32];
+        if (emit(SBUF(emithash), SBUF(txn_out)) < 0)
             rollback(SBUF("Peggy: Emitting txn failed"), 1);
 
         accept(SBUF("Peggy: Sent you XRP!"), 0);

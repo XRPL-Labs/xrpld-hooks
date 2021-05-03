@@ -173,7 +173,7 @@ extern int64_t etxn_generation     (void);
  * @param read_len The length of the transaction.
  * @return A negative integer if the emission failed.
  */
-extern int64_t emit                (uint32_t read_ptr,   uint32_t read_len);
+extern int64_t emit                (uint32_t write_ptr, uint32_t write_len, uint32_t read_ptr, uint32_t read_len);
 
 /**
  * Retrieve the account the hook is running on.

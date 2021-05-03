@@ -85,7 +85,8 @@ int64_t hook(int64_t reserved ) {
     PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, carbon_accid, 0, 0);
 
     // emit the transaction
-    emit(SBUF(tx));
+    uint8_t emithash[32];
+    emit(SBUF(emithash), SBUF(tx));
 
     // accept and allow the original transaction through
     accept(SBUF("Carbon: Emitted transaction"), 0);
