@@ -701,6 +701,8 @@ Transactor::operator()()
         (result == tesSUCCESS || result == tecHOOK_REJECTED))
     {
 
+        auto const& ledger = ctx_.view();
+        auto const& accountID = ctx_.tx.getAccountID(sfAccount);
         std::optional<hook::HookResult> sendResult;
         std::optional<hook::HookResult> recvResult;
         do
@@ -717,8 +719,6 @@ Transactor::operator()()
              * > If a hook is not present it is deemed as though it ran and called ACCEPT()
              */
 
-            auto const& ledger = ctx_.view();
-            auto const& accountID = ctx_.tx.getAccountID(sfAccount);
             auto const& hookSending = ledger.read(keylet::hook(accountID));
 
             // First check if the Sending account has a hook that can be fired
@@ -760,13 +760,27 @@ Transactor::operator()()
 
                     if (recvResult->exitType != hook_api::ExitType::ACCEPT)
                         break;
-
                 }
             }
+        }
+        while (0); // used to make above control flow easy
 
 
-            // Finally check if there is a callback
-            if (ctx_.tx.isFieldPresent(sfEmitDetails))
+
+        // Three possible outcomes after execution: An error, a rollback or an accept
+        if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
+            (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
+            // error condition
+            result = temMALFORMED;
+        else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
+                   (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
+            // rollback condition
+            result = tecHOOK_REJECTED;
+        
+        // Finally check if there is a callback
+        do
+        {
+            if (ctx_.tx.isFieldPresent(sfEmitDetails) && result == tesSUCCESS)
             {
                 auto const& emitDetails =
                     const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
@@ -785,36 +799,23 @@ Transactor::operator()()
 
                 // this call will clean up ltEMITTED_NODE as well
                 try {
-                 hook::apply(
-                        hookCallback->getFieldH256(sfHookSetTxnID),
-                        hookCallback->getFieldH256(sfHookHash),
-                        hookCallback->getFieldVL(sfCreateCode),
-                        ctx_,
-                        callbackAccountID,
-                        true, 
-                        safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ?
-                                1UL : 0UL);
-
+                hook::apply(
+                    hookCallback->getFieldH256(sfHookSetTxnID),
+                    hookCallback->getFieldH256(sfHookHash),
+                    hookCallback->getFieldVL(sfCreateCode),
+                    ctx_,
+                    callbackAccountID,
+                    true, 
+                    safe_cast<TxType>(
+                        ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL);
                 }
                 catch (std::exception& e)
                 {
                     JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
                 }
             }
-
         }
-        while (0); // used to make above control flow easy
-
-
-        // Three possible outcomes after execution: An error, a rollback or an accept
-        if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
-            (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
-            // error condition
-            result = temMALFORMED;
-        else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
-                   (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
-            // rollback condition
-            result = tecHOOK_REJECTED;
+        while(0);
 
         if (sendResult)
             hook::commitChangesToLedger(*sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
