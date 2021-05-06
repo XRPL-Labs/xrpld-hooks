@@ -60,6 +60,7 @@ enum class LedgerNameSpace : std::uint16_t {
     DEPOSIT_PREAUTH = 'p',
     NEGATIVE_UNL = 'N',
     HOOK = 'H',
+    HOOK_DIR = 'J',
     HOOK_STATE = 'v',
     EMITTED = 'E',
     EMITTED_DIR = 'F',
@@ -129,6 +130,14 @@ emittedDir() noexcept
     return ret;
 }
 
+Keylet const&
+hookDir() noexcept
+{
+    static Keylet const ret{
+        ltDIR_NODE, indexHash(LedgerNameSpace::HOOK_DIR)};
+    return ret;
+}
+
 Keylet
 emitted(uint256 const& id) noexcept
 {
@@ -136,15 +145,15 @@ emitted(uint256 const& id) noexcept
 }
 
 Keylet
-hook(AccountID const& id) noexcept
+hook(uint256 const& hash) noexcept
 {
-    return {ltHOOK, indexHash(LedgerNameSpace::HOOK, id)};
+    return {ltHOOK, indexHash(LedgerNameSpace::HOOK, hash)};
 }
 
 Keylet
-hook_state(AccountID const& id, uint256 const& key) noexcept
+hook_state(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept
 {
-    return {ltHOOK_STATE, indexHash(LedgerNameSpace::HOOK_STATE, id, key)};
+    return {ltHOOK_STATE, indexHash(LedgerNameSpace::HOOK_STATE, id, key, ns)};
 }
 
 Keylet

@@ -105,7 +105,7 @@ const std::set<std::string> import_whitelist
     "float_sign_set",
     "float_sto",
     "float_sto_set",
-    "float_sum",    
+    "float_sum",
     "fee_base",
     "_g",
     "hook_account",
@@ -169,7 +169,7 @@ check_guard(
     std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
     std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
     std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
-    
+
     // block depth level -> { largest guard, rolling instruction count } //RH UPTO
     std::map<int, std::pair<uint32_t, uint64_t>> instruction_count;
 
@@ -204,7 +204,7 @@ check_guard(
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
-                    << "Hook calls a function outside of the whitelisted imports " 
+                    << "Hook calls a function outside of the whitelisted imports "
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return temMALFORMED;
             }
@@ -251,7 +251,7 @@ check_guard(
                                 << "HookSet[" << HS_ACC() << "]: GuardCheck "
                                 << "Depth " << block_depth << " guard: " << a;
                         }
-                    }                   
+                    }
 
                     // clear stack and maps
                     while (stack.size() > 0)
@@ -800,7 +800,7 @@ SetHook::preflight(PreflightContext const& ctx)
                         parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                         if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                         {
-                            JLOG(ctx.j.trace()) 
+                            JLOG(ctx.j.trace())
                                 << "HookSet[" << HS_ACC() << "]: Invalid local type. "
                                 << "Codesec: " << j << " "
                                 << "Local: " << k << " "
@@ -959,6 +959,7 @@ SetHook::setHook()
     auto const ownerDirKeylet = keylet::ownerDir(account_);
     auto const hookKeylet = keylet::hook(account_);
 
+
     // This may be either a create or a replace.  Preemptively remove any
     // old hook.  May reduce the reserve, so this is done before
     // checking the reserve.
@@ -1030,7 +1031,7 @@ SetHook::setHook()
         hook->setFieldU32(sfHookStateDataMaxSize, blobMax);
         hook->setFieldU64(sfHookOn, hookOn_);
         hook->setFieldH256(sfHookSetTxnID, ctx_.tx.getTransactionID());
-        hook->setFieldH256(sfHookHash, ripple::sha512Half(      
+        hook->setFieldH256(sfHookHash, ripple::sha512Half(
             ripple::HashPrefix::hookByteCode,
             hook_
         ));

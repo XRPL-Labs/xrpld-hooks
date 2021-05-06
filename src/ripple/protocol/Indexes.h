@@ -56,10 +56,13 @@ Keylet
 emitted(uint256 const& id) noexcept;
 
 Keylet
-hook(AccountID const& id) noexcept;
+hook(uint256 const& hash) noexcept;
 
 Keylet
-hook_state(AccountID const& id, uint256 const& key) noexcept;
+hook_state(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept;
+
+Keylet
+hookDir() noexcept;
 
 /** AccountID root */
 Keylet
