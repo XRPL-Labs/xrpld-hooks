@@ -57,8 +57,8 @@ enum TxType {
     ttACCOUNT_DELETE = 21,
 
     ttHOOK_SET = 22,
-    ttINVOKE   [[maybe_unused]] = 23,
-    ttBATCH    [[maybe_unused]] = 24,
+    ttLOT       [[maybe_unused]] = 23,
+    ttBATCH     [[maybe_unused]] = 24,
 
     ttAMENDMENT = 100,
     ttFEE = 101,

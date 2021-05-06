@@ -195,9 +195,9 @@ SF_U256 const sfConsensusHash(access, STI_HASH256, 23, "ConsensusHash");
 SF_U256 const sfCheckID(access, STI_HASH256, 24, "CheckID");
 SF_U256 const sfValidatedHash(access, STI_HASH256, 25, "ValidatedHash");
 SF_U256 const sfHookStateKey(access, STI_HASH256, 26, "HookStateKey");
-SF_U256 const sfHookSetTxnID(access, STI_HASH256, 27, "HookSetTxnID");
+SF_U256 const sfHookCreationTxnID(access, STI_HASH256, 27, "HookCreationTxnID");
 SF_U256 const sfHookHash(access, STI_HASH256, 28, "HookHash");
-SF_U256 const sfHookNamespace(access, STI_HASH256, 28, "HookNamespace");
+SF_U256 const sfHookNamespace(access, STI_HASH256, 29, "HookNamespace");
 
 // currency amount (common)
 SF_Amount const sfAmount(access, STI_AMOUNT, 1, "Amount");

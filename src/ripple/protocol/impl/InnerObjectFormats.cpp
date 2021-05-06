@@ -37,6 +37,36 @@ InnerObjectFormats::InnerObjectFormats()
             {sfSigningPubKey, soeREQUIRED},
             {sfTxnSignature, soeREQUIRED},
         });
+
+    add(sfHook.jsonName.c_str(),
+        sfHook.getCode(),
+        {
+            {sfHookSequence,    soeREQUIRED},
+            {sfHookOn,          soeOPTIONAL},
+            {sfFlags,           soeOPTIONAL},
+            {sfHookNamespace,   soeOPTIONAL},
+            {sfHookHash,        soeREQUIRED},
+            {sfHookParameters,  soeOPTIONAL},
+            {sfHookDefinition,  soeOPTIONAL}
+        });
+
+    add(sfHookDefinition.jsonName.c_str(),
+        sfHookDefinition.getCode(),
+        {
+            {sfHookOn,          soeREQUIRED},
+            {sfHookNamespace,   soeREQUIRED},
+            {sfHookParameters,  soeREQUIRED},
+            {sfHookApiVersion,  soeREQUIRED},
+            {sfCreateCode,      soeREQUIRED},
+        }); 
+
+    add(sfHookParameter.jsonName.c_str(),
+        sfHookParameter.getCode(),
+        {
+            {sfHookParameterName,   soeREQUIRED},
+            {sfHookParameterValue,  soeREQUIRED},
+        });
+
 }
 
 InnerObjectFormats const&

@@ -559,6 +559,15 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
+    if (!ctx.tx.isFieldPresent(sfHooks))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC() << "]: Malformed transaction: SetHook lacked sfHooks array.";
+        return temMALFORMED;
+    }
+
+
+
 
     if (!ctx.tx.isFieldPresent(sfCreateCode) ||
         !ctx.tx.isFieldPresent(sfHookOn))
@@ -863,8 +872,8 @@ SetHook::doApply()
 void
 SetHook::preCompute()
 {
-    hook_ = ctx_.tx.getFieldVL(sfCreateCode);
-    hookOn_ = ctx_.tx.getFieldU64(sfHookOn);
+    //hook_ = ctx_.tx.getFieldVL(sfCreateCode);
+    //hookOn_ = ctx_.tx.getFieldU64(sfHookOn);
     return Transactor::preCompute();
 }
 
