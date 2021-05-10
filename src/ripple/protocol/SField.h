@@ -418,6 +418,7 @@ extern SF_U64 const sfHookInstructionCount;
 extern SF_U64 const sfEmitBurden; 
 extern SF_U64 const sfHookReturnCode;       // the code returned by hook dev (rollback or accept) NOT exe. result 
 extern SF_U64 const sfHookReferenceCount;
+extern SF_U64 const sfHookReorder;
 
 // 128-bit
 extern SF_U128 const sfEmailHash;
@@ -540,7 +541,7 @@ extern SField const sfSigner;
 extern SField const sfMajority;
 extern SField const sfNegativeUNLEntry;
 extern SField const sfEmittedTxn;
-extern SField const sfHook;
+extern SField const sfHookSet;
 extern SField const sfHookDefinition;
 extern SField const sfHookParameter;
 
@@ -559,7 +560,7 @@ extern SField const sfNegativeUNL;
 extern SField const sfEmitDetails;
 extern SField const sfHookExecutions; // array of executions
 extern SField const sfHookExecution;  // actual execution result
-extern SField const sfHooks;
+extern SField const sfHookSets;
 extern SField const sfHookParameters;
 //------------------------------------------------------------------------------
 

@@ -152,6 +152,7 @@ SF_U64 const sfHookOn(access, STI_UINT64, 16, "HookOn");
 SF_U64 const sfHookInstructionCount(access, STI_UINT64, 17, "HookInstructionCount");
 SF_U64 const sfHookReturnCode(access, STI_UINT64, 18, "HookReturnCode");
 SF_U64 const sfHookReferenceCount(access, STI_UINT64, 19, "HookReferenceCount");
+SF_U64 const sfHookReorder(access, STI_UINT64, 20, "HookReorder");
 
 
 // 128-bit
