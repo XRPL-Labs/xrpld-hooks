@@ -38,14 +38,16 @@ InnerObjectFormats::InnerObjectFormats()
             {sfTxnSignature, soeREQUIRED},
         });
 
-    add(sfHook.jsonName.c_str(),
-        sfHook.getCode(),
+    add(sfHookSet.jsonName.c_str(),
+        sfHookSet.getCode(),
         {
-            {sfHookSequence,    soeREQUIRED},
+            {sfHookSetOperation,seoREQUIRED},
+            {sfHookSequence,    soeOPTIONAL},
             {sfHookOn,          soeOPTIONAL},
+            {sfReorderHook,     soeOPTIONAL},
             {sfFlags,           soeOPTIONAL},
             {sfHookNamespace,   soeOPTIONAL},
-            {sfHookHash,        soeREQUIRED},
+            {sfHookHash,        soeOPTIONAL},
             {sfHookParameters,  soeOPTIONAL},
             {sfHookDefinition,  soeOPTIONAL}
         });

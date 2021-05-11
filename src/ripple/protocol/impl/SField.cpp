@@ -54,6 +54,7 @@ SF_U8 const sfCloseResolution(access, STI_UINT8, 1, "CloseResolution");
 SF_U8 const sfMethod(access, STI_UINT8, 2, "Method");
 SF_U8 const sfTransactionResult(access, STI_UINT8, 3, "TransactionResult");
 SF_U8 const sfHookSequence(access, STI_UINT8, 4, "HookSequence");
+SF_U8 const sfHookSetOperation(access, STI_UINT8, 5, "HookSetOperation");
 
 // 8-bit integers (uncommon)
 SF_U8 const sfTickSize(access, STI_UINT8, 16, "TickSize");

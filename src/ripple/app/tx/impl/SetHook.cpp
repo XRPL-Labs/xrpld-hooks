@@ -545,6 +545,402 @@ check_guard(
 
 }
 
+bool
+validateHookParams(STArray const& hookParams)
+{
+    for (auto const& hookParam : hookParams)
+    {
+        auto const& hookParamObj = dynamic_cast<STObject const*>(&hookParam);
+
+        if (!hookParamObj || (hookParamObj->getFName() != sfHookParameter))
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: "
+                << "SetHook sfHookParameters contains obj other than sfHookParameter.";
+            return false;
+        }
+
+        int counter = 0;
+        for (auto const& paramElement : *hookParamObj)
+        {
+            auto const& name = paramElement.getFName();
+
+            if (name != sfHookParameterName && name != sfHookParameterValue
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: "
+                    << "SetHook sfHookParameter contains object other than sfHookParameterName/Value.";
+                return false;
+            }
+            counter++;
+        }
+
+        if (counter++ != 2)
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: "
+                << "SetHook sfHookParameter should contain exactly one of each: sfHookParameterName "
+                << " and sfHookParameterValue.";
+            return false;
+        }
+    }
+
+    return true;
+}
+
+bool validateHookDef(STObject const& hookDef)
+{
+    for (auto const& hookDefElement : *hookDef)
+    {
+        auto const& name = hookSetElement.getFName();
+        if (name != sfHookOn &&
+            name != sfHookNamespace &&
+            name != sfHookParameters &&
+            name != sfHookApiVersion &&
+            name != sfCreateCode)
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookDefinition contains invalid field.";
+            return false;
+        }
+
+    }
+
+    // ensure hooknamespace is present
+    if (!hookDef.isFieldPresent(sfHookNamespace))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookDefinition must contain sfHookNamespace.";
+        return false;
+    }
+
+    // ensure createcode is present
+    if (!hookDef.isFieldPresent(sfCreateCode))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookDefinition must contain sfCreateCode.";
+        return false;
+    }
+
+
+    // validate params if any
+    if (hookDef.isFieldPresent(sfHookParameters) &&
+        !validateHookParams(hookDef.getFieldArray(sfHookParameters)))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookDefinition->sfHookParameters invalid.";
+        return false;
+    }
+
+    // validate api version, if provided
+    if (hookDef.isFieldPresent(sfHookApiVersion))
+    {
+        auto version = hookDef.getFieldU16(sfHookApiVersion);
+        if (version != 0)
+        {
+            // we currently only accept api version 0
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookDefinition->sfHookApiVersion invalid. Use 0 or omit.";
+            return false;
+        }
+    }
+
+
+    // validate createcode
+    Blob hook = hookDef.getFieldVL(sfCreateCode);
+    if (hook.empty())
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookDefinition must contain non-blank sfCreateCode.";
+        return false;
+    }
+
+
+    // RH TODO compute actual smallest possible hook and update this value
+    if (hook.size() < 10)
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC() << "]: "
+            << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
+        return false;
+    }
+
+    // check header, magic number
+    unsigned char header[8] = { 0x00U, 0x61U, 0x73U, 0x6DU, 0x01U, 0x00U, 0x00U, 0x00U };
+    for (int i = 0; i < 8; ++i)
+    {
+        if (hook[i] != header[i])
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC() << "]: "
+                << "Malformed transaction: Hook was not valid webassembly binary. "
+                << "Missing magic number or version.";
+            return false;
+        }
+    }
+
+    // now we check for guards... first check if _g is imported
+    int guard_import_number = -1;
+    int last_import_number = -1;
+    for (int i = 8, j = 0; i < hook.size();)
+    {
+
+        if (j == i)
+        {
+            // if the loop iterates twice with the same value for i then
+            // it's an infinite loop edge case
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook is invalid WASM binary.";
+            return false;
+        }
+
+        j = i;
+
+        // each web assembly section begins with a single byte section type followed by an leb128 length
+        int section_type = hook[i++];
+        int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+        //int section_start = i;
+
+        if (DEBUG_GUARD_CHECK)
+            printf("WASM binary analysis -- upto %d: section %d with length %d\n",
+                    i, section_type, section_length);
+
+        int next_section = i + section_length;
+
+        // we are interested in the import section... we need to know if _g is imported and which import# it is
+        if (section_type == 2) // import section
+        {
+            int import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            if (import_count <= 0)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "Hook did not import any functions... "
+                    << "required at least guard(uint32_t, uint32_t) and accept, reject or rollback";
+                return false;
+            }
+
+            // process each import one by one
+            int func_upto = 0; // not all imports are functions so we need an indep counter for these
+            for (int j = 0; j < import_count; ++j)
+            {
+                // first check module name
+                int mod_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (mod_length < 1 || mod_length > (hook.size() - i))
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook attempted to specify nil or invalid import module";
+                    return false;
+                }
+
+                if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook attempted to specify import module other than 'env'";
+                    return false;
+                }
+
+                i += mod_length; CHECK_SHORT_HOOK();
+
+                // next get import name
+                int name_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (name_length < 1 || name_length > (hook.size() - i))
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook attempted to specify nil or invalid import name";
+                    return false;
+                }
+
+                std::string import_name { (const char*)(hook.data() + i), (size_t)name_length };
+
+                i += name_length; CHECK_SHORT_HOOK();
+
+                // next get import type
+                if (hook[i] > 0x00)
+                {
+                    // not a function import
+                    // RH TODO check these other imports for weird stuff
+                    i++; CHECK_SHORT_HOOK();
+                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    continue;
+                }
+
+                // execution to here means it's a function import
+                i++; CHECK_SHORT_HOOK();
+                /*int type_idx = */
+                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+
+                // RH TODO: validate that the parameters of the imported functions are correct
+                if (import_name == "_g")
+                {
+                    guard_import_number = func_upto;
+                } else if (import_whitelist.find(import_name) == import_whitelist.end())
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook attempted to import a function that does not "
+                        << "appear in the hook_api function set: `" << import_name << "`";
+                    return false;
+                }
+                func_upto++;
+            }
+
+            if (guard_import_number == -1)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "Hook did not import _g (guard) function";
+                return false;
+            }
+
+            last_import_number = func_upto - 1;
+
+            // we have an imported guard function, so now we need to enforce the guard rules
+            // which are:
+            // 1. all functions must start with a guard call before any branching [ RH TODO ]
+            // 2. all loops must start with a guard call before any branching
+            // to enforce these rules we must do a second pass of the wasm in case the function
+            // section was placed in this wasm binary before the import section
+
+        } else
+        if (section_type == 7) // export section
+        {
+            int export_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            if (export_count <= 0)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "Hook did not export any functions... "
+                    << "required hook(int64_t), callback(int64_t).";
+                return false;
+            }
+
+            bool found_hook_export = false;
+            bool found_cbak_export = false;
+            for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
+            {
+                int name_len = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (name_len == 4)
+                {
+
+                    if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
+                        found_hook_export = true;
+                    else
+                    if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
+                        found_cbak_export = true;
+                }
+
+                i += name_len + 1;
+                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            }
+
+            // execution to here means export section was parsed
+            if (!(found_hook_export && found_cbak_export))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "Hook did not export: " <<
+                    ( !found_hook_export ? "hook(int64_t); " : "" ) <<
+                    ( !found_cbak_export ? "cbak(int64_t);"  : "" );
+                return false;
+            }
+        }
+
+        i = next_section;
+        continue;
+    }
+
+
+    // second pass... where we check all the guard function calls follow the guard rules
+    // minimal other validation in this pass because first pass caught most of it
+    for (int i = 8; i < hook.size();)
+    {
+
+        int section_type = hook[i++];
+        int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+        //int section_start = i;
+        int next_section = i + section_length;
+
+        // RH TODO: parse anywhere else an expr is allowed in wasm and enforce rules there too
+        if (section_type == 10) // code section
+        {
+            // these are the functions
+            int func_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+
+            for (int j = 0; j < func_count; ++j)
+            {
+                // parse locals
+                int code_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                int code_end = i + code_size;
+                int local_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                for (int k = 0; k < local_count; ++k)
+                {
+                    /*int array_size = */
+                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet[" << HS_ACC() << "]: Invalid local type. "
+                            << "Codesec: " << j << " "
+                            << "Local: " << k << " "
+                            << "Offset: " << i;
+                        return false;
+                    }
+                    i++; CHECK_SHORT_HOOK();
+                }
+
+                if (i == code_end)
+                    continue; // allow empty functions
+
+                // execution to here means we are up to the actual expr for the codesec/function
+
+                auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
+                if (result != tesSUCCESS)
+                    return result;
+
+                i = code_end;
+
+            }
+        }
+        i = next_section;
+    }
+
+    // execution to here means guards are installed correctly
+
+    JLOG(ctx.j.trace())
+        << "HookSet[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
+        << "size = " <<  hook.size();
+
+    // check if wasm can be run
+    SSVM::VM::Configure cfg;
+    SSVM::VM::VM vm(cfg);
+    if (auto res = vm.loadWasm(SSVM::Span<const uint8_t>(hook.data(), hook.size())))
+    {
+        // do nothing
+    } else
+    {
+        uint32_t ssvm_error = static_cast<uint32_t>(res.error());
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC() << "]: "
+            << "Tried to set a hook with invalid code. SSVM error: " << ssvm_error;
+        return false;
+    }
+
+    return true;
+}
+
 NotTEC
 SetHook::preflight(PreflightContext const& ctx)
 {
@@ -559,301 +955,145 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    if (!ctx.tx.isFieldPresent(sfHooks))
+    if (!ctx.tx.isFieldPresent(sfHookSets))
     {
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC() << "]: Malformed transaction: SetHook lacked sfHooks array.";
         return temMALFORMED;
     }
 
-
-
-
-    if (!ctx.tx.isFieldPresent(sfCreateCode) ||
-        !ctx.tx.isFieldPresent(sfHookOn))
+    auto const& hookSets = ctx.tx.getFieldArray(sfHookSets);
+    
+    if (hookSets.size() < 1)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: Malformed transaction: Invalid SetHook format.";
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookSets empty.";
         return temMALFORMED;
     }
 
-
-    Blob hook = ctx.tx.getFieldVL(sfCreateCode);
-
-    // if the hook field is not empty it's a set request, so we need to validate the hook's wasm binary
-    if (!hook.empty())
+    if (hookSets.size() > 8)
     {
-        // RH TODO compute actual smallest possible hook and update this value
-        if (hook.size() < 10)
-        {
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC() << "]: "
-                << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
-            return temMALFORMED;
-        }
-
-        // check header, magic number
-        unsigned char header[8] = { 0x00U, 0x61U, 0x73U, 0x6DU, 0x01U, 0x00U, 0x00U, 0x00U };
-        for (int i = 0; i < 8; ++i)
-        {
-            if (hook[i] != header[i])
-            {
-                JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: "
-                    << "Malformed transaction: Hook was not valid webassembly binary. "
-                    << "Missing magic number or version.";
-                return temMALFORMED;
-            }
-        }
-
-        // now we check for guards... first check if _g is imported
-        int guard_import_number = -1;
-        int last_import_number = -1;
-        for (int i = 8, j = 0; i < hook.size();)
-        {
-
-            if (j == i)
-            {
-                // if the loop iterates twice with the same value for i then
-                // it's an infinite loop edge case
-                JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook is invalid WASM binary.";
-                return temMALFORMED;
-            }
-
-            j = i;
-
-            // each web assembly section begins with a single byte section type followed by an leb128 length
-            int section_type = hook[i++];
-            int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-            //int section_start = i;
-
-            if (DEBUG_GUARD_CHECK)
-                printf("WASM binary analysis -- upto %d: section %d with length %d\n",
-                        i, section_type, section_length);
-
-            int next_section = i + section_length;
-
-            // we are interested in the import section... we need to know if _g is imported and which import# it is
-            if (section_type == 2) // import section
-            {
-                int import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                if (import_count <= 0)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook did not import any functions... "
-                        << "required at least guard(uint32_t, uint32_t) and accept, reject or rollback";
-                    return temMALFORMED;
-                }
-
-                // process each import one by one
-                int func_upto = 0; // not all imports are functions so we need an indep counter for these
-                for (int j = 0; j < import_count; ++j)
-                {
-                    // first check module name
-                    int mod_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (mod_length < 1 || mod_length > (hook.size() - i))
-                    {
-                        JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook attempted to specify nil or invalid import module";
-                        return temMALFORMED;
-                    }
-
-                    if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
-                    {
-                        JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook attempted to specify import module other than 'env'";
-                        return temMALFORMED;
-                    }
-
-                    i += mod_length; CHECK_SHORT_HOOK();
-
-                    // next get import name
-                    int name_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (name_length < 1 || name_length > (hook.size() - i))
-                    {
-                        JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook attempted to specify nil or invalid import name";
-                        return temMALFORMED;
-                    }
-
-                    std::string import_name { (const char*)(hook.data() + i), (size_t)name_length };
-
-                    i += name_length; CHECK_SHORT_HOOK();
-
-                    // next get import type
-                    if (hook[i] > 0x00)
-                    {
-                        // not a function import
-                        // RH TODO check these other imports for weird stuff
-                        i++; CHECK_SHORT_HOOK();
-                        parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                        continue;
-                    }
-
-                    // execution to here means it's a function import
-                    i++; CHECK_SHORT_HOOK();
-                    /*int type_idx = */
-                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-
-                    // RH TODO: validate that the parameters of the imported functions are correct
-                    if (import_name == "_g")
-                    {
-                        guard_import_number = func_upto;
-                    } else if (import_whitelist.find(import_name) == import_whitelist.end())
-                    {
-                        JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook attempted to import a function that does not "
-                            << "appear in the hook_api function set: `" << import_name << "`";
-                        return temMALFORMED;
-                    }
-                    func_upto++;
-                }
-
-                if (guard_import_number == -1)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook did not import _g (guard) function";
-                    return temMALFORMED;
-                }
-
-                last_import_number = func_upto - 1;
-
-                // we have an imported guard function, so now we need to enforce the guard rules
-                // which are:
-                // 1. all functions must start with a guard call before any branching [ RH TODO ]
-                // 2. all loops must start with a guard call before any branching
-                // to enforce these rules we must do a second pass of the wasm in case the function
-                // section was placed in this wasm binary before the import section
-
-            } else
-            if (section_type == 7) // export section
-            {
-                int export_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                if (export_count <= 0)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook did not export any functions... "
-                        << "required hook(int64_t), callback(int64_t).";
-                    return temMALFORMED;
-                }
-
-                bool found_hook_export = false;
-                bool found_cbak_export = false;
-                for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
-                {
-                    int name_len = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (name_len == 4)
-                    {
-
-                        if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
-                            found_hook_export = true;
-                        else
-                        if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
-                            found_cbak_export = true;
-                    }
-
-                    i += name_len + 1;
-                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                }
-
-                // execution to here means export section was parsed
-                if (!(found_hook_export && found_cbak_export))
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook did not export: " <<
-                        ( !found_hook_export ? "hook(int64_t); " : "" ) <<
-                        ( !found_cbak_export ? "cbak(int64_t);"  : "" );
-                    return temMALFORMED;
-                }
-            }
-
-            i = next_section;
-            continue;
-        }
-
-
-        // second pass... where we check all the guard function calls follow the guard rules
-        // minimal other validation in this pass because first pass caught most of it
-        for (int i = 8; i < hook.size();)
-        {
-
-            int section_type = hook[i++];
-            int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-            //int section_start = i;
-            int next_section = i + section_length;
-
-            // RH TODO: parse anywhere else an expr is allowed in wasm and enforce rules there too
-            if (section_type == 10) // code section
-            {
-                // these are the functions
-                int func_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-
-                for (int j = 0; j < func_count; ++j)
-                {
-                    // parse locals
-                    int code_size = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    int code_end = i + code_size;
-                    int local_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    for (int k = 0; k < local_count; ++k)
-                    {
-                        /*int array_size = */
-                        parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                        if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
-                        {
-                            JLOG(ctx.j.trace())
-                                << "HookSet[" << HS_ACC() << "]: Invalid local type. "
-                                << "Codesec: " << j << " "
-                                << "Local: " << k << " "
-                                << "Offset: " << i;
-                            return temMALFORMED;
-                        }
-                        i++; CHECK_SHORT_HOOK();
-                    }
-
-                    if (i == code_end)
-                        continue; // allow empty functions
-
-                    // execution to here means we are up to the actual expr for the codesec/function
-
-                    auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
-                    if (result != tesSUCCESS)
-                        return result;
-
-                    i = code_end;
-
-                }
-            }
-            i = next_section;
-        }
-
-        // execution to here means guards are installed correctly
-
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
-            << "size = " <<  hook.size();
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookSets contains more than 8 entries.";
+        return temMALFORMED;
+    }
+    
+    for (auto const& hookSet : hookSets)
+    {
 
-        // check if wasm can be run
-        SSVM::VM::Configure cfg;
-        SSVM::VM::VM vm(cfg);
-        if (auto res = vm.loadWasm(SSVM::Span<const uint8_t>(hook.data(), hook.size())))
+        auto const& hookSetObj = dynamic_cast<STObject const*>(&hookSet);
+
+        if (!hookSetObj || (hookSetObj->getFName() != sfHookSet))
         {
-            // do nothing
-        } else
-        {
-            uint32_t ssvm_error = static_cast<uint32_t>(res.error());
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC() << "]: "
-                << "Tried to set a hook with invalid code. SSVM error: " << ssvm_error;
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookSets contains obj other than sfHookSet.";
             return temMALFORMED;
+        }
+
+        for (auto const& hookSetElement : *hookSetObj)
+        {
+            auto const& name = hookSetElement.getFName();
+
+            if (name != sfHookSetOperation && 
+                name != sfHookSequence &&
+                name != sfHookReorder &&
+                name != sfHookOn &&
+                name != sfHookNamespace &&
+                name != sfHookHash &&
+                name != sfHookParameters &&
+                name != sfHookDefinition)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookSet contains invalid field.";
+                return temMALFORMED;
+            }
+        }
+
+        // validate hook operation
+        uint8_t operation = hookSetObj.getFieldU8(sfHookSetOperation);
+
+        switch(operation)
+        {
+            case HOOK_REORDER:
+            {
+                break;
+            }
+            case HOOK_CREATE:
+            {
+                break;
+            }
+            case HOOK_LINK:
+            {
+                break;
+            }
+            case HOOK_UNLINK:
+            {
+                break;
+            }
+            case NAMESPACE_SET:
+            {
+                break;
+            }
+            case NAMESPACE_MOVE:
+            {
+                break;
+            }
+            case NAMESPACE_DELETE:
+            {
+                break;
+            }
+            case PARAMS_SET:
+            {
+                break;
+            }
+            case PARAMS_RESET:
+            {
+                break;
+            }
+            case FOREIGN_AUTH:
+            {
+                break;
+            }
+            case FOREIGN_UNAUTH:
+            {
+                break;
+            }
+            case HOOKON_SET:
+            {
+                break;
+            }
+            case ANNIHILATE: 
+            {
+                break;
+            }
+
+
+            default:
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookSetOperation invalid option";
+                return temMALFORMED;
+            }
+        }
+
+        // validate hook params structure
+        if (hookSetObj.isFieldPresent(sfHookParameters) &&
+            !validateHookParams(hookSetObj.getFieldArray(sfHookParameters)))
+                return temMALFORMED;
+
+        // validate the "create code" part if it's present
+        if (hookSetObj.isFieldPresent(sfHookDefinition))
+        {
+            auto const& hookDef =
+               const_cast<ripple::STObject&>(hookSetObj).getField(sfHookDefinition).downcas<STObject>();
+
+            if (!validateHookDef(hookDef))
+                return temMALFORMED;
         }
 
     }

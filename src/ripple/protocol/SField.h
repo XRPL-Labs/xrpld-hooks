@@ -343,6 +343,7 @@ extern SF_U8 const sfTickSize;
 extern SF_U8 const sfUNLModifyDisabling;
 extern SF_U8 const sfHookResult;            // code indicating what happened accept/rollback/error, NOT return code.
 extern SF_U8 const sfHookSequence;
+extern SF_U8 const sfHookSetOperation;
 
 // 16-bit integers
 extern SF_U16 const sfLedgerEntryType;

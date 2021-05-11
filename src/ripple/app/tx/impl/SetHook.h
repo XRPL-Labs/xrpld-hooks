@@ -36,6 +36,23 @@
 
 namespace ripple {
 
+enum HookSetOperation : uint8_t
+{
+    HOOK_REORDER        = 0,
+    HOOK_CREATE         = 1,
+    HOOK_LINK           = 2,
+    HOOK_UNLINK         = 3,
+    NAMESPACE_SET       = 4,
+    NAMESPACE_MOVE      = 5,
+    NAMESPACE_DELETE    = 6,
+    PARAMS_SET          = 7,
+    PARAMS_RESET        = 8,
+    FOREIGN_AUTH        = 9,
+    FOREIGN_UNAUTH      = 10,
+    HOOKON_SET          = 11,
+    ANNIHILATE          = 12
+};
+
 /**
 See the README.md for an overview of the SetHook transaction that
 this class implements.
