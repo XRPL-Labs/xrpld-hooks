@@ -38,20 +38,33 @@ namespace ripple {
 
 enum HookSetOperation : uint8_t
 {
-    HOOK_REORDER        = 0,
-    HOOK_CREATE         = 1,
-    HOOK_LINK           = 2,
-    HOOK_UNLINK         = 3,
-    NAMESPACE_SET       = 4,
-    NAMESPACE_MOVE      = 5,
-    NAMESPACE_DELETE    = 6,
-    PARAMS_SET          = 7,
-    PARAMS_RESET        = 8,
-    FOREIGN_AUTH        = 9,
-    FOREIGN_UNAUTH      = 10,
-    HOOKON_SET          = 11,
-    ANNIHILATE          = 12
+    HOOK_REORDER        = 0U,
+    HOOK_CREATE         = 1U,
+    HOOK_LINK           = 2U,
+    HOOK_UNLINK         = 3U,
+    NAMESPACE_SET       = 4U,
+    NAMESPACE_MOVE      = 5U,
+    NAMESPACE_DELETE    = 6U,
+    PARAMS_SET          = 7U,
+    PARAMS_RESET        = 8U,
+    FOREIGN_AUTH        = 9U,
+    FOREIGN_UNAUTH      = 10U,
+    HOOKON_SET          = 11U,
+    ANNIHILATE          = 12U
 };
+
+enum HookSetFields : uint8_t
+{
+    HOOKSET_OPERATION   =   1U,
+    HOOK_SEQUENCE       =   2U,
+    HOOK_REORDER        =   4U,
+    HOOK_ON             =   8U,
+    HOOK_NAMESPACE      =  16U,
+    HOOK_HASH           =  32U,
+    HOOK_PARAMETERS     =  64U,
+    HOOK_DEFINITION     = 128U,
+    HOOK_OLD_NAMESPACE  = 256U
+}
 
 /**
 See the README.md for an overview of the SetHook transaction that

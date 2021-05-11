@@ -1002,6 +1002,7 @@ SetHook::preflight(PreflightContext const& ctx)
                 name != sfHookReorder &&
                 name != sfHookOn &&
                 name != sfHookNamespace &&
+                name != sfHookOldNamespace &&
                 name != sfHookHash &&
                 name != sfHookParameters &&
                 name != sfHookDefinition)
@@ -1013,59 +1014,167 @@ SetHook::preflight(PreflightContext const& ctx)
             }
         }
 
+        if (hookSetObj.isFieldPresent(sfHookSetOperation))
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookSet must contain sfHookSetOperation.";
+            return temMALFORMED;
+        }
+
         // validate hook operation
         uint8_t operation = hookSetObj.getFieldU8(sfHookSetOperation);
 
+
+        uint32_t fields = HOOKSET_OPERATION;
+
+        if (hookSetObj.isFieldPresent(sfHookSequence))
+            fields |= HOOK_SEQUENCE;
+
+        if (hookSetObj.isFieldPresent(sfHookReorder))
+            fields |= HOOK_REORDER;
+
+        if (hookSetObj.isFieldPresent(sfHookOn))
+            fields |= HOOK_ON;
+
+        if (hookSetObj.isFieldPresent(sfHookNamespace))
+            fields |= HOOK_NAMESPACE;
+        
+        if (hookSetObj.isFieldPresent(sfHookOldNamespace))
+            fields |= HOOK_OLD_NAMESPACE;
+
+        if (hookSetObj.isFieldPresent(sfHookHash))
+            fields |= HOOK_HASH;
+
+        if (hookSetObj.isFieldPresent(sfHookParameters))
+            fields |= HOOK_PARAMETERS;
+
+        if (hookSetObj.isFieldPresent(sfHookDefinition))
+            fields |= HOOK_DEFINITION;
+
+        // each operation has a different set of minimum fields, so we need branch to check each of these
         switch(operation)
         {
             case HOOK_REORDER:
             {
+                if (fields != HOOKSET_OPERATION | HOOK_REORDER) 
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook HOOK_REORDER must have only: "
+                        << "sfHookReorder";
+                    return temMALFORMED;
+                }
                 break;
             }
+
             case HOOK_CREATE:
             {
+                if ((fields & HOOK_REORDER)         || 
+                    (fields & HOOK_HASH)            ||
+                    (fields & HOOK_OLD_NAMESPACE)   ||
+                   !(fields & HOOK_SEQUENCE)        || 
+                   !(fields & HOOK_DEFINITION)) 
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook HOOK_CREATE must have at least: "
+                        << "sfHookSequence and sfHookDefinition, and cannot have sfHookHash or sfHookReorder";
+                    return temMALFORMED;
+                }
                 break;
             }
+
             case HOOK_LINK:
             {
+                if ((fields & HOOK_REORDER)         || 
+                   !(fields & HOOK_HASH)            || 
+                   !(fields & HOOK_SEQUENCE)        || 
+                   (fields  & HOOK_DEFINITION)      ||
+                   (fields  & HOOK_OLD_NAMESPACE))
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook HOOK_LINK must have at least: "
+                        << "sfHookSequence and sfHookHash, and cannot have sfHookDefinition or sfHookReorder";
+                    return temMALFORMED;
+                }
                 break;
             }
+
             case HOOK_UNLINK:
             {
+
+                if ((fields & HOOK_REORDER)     || 
+                   !(fields & HOOK_SEQUENCE)    || 
+                    (fields & HOOK_DEFINITION)  ||
+                    (fields & HOOK_ON)          ||
+                    (fields & HOOK_NAMESPACE)   ||
+                    (fields & HOOK_PARAMETERS)  ||
+                    (fields & HOOK_OLD_NAMESPACE))
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook HOOK_UNLINK must have at least: "
+                        << "sfHookSequence, and cannot have "
+                        << "sfHookReorder, sfHookDefinition, sfHookOn, sfHookNamespace or sfHookParametrs";
+                    return temMALFORMED;
+                }
                 break;
             }
+
+            case NAMESPACE_DELETE:
             case NAMESPACE_SET:
             {
+                if (fields != HOOKSET_OPERATION & HOOK_NAMESPACE)
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook NAMESPACE_SET/DELETE must have only: "
+                        << "sfHookNamespace";
+                    return temMALFORMED;
+                }
                 break;
             }
+
             case NAMESPACE_MOVE:
             {
+                if (fields != HOOKSET_OPERATION & HOOK_NAMESPACE & HOOK_OLD_NAMESPACE)
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC()
+                        << "]: Malformed transaction: SetHook NAMESPACE_MOVE must have only: "
+                        << "sfHookNamespace, sfHookOldNamespace";
+                    return temMALFORMED;
+                }
                 break;
             }
-            case NAMESPACE_DELETE:
-            {
-                break;
-            }
+
             case PARAMS_SET:
             {
                 break;
             }
+
             case PARAMS_RESET:
             {
                 break;
             }
+
             case FOREIGN_AUTH:
             {
                 break;
             }
+
             case FOREIGN_UNAUTH:
             {
                 break;
             }
+
             case HOOKON_SET:
             {
                 break;
             }
+
             case ANNIHILATE: 
             {
                 break;
