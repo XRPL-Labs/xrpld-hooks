@@ -181,7 +181,7 @@ LedgerFormats::LedgerFormats()
         {
             {sfAccount, soeOPTIONAL},
             {sfOwnerNode, soeREQUIRED},
-            {sfCreateCode, soeREQUIRED},
+            {sfHookHash, soeREQUIRED},
             {sfHookSetTxnID, soeREQUIRED},
             {sfPreviousTxnID, soeREQUIRED},
             {sfPreviousTxnLgrSeq, soeREQUIRED},
@@ -189,8 +189,22 @@ LedgerFormats::LedgerFormats()
             {sfHookReserveCount, soeREQUIRED},
             {sfHookStateDataMaxSize, soeREQUIRED},   // this is set at time of creation according to 
                                                      // what the validators voted on
+            {sfHookOn, soeOPTIONAL}, 
+            {sfHookNamespace, soeOPTIONAL},
+            {sfHookParameters, soeOPTIONAL}
+
+        },
+        commonFields);
+
+    add(jss::HookDefinition,
+        ltHOOK_DEFINITION,
+        {
+            {sfHookHash, soeREQUIRED},
+            {sfCreateCode, soeREQUIRED},
+            {sfHookCreateTxnID, soeREQUIRED},
             {sfHookOn, soeREQUIRED},  
-            {sfHookHash, soeREQUIRED}
+            {sfHookNamespace, soeREQUIRED},
+            {sfHookParameters, soeREQUIRED}
         },
         commonFields);
 
@@ -201,6 +215,7 @@ LedgerFormats::LedgerFormats()
             {sfOwnerNode, soeREQUIRED},   
             {sfHookStateKey, soeREQUIRED},
             {sfHookStateData, soeREQUIRED},
+            {sfHookNamespace, soeOPTIONAL}
         },
         commonFields);
 

@@ -459,6 +459,7 @@ extern SF_U256 const sfHookCreationTxnID;
 extern SF_U256 const sfHookHash;
 extern SF_U256 const sfHookNamespace;
 extern SF_U256 const sfHookOldNamespace;
+extern SF_U256 const sfHookSetTxnID;
 
 // currency amount (common)
 extern SF_Amount const sfAmount;

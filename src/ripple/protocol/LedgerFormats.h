@@ -90,6 +90,7 @@ enum LedgerEntryType {
 
     ltHOOK ='H',
     ltHOOK_STATE ='v',
+    ltHOOK_DEFINITION = 'D',
 
     ltEMITTED = 'E',
 
