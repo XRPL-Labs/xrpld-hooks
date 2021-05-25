@@ -41,10 +41,10 @@ InnerObjectFormats::InnerObjectFormats()
     add(sfHookSet.jsonName.c_str(),
         sfHookSet.getCode(),
         {
-            {sfHookSetOperation,seoREQUIRED},
+            {sfHookSetOperation,soeREQUIRED},
             {sfHookSequence,    soeOPTIONAL},
             {sfHookOn,          soeOPTIONAL},
-            {sfReorderHook,     soeOPTIONAL},
+            {sfHookReorder,     soeOPTIONAL},
             {sfFlags,           soeOPTIONAL},
             {sfHookNamespace,   soeOPTIONAL},
             {sfHookHash,        soeOPTIONAL},

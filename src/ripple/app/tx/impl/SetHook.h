@@ -38,32 +38,31 @@ namespace ripple {
 
 enum HookSetOperation : uint8_t
 {
-    HOOK_REORDER        = 0U,
-    HOOK_CREATE         = 1U,
-    HOOK_LINK           = 2U,
-    HOOK_UNLINK         = 3U,
-    NAMESPACE_SET       = 4U,
-    NAMESPACE_MOVE      = 5U,
-    NAMESPACE_DELETE    = 6U,
-    PARAMS_SET          = 7U,
-    PARAMS_RESET        = 8U,
-    FOREIGN_AUTH        = 9U,
-    FOREIGN_UNAUTH      = 10U,
-    HOOKON_SET          = 11U,
-    ANNIHILATE          = 12U
+    HSO_REORDER         = 0U,
+    HSO_CREATE          = 1U,
+	HSO_LINK            = 2U,
+	HSO_UNLINK          = 3U,
+	HSO_NSSET           = 4U,
+	HSO_NSMOVE          = 5U,
+	HSO_NSDELETE        = 6U,
+	HSO_PASET           = 7U,
+	HSO_PARESET         = 8U,
+	HSO_FAUTH           = 9U,
+	HSO_FUNAUTH         = 10U,
+	HSO_HOOKON          = 11U,
+	HSO_ANNIHILATE      = 12U
 };
 
 enum HookSetFields : uint8_t
 {
-    HOOKSET_OPERATION   =   1U,
-    HOOK_SEQUENCE       =   2U,
-    HOOK_REORDER        =   4U,
-    HOOK_ON             =   8U,
-    HOOK_NAMESPACE      =  16U,
-    HOOK_HASH           =  32U,
-    HOOK_PARAMETERS     =  64U,
-    HOOK_DEFINITION     = 128U,
-    HOOK_OLD_NAMESPACE  = 256U
+    HSF_OPERATION      =   1U,
+    HSF_SEQUENCE       =   2U,
+    HSF_REORDER        =   4U,
+    HSF_ON             =   8U,
+    HSF_NAMESPACE      =  16U,
+    HSF_HASH           =  32U,
+    HSF_PARAMETERS     =  64U,
+    HSF_DEFINITION     = 128U
 }
 
 /**

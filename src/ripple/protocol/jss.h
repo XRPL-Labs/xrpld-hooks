@@ -92,6 +92,7 @@ JSS(SetRegularKey);          // transaction type.
 JSS(SetHook);                // transaction type.
 JSS(Hook);                   // ledger type.
 JSS(HookState);              // ledger type.
+JSS(HookDefinition);
 JSS(Emitted);                // ledger type.
 JSS(SignerList);             // ledger type.
 JSS(SignerListSet);          // transaction type.

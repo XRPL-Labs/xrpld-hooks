@@ -201,7 +201,7 @@ LedgerFormats::LedgerFormats()
         {
             {sfHookHash, soeREQUIRED},
             {sfCreateCode, soeREQUIRED},
-            {sfHookCreateTxnID, soeREQUIRED},
+            {sfHookCreationTxnID, soeREQUIRED},
             {sfHookOn, soeREQUIRED},  
             {sfHookNamespace, soeREQUIRED},
             {sfHookParameters, soeREQUIRED}

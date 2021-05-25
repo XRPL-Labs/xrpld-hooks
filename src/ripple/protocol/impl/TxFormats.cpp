@@ -274,7 +274,7 @@ TxFormats::TxFormats()
     add(jss::SetHook,
         ttHOOK_SET,
         {
-            {sfHooks, seoREQUIRED},
+            {sfHooks, soeREQUIRED},
         },
         commonFields);
 }

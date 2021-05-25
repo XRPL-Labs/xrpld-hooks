@@ -565,6 +565,7 @@ extern SField const sfHookExecutions; // array of executions
 extern SField const sfHookExecution;  // actual execution result
 extern SField const sfHookSets;
 extern SField const sfHookParameters;
+extern SField const sfHooks;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

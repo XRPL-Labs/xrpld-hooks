@@ -152,13 +152,13 @@ hook(AccountID const& id, uint256 const& hash) noexcept
 }
 
 Keylet
-hook_definition(uint256 const& hash) noexcept
+hookDefinition(uint256 const& hash) noexcept
 {
     return {ltHOOK_DEFINITION, indexHash(LedgerNameSpace::HOOK_DEFINITION, hash)};
 }
 
 Keylet
-hook_state(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept
+hookState(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept
 {
     return {ltHOOK_STATE, indexHash(LedgerNameSpace::HOOK_STATE, id, key, ns)};
 }

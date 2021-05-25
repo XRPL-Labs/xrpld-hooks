@@ -767,7 +767,7 @@ void hook::commitChangesToLedger(
             if (is_modified) {
                 change_count++;
                 // this entry isn't just cached, it was actually modified
-                auto HSKeylet = keylet::hook_state(hookResult.account, key);
+                auto HSKeylet = keylet::hookState(hookResult.account, key);
                 auto slice = Slice(blob.data(), blob.size());
                 setHookState(hookResult, applyCtx, HSKeylet, key, slice);
                 // ^ should not fail... checks were done before map insert
@@ -968,7 +968,7 @@ DEFINE_HOOK_FUNCTION(
     if (!sle)
         return INTERNAL_ERROR;
 
-    auto hsSLE = view.peek(keylet::hook_state(
+    auto hsSLE = view.peek(keylet::hookState(
                 (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.result.account), *key));
     if (!hsSLE)
         return DOESNT_EXIST;
@@ -1840,7 +1840,7 @@ DEFINE_HOOK_FUNCTION(
                     return INVALID_ARGUMENT;
 
                 ripple::Keylet kl =
-                    ripple::keylet::hook_state(
+                    ripple::keylet::hookState(
                             ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr),
                             ripple::base_uint<256>::fromVoid(memory + kread_ptr));
 
