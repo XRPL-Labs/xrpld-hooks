@@ -1002,7 +1002,6 @@ SetHook::preflight(PreflightContext const& ctx)
                 name != sfHookReorder &&
                 name != sfHookOn &&
                 name != sfHookNamespace &&
-                name != sfHookOldNamespace &&
                 name != sfHookHash &&
                 name != sfHookParameters &&
                 name != sfHookDefinition)

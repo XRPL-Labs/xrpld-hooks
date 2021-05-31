@@ -200,7 +200,6 @@ SF_U256 const sfHookStateKey(access, STI_HASH256, 26, "HookStateKey");
 SF_U256 const sfHookCreationTxnID(access, STI_HASH256, 27, "HookCreationTxnID");
 SF_U256 const sfHookHash(access, STI_HASH256, 28, "HookHash");
 SF_U256 const sfHookNamespace(access, STI_HASH256, 29, "HookNamespace");
-SF_U256 const sfHookOldNamespace(access, STI_HASH256, 30, "HookOldNamespace");
 SF_U256 const sfHookSetTxnID(access, STI_HASH256, 31, "HookSetTxnID");
 
 // currency amount (common)

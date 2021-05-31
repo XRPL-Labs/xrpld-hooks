@@ -43,7 +43,6 @@ enum HookSetOperation : uint8_t
 	HSO_LINK            = 2U,
 	HSO_UNLINK          = 3U,
 	HSO_NSSET           = 4U,
-	HSO_NSMOVE          = 5U,
 	HSO_NSDELETE        = 6U,
 	HSO_PASET           = 7U,
 	HSO_PARESET         = 8U,

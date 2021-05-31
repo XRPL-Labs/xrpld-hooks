@@ -199,12 +199,13 @@ LedgerFormats::LedgerFormats()
     add(jss::HookDefinition,
         ltHOOK_DEFINITION,
         {
-            {sfHookHash, soeREQUIRED},
-            {sfCreateCode, soeREQUIRED},
-            {sfHookCreationTxnID, soeREQUIRED},
             {sfHookOn, soeREQUIRED},  
             {sfHookNamespace, soeREQUIRED},
-            {sfHookParameters, soeREQUIRED}
+            {sfHookParameters, soeREQUIRED},
+            {sfHookApiVersion, soeREQUIRED},  
+            {sfCreateCode, soeREQUIRED},
+            {sfHookHash, soeREQUIRED},
+            {sfHookCreationTxnID, soeREQUIRED}
         },
         commonFields);
 
