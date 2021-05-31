@@ -38,35 +38,31 @@ InnerObjectFormats::InnerObjectFormats()
             {sfTxnSignature, soeREQUIRED},
         });
 
-    add(sfHookSet.jsonName.c_str(),
-        sfHookSet.getCode(),
+    add(sfHook.jsonName.c_str(),
+        sfHook.getCode(),
         {
-            {sfHookSetOperation,soeREQUIRED},
-            {sfHookSequence,    soeOPTIONAL},
-            {sfHookOn,          soeOPTIONAL},
-            {sfHookReorder,     soeOPTIONAL},
-            {sfFlags,           soeOPTIONAL},
-            {sfHookNamespace,   soeOPTIONAL},
             {sfHookHash,        soeOPTIONAL},
+            {sfCreateCode,      soeOPTIONAL},
+            {sfHookGrants,      soeOPTIONAL},
+            {sfHookNamespace,   soeOPTIONAL},
             {sfHookParameters,  soeOPTIONAL},
-            {sfHookDefinition,  soeOPTIONAL}
+            {sfHookApiVersion,  soeOPTIONAL},
+            {sfHookOn,          soeOPTIONAL},
+            {sfFlags,           soeOPTIONAL}
         });
 
-    add(sfHookDefinition.jsonName.c_str(),
-        sfHookDefinition.getCode(),
+    add(sfHookGrant.jsonName.c_str(),
+        sfHookGrant.getCode(),
         {
-            {sfHookOn,          soeREQUIRED},
-            {sfHookNamespace,   soeREQUIRED},
-            {sfHookParameters,  soeREQUIRED},
-            {sfHookApiVersion,  soeREQUIRED},
-            {sfCreateCode,      soeREQUIRED},
-        }); 
+            {sfHookHash,        soeREQUIRED},
+            {sfAuthorize,       soeOPTIONAL}
+        });
 
     add(sfHookParameter.jsonName.c_str(),
         sfHookParameter.getCode(),
         {
             {sfHookParameterName,   soeREQUIRED},
-            {sfHookParameterValue,  soeREQUIRED},
+            {sfHookParameterValue,  soeREQUIRED}
         });
 
 }

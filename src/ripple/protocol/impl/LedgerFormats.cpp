@@ -65,6 +65,7 @@ LedgerFormats::LedgerFormats()
             {sfTakerGetsCurrency, soeOPTIONAL},  // for order book directories
             {sfTakerGetsIssuer, soeOPTIONAL},    // for order book directories
             {sfExchangeRate, soeOPTIONAL},       // for order book directories
+            {sfHookNamespace, soeOPTIONAL},      // for hook state directories
             {sfIndexes, soeREQUIRED},
             {sfRootIndex, soeREQUIRED},
             {sfIndexNext, soeOPTIONAL},
@@ -181,18 +182,9 @@ LedgerFormats::LedgerFormats()
         {
             {sfAccount, soeOPTIONAL},
             {sfOwnerNode, soeREQUIRED},
-            {sfHookHash, soeREQUIRED},
-            {sfHookSetTxnID, soeREQUIRED},
             {sfPreviousTxnID, soeREQUIRED},
             {sfPreviousTxnLgrSeq, soeREQUIRED},
-            {sfHookStateCount, soeREQUIRED},
-            {sfHookReserveCount, soeREQUIRED},
-            {sfHookStateDataMaxSize, soeREQUIRED},   // this is set at time of creation according to 
-                                                     // what the validators voted on
-            {sfHookOn, soeOPTIONAL}, 
-            {sfHookNamespace, soeOPTIONAL},
-            {sfHookParameters, soeOPTIONAL}
-
+            {sfHooks, soeREQUIRED} 
         },
         commonFields);
 
@@ -204,8 +196,8 @@ LedgerFormats::LedgerFormats()
             {sfHookParameters, soeREQUIRED},
             {sfHookApiVersion, soeREQUIRED},  
             {sfCreateCode, soeREQUIRED},
-            {sfHookHash, soeREQUIRED},
-            {sfHookCreationTxnID, soeREQUIRED}
+            {sfHookSetTxnID, soeREQUIRED},
+            {sfReferenceCount, soeREQUIRED}
         },
         commonFields);
 

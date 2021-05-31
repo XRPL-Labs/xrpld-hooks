@@ -342,8 +342,6 @@ extern SF_U8 const sfTransactionResult;
 extern SF_U8 const sfTickSize;
 extern SF_U8 const sfUNLModifyDisabling;
 extern SF_U8 const sfHookResult;            // code indicating what happened accept/rollback/error, NOT return code.
-extern SF_U8 const sfHookSequence;
-extern SF_U8 const sfHookSetOperation;
 
 // 16-bit integers
 extern SF_U16 const sfLedgerEntryType;
@@ -397,9 +395,6 @@ extern SF_U32 const sfCancelAfter;
 extern SF_U32 const sfFinishAfter;
 extern SF_U32 const sfSignerListID;
 extern SF_U32 const sfSettleDelay;
-extern SF_U32 const sfHookStateCount;
-extern SF_U32 const sfHookReserveCount;
-extern SF_U32 const sfHookStateDataMaxSize; // [RH] the maximum record size of hook data blob (not max record count)
 extern SF_U32 const sfEmitGeneration; 
 
 // 64-bit integers
@@ -418,8 +413,7 @@ extern SF_U64 const sfHookOn;
 extern SF_U64 const sfHookInstructionCount;
 extern SF_U64 const sfEmitBurden; 
 extern SF_U64 const sfHookReturnCode;       // the code returned by hook dev (rollback or accept) NOT exe. result 
-extern SF_U64 const sfHookReferenceCount;
-extern SF_U64 const sfHookReorder;
+extern SF_U64 const sfReferenceCount;
 
 // 128-bit
 extern SF_U128 const sfEmailHash;
@@ -455,7 +449,6 @@ extern SF_U256 const sfConsensusHash;
 extern SF_U256 const sfCheckID;
 extern SF_U256 const sfValidatedHash;
 extern SF_U256 const sfHookStateKey;
-extern SF_U256 const sfHookCreationTxnID;
 extern SF_U256 const sfHookHash;
 extern SF_U256 const sfHookNamespace;
 extern SF_U256 const sfHookSetTxnID;
@@ -516,8 +509,6 @@ extern SF_Account const sfRegularKey;
 extern SF_Account const sfEmitCallback;
 
 // account (uncommon)
-extern SF_Account const sfHookAccount;
-extern SF_Account const sfHookCreator;
 
 // path set
 extern SField const sfPaths;
@@ -543,8 +534,7 @@ extern SField const sfSigner;
 extern SField const sfMajority;
 extern SField const sfNegativeUNLEntry;
 extern SField const sfEmittedTxn;
-extern SField const sfHookSet;
-extern SField const sfHookDefinition;
+extern SField const sfHook;
 extern SField const sfHookParameter;
 
 // array of objects
@@ -562,9 +552,9 @@ extern SField const sfNegativeUNL;
 extern SField const sfEmitDetails;
 extern SField const sfHookExecutions; // array of executions
 extern SField const sfHookExecution;  // actual execution result
-extern SField const sfHookSets;
 extern SField const sfHookParameters;
 extern SField const sfHooks;
+extern SField const sfHookForeignAuth;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

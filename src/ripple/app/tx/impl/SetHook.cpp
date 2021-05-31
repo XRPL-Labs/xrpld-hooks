@@ -561,7 +561,7 @@ validateHookParams(STArray const& hookParams)
             return false;
         }
 
-        int counter = 0;
+        bool nameFound = false;
         for (auto const& paramElement : *hookParamObj)
         {
             auto const& name = paramElement.getFName();
@@ -574,16 +574,17 @@ validateHookParams(STArray const& hookParams)
                     << "SetHook sfHookParameter contains object other than sfHookParameterName/Value.";
                 return false;
             }
-            counter++;
+
+            if (name == sfHookParameterName)
+                nameFound = true;
         }
 
-        if (counter++ != 2)
+        if (!nameFound)
         {
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: "
-                << "SetHook sfHookParameter should contain exactly one of each: sfHookParameterName "
-                << " and sfHookParameterValue.";
+                << "SetHook sfHookParameter must contain at least sfHookParameterName";
             return false;
         }
     }
@@ -591,24 +592,89 @@ validateHookParams(STArray const& hookParams)
     return true;
 }
 
-bool validateHookDef(STObject const& hookDef)
+bool validateHookSetEntry(STObject const& hookDef)
 {
-    for (auto const& hookDefElement : *hookDef)
+    bool hasHash = hookDef.isFieldPresent(sfHookHash);
+    bool hasCode = hookDef.isFieldPresent(sfCreateCode);
+
+    // mutex options: either link an existing hook or create a new one
+    if (hasHash && hasCode)
     {
-        auto const& name = hookSetElement.getFName();
-        if (name != sfHookOn &&
-            name != sfHookNamespace &&
-            name != sfHookParameters &&
-            name != sfHookApiVersion &&
-            name != sfCreateCode)
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook must provide only one of sfCreateCode or sfHookHash.";
+        return false;
+    }
+
+    // validate hook params structure
+    if (hookDef.isFieldPresent(sfHookParameters) &&
+        !validateHookParams(hookDef.getFieldArray(sfHookParameters)))
+        return temMALFORMED;
+
+    // validate hook grants structure
+    if (hookDef.isFieldPresent(sfHookGrants))
+    {
+        auto const& hookGrants = ctx.tx.getFieldArray(sfHookGrants);
+        
+        if (hookGrants.size() < 1)
         {
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookDefinition contains invalid field.";
+                << "]: Malformed transaction: SetHook sfHookGrants empty.";
+            return temMALFORMED;
+        }
+
+        if (hookSets.size() > 8)
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookGrants contains more than 8 entries.";
+            return temMALFORMED;
+        }
+        
+        for (auto const& hookGrant : hookGrants)
+        {
+            auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
+            if (!hookGrantObj || (hookGrantObj->getFName() != sfHookGrant))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
+                return temMALFORMED;
+            }
+        }
+    }
+
+    // link existing hook
+    if (hasHash)
+    {
+        // ensure no hookapiversion field was provided
+        if (hookDef.isFieldPresent(sfHookApiVersion))
+        {
+            JLOG(j.trace())
+                << "HookSet[" << HS_ACC() 
+                << "]: Malformed transaction: HookApiVersion can only be provided when creating a new hook."
             return false;
         }
 
+        // check if the specified hook exists
+        auto const& hash = hookDef.getFieldH256(sfHookHash);
+        {
+            Keylet const key{ltHOOK_DEFINITION, hash};
+            auto sleItem = view.peek(key);
+            if (!sleItem)
+            {
+                JLOG(j.trace())
+                    << "HookSet[" << HS_ACC() 
+                    << "]: Malformed transaction: No hook exists with the specified hash."
+                return false;
+            }
+        }
+
+        return true;
     }
+    
+    // execution to here means this is an sfCreateCode (hook creation) entry
 
     // ensure hooknamespace is present
     if (!hookDef.isFieldPresent(sfHookNamespace))
@@ -619,28 +685,15 @@ bool validateHookDef(STObject const& hookDef)
         return false;
     }
 
-    // ensure createcode is present
-    if (!hookDef.isFieldPresent(sfCreateCode))
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookDefinition must contain sfCreateCode.";
-        return false;
-    }
-
-
-    // validate params if any
-    if (hookDef.isFieldPresent(sfHookParameters) &&
-        !validateHookParams(hookDef.getFieldArray(sfHookParameters)))
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookDefinition->sfHookParameters invalid.";
-        return false;
-    }
-
     // validate api version, if provided
-    if (hookDef.isFieldPresent(sfHookApiVersion))
+    if (!hookDef.isFieldPresent(sfHookApiVersion))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
+        return false;
+    }
+    else
     {
         auto version = hookDef.getFieldU16(sfHookApiVersion);
         if (version != 0)
@@ -648,9 +701,18 @@ bool validateHookDef(STObject const& hookDef)
             // we currently only accept api version 0
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookDefinition->sfHookApiVersion invalid. Use 0 or omit.";
+                << "]: Malformed transaction: SetHook sfHookDefinition->sfHookApiVersion invalid. (Try 0).";
             return false;
         }
+    }
+
+    // validate sfHookOn
+    if (!hookDef.isFieldPresent(sfHookOn))
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
+        return false;
     }
 
 
@@ -955,20 +1017,20 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    if (!ctx.tx.isFieldPresent(sfHookSets))
+    if (!ctx.tx.isFieldPresent(sfHooks))
     {
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC() << "]: Malformed transaction: SetHook lacked sfHooks array.";
         return temMALFORMED;
     }
 
-    auto const& hookSets = ctx.tx.getFieldArray(sfHookSets);
+    auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
     
     if (hookSets.size() < 1)
     {
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookSets empty.";
+            << "]: Malformed transaction: SetHook sfHooks empty.";
         return temMALFORMED;
     }
 
@@ -976,7 +1038,7 @@ SetHook::preflight(PreflightContext const& ctx)
     {
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookSets contains more than 8 entries.";
+            << "]: Malformed transaction: SetHook sfHooks contains more than 8 entries.";
         return temMALFORMED;
     }
     
@@ -985,7 +1047,7 @@ SetHook::preflight(PreflightContext const& ctx)
 
         auto const& hookSetObj = dynamic_cast<STObject const*>(&hookSet);
 
-        if (!hookSetObj || (hookSetObj->getFName() != sfHookSet))
+        if (!hookSetObj || (hookSetObj->getFName() != sfHook))
         {
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
@@ -993,202 +1055,35 @@ SetHook::preflight(PreflightContext const& ctx)
             return temMALFORMED;
         }
 
+        int field_count = 0;
         for (auto const& hookSetElement : *hookSetObj)
         {
             auto const& name = hookSetElement.getFName();
 
-            if (name != sfHookSetOperation && 
-                name != sfHookSequence &&
-                name != sfHookReorder &&
-                name != sfHookOn &&
-                name != sfHookNamespace &&
+            if (name != sfCreateCode &&
                 name != sfHookHash &&
+                name != sfHookNamespace &&
                 name != sfHookParameters &&
-                name != sfHookDefinition)
+                name != sfHookOn &&
+                name != sfHookGrants &&
+                name != sfHookApiVersion)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHookSet contains invalid field.";
                 return temMALFORMED;
             }
+            field_count++;
         }
 
-        if (hookSetObj.isFieldPresent(sfHookSetOperation))
-        {
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookSet must contain sfHookSetOperation.";
-            return temMALFORMED;
-        }
-
-        // validate hook operation
-        uint8_t operation = hookSetObj.getFieldU8(sfHookSetOperation);
-
-
-        uint32_t fields = HOOKSET_OPERATION;
-
-        if (hookSetObj.isFieldPresent(sfHookSequence))
-            fields |= HSF_SEQUENCE;
-
-        if (hookSetObj.isFieldPresent(sfHookReorder))
-            fields |= HSF_REORDER;
-
-        if (hookSetObj.isFieldPresent(sfHookOn))
-            fields |= HSF_ON;
-
-        if (hookSetObj.isFieldPresent(sfHookNamespace))
-            fields |= HSF_NAMESPACE;
-        
-        if (hookSetObj.isFieldPresent(sfHookHash))
-            fields |= HSF_HASH;
-
-        if (hookSetObj.isFieldPresent(sfHookParameters))
-            fields |= HSF_PARAMETERS;
-
-        if (hookSetObj.isFieldPresent(sfHookDefinition))
-            fields |= HSF_DEFINITION;
-
-        // each operation has a different set of minimum fields, so we need branch to check each of these
-        switch(operation)
-        {
-            case HSO_REORDER:
-            {
-                if (fields != HSF_OPERATION | HSF_REORDER) 
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
-                        << "]: Malformed transaction: SetHook HSO_REORDER must have only: "
-                        << "sfHookReorder";
-                    return temMALFORMED;
-                }
-                break;
-            }
-
-            case HSO_CREATE:
-            {
-                if ((fields & HSF_REORDER)         || 
-                    (fields & HSF_HASH)            ||
-                   !(fields & HSF_SEQUENCE)        || 
-                   !(fields & HSF_DEFINITION)) 
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
-                        << "]: Malformed transaction: SetHook HSO_CREATE must have at least: "
-                        << "sfHookSequence and sfHookDefinition, and cannot have sfHookHash or sfHookReorder";
-                    return temMALFORMED;
-                }
-                break;
-            }
-
-            case HSO_LINK:
-            {
-                if ((fields & HSF_REORDER)         || 
-                   !(fields & HSF_HASH)            || 
-                   !(fields & HSF_SEQUENCE)        || 
-                   (fields  & HSF_DEFINITION)) 
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
-                        << "]: Malformed transaction: SetHook HSO_LINK must have at least: "
-                        << "sfHookSequence and sfHookHash, and cannot have sfHookDefinition or sfHookReorder";
-                    return temMALFORMED;
-                }
-                break;
-            }
-
-            case HSO_UNLINK:
-            {
-
-                if ((fields & HSF_REORDER)     || 
-                   !(fields & HSF_SEQUENCE)    || 
-                    (fields & HSF_DEFINITION)  ||
-                    (fields & HSF_ON)          ||
-                    (fields & HSF_NAMESPACE)   ||
-                    (fields & HSF_PARAMETERS))
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
-                        << "]: Malformed transaction: SetHook HSO_UNLINK must have at least: "
-                        << "sfHookSequence, and cannot have "
-                        << "sfHookReorder, sfHookDefinition, sfHookOn, sfHookNamespace or sfHookParametrs";
-                    return temMALFORMED;
-                }
-                break;
-            }
-
-            case HSO_NSDELETE:
-            case HSO_NSSET:
-            {
-                if (fields != HSF_OPERATION & HSF_NAMESPACE)
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
-                        << "]: Malformed transaction: SetHook NSSET/NSDELETE must have only: "
-                        << "sfHookNamespace";
-                    return temMALFORMED;
-                }
-                break;
-            }
-
-            case HSO_PASET:
-            {
-                break;
-            }
-
-            case HSO_PARESET:
-            {
-                break;
-            }
-
-            case HSO_FAUTH:
-            {
-                break;
-            }
-
-            case HSO_FUNAUTH:
-            {
-                break;
-            }
-
-            case HSO_HOOKON:
-            {
-                break;
-            }
-
-            case HSO_ANNIHILATE: 
-            {
-                break;
-            }
-
-
-            default:
-            {
-                JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: SetHook sfHookSetOperation invalid option";
-                return temMALFORMED;
-            }
-        }
-
-        // validate hook params structure
-        if (hookSetObj.isFieldPresent(sfHookParameters) &&
-            !validateHookParams(hookSetObj.getFieldArray(sfHookParameters)))
-                return temMALFORMED;
+        if (field_count == 0) // blank entry
+            continue;
 
         // validate the "create code" part if it's present
-        if (hookSetObj.isFieldPresent(sfHookDefinition))
-        {
-            auto const& hookDef =
-               const_cast<ripple::STObject&>(hookSetObj).getField(sfHookDefinition).downcas<STObject>();
-
-            if (!validateHookDef(hookDef))
+        if (!validateHookSetEntry(hookSetObj))
                 return temMALFORMED;
-        }
-
     }
-
     return preflight2(ctx);
-
 }
 
 TER
@@ -1201,13 +1096,11 @@ SetHook::doApply()
 void
 SetHook::preCompute()
 {
-    //hook_ = ctx_.tx.getFieldVL(sfCreateCode);
-    //hookOn_ = ctx_.tx.getFieldU64(sfHookOn);
     return Transactor::preCompute();
 }
 
 
-
+/*
 TER
 SetHook::destroyEntireHookState(
     Application& app,
@@ -1284,6 +1177,8 @@ SetHook::destroyEntireHookState(
 
     return tesSUCCESS;
 }
+
+*/
 
 TER
 SetHook::setHook()
