@@ -277,6 +277,7 @@ enum TECcodes : TERUnderlyingType {
     tecHAS_OBLIGATIONS = 151,
     tecTOO_SOON = 152,
     tecHOOK_REJECTED = 153,
+    tecREQUIRES_FLAG = 154,
 };
 
 //------------------------------------------------------------------------------

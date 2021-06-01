@@ -1042,6 +1042,7 @@ SetHook::preflight(PreflightContext const& ctx)
         return temMALFORMED;
     }
     
+    bool allBlank = true;
     for (auto const& hookSet : hookSets)
     {
 
@@ -1051,11 +1052,15 @@ SetHook::preflight(PreflightContext const& ctx)
         {
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookSets contains obj other than sfHookSet.";
+                << "]: Malformed transaction: SetHook sfHooks contains obj other than sfHook.";
             return temMALFORMED;
         }
 
-        int field_count = 0;
+        if (hookSetObj->getCount() == 0) // skip blanks
+            continue;
+
+        allBlank = false;
+
         for (auto const& hookSetElement : *hookSetObj)
         {
             auto const& name = hookSetElement.getFName();
@@ -1066,22 +1071,27 @@ SetHook::preflight(PreflightContext const& ctx)
                 name != sfHookParameters &&
                 name != sfHookOn &&
                 name != sfHookGrants &&
-                name != sfHookApiVersion)
+                name != sfHookApiVersion &&
+                name != sfFlags)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: SetHook sfHookSet contains invalid field.";
+                    << "]: Malformed transaction: SetHook sfHook contains invalid field.";
                 return temMALFORMED;
             }
-            field_count++;
         }
-
-        if (field_count == 0) // blank entry
-            continue;
 
         // validate the "create code" part if it's present
         if (!validateHookSetEntry(hookSetObj))
                 return temMALFORMED;
+    }
+
+    if (allBlank)
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHooks must contain at least one non-blank sfHook.";
+        return temMALFORMED;
     }
     return preflight2(ctx);
 }
@@ -1099,33 +1109,29 @@ SetHook::preCompute()
     return Transactor::preCompute();
 }
 
-
-/*
 TER
-SetHook::destroyEntireHookState(
+SetHook::destroyNamespace(
     Application& app,
     ApplyView& view,
     const AccountID& account,
-    const Keylet & accountKeylet,
-    const Keylet & ownerDirKeylet,
-    const Keylet & hookKeylet
+    const Keylet & dirKeylet        // the keylet of the namespace directory
 ) {
     auto const& ctx = ctx_;
     auto j = app.journal("View");
     JLOG(j.trace())
         << "HookSet[" << HS_ACC() << "]: DeleteState "
-        << "Destroying Entire HookState for " << account;
+        << "Destroying Entire HookState for " << account << " namespace " << ns;
 
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
     uint256 dirEntry{beast::zero};
 
-    if (dirIsEmpty(view, ownerDirKeylet))
+    if (dirIsEmpty(view, dirKeylet))
         return tesSUCCESS;
 
     if (!cdirFirst(
             view,
-            ownerDirKeylet.key,
+            dirKeylet.key,
             sleDirNode,
             uDirEntry,
             dirEntry,
@@ -1140,7 +1146,7 @@ SetHook::destroyEntireHookState(
     {
         // Make sure any directory node types that we find are the kind
         // we can delete.
-        Keylet const itemKeylet{ltCHILD, dirEntry}; // todo: ??? [RH] can I just specify ltHOOK_STATE here ???
+        Keylet const itemKeylet{ltCHILD, dirEntry};
         auto sleItem = view.peek(itemKeylet);
         if (!sleItem)
         {
@@ -1153,14 +1159,12 @@ SetHook::destroyEntireHookState(
             return tefBAD_LEDGER;
         }
 
-
         auto nodeType = sleItem->getFieldU16(sfLedgerEntryType);
 
         if (nodeType == ltHOOK_STATE) {
             // delete it!
-            // todo: [RH] check if it's safe to delete while iterating ???
             auto const hint = (*sleItem)[sfOwnerNode];
-            if (!view.dirRemove(ownerDirKeylet, hint, itemKeylet.key, false))
+            if (!view.dirRemove(dirKeylet, hint, itemKeylet.key, false))
             {
                 JLOG(j.fatal())
                     << "HookSet[" << HS_ACC() << "]: DeleteState "
@@ -1173,12 +1177,217 @@ SetHook::destroyEntireHookState(
 
 
     } while (cdirNext(
-        view, ownerDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j));
+        view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry, j));
 
     return tesSUCCESS;
 }
 
-*/
+#define HS_FLAG_OVERRIDE 0b01 /* RH TODO move this to sethook.h as enum */
+#define HS_FLAG_NSDELETE 0b10
+
+    TER
+SetHook::setHook()
+{
+    auto const& ctx = ctx_;
+    auto viewJ = ctx_.app.journal("View");
+
+    const int  blobMax = hook::maxHookStateDataSize();
+    auto const accountKeylet = keylet::account(account_);
+    auto const ownerDirKeylet = keylet::ownerDir(account_);
+    auto const hookKeylet = keylet::hook(account_);
+
+    ripple::STArray newHooks{sfHooks, 8};
+    auto newHookSLE = std::make_shared<SLE>(hookKeylet);
+
+    int oldHookCount = 0;
+    std::optional<ripple::STArray const&> oldHooks;
+    auto const& oldHookSLE = view().peek(hookKeylet);
+    if (oldHookSLE)
+    {
+       oldHooks = oldHookSLE.getFieldArray(sfHooks);
+       oldHookCount = oldHooks->size();
+    }
+
+
+    std::vector<std::pair<keylet, bool>> defsToDestroy {}; // keylet, override was in flags
+    std::vector<std::pair<keylet, bool>> dirsToDestroy {}; // keylet, nsdelete was in flags
+
+    int hookSetNumber = -1;
+    auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
+    for (auto const& hookSet : hookSets)
+    {
+        auto const& hookSetObj = dynamic_cast<STObject const*>(&hookSet);
+
+        bool txHasHash = hookSetObj->isFieldPresent(sfHookHash);
+        bool txHasCode = hookSetObj->isFieldPresent(sfCreateCode);
+        bool isDelete  = txHasCode && hookSetObj->getFieldVL(sfCreateCode).size() == 0;
+
+        uint32_t flags = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
+        
+        
+        hookSetNumber++;
+
+        if (hookSetObj->getCount() == 0) // skip blank sethooks 
+           continue;
+
+
+        ripple::STObject newHook { sfHook };
+
+        std::optional<ripple::STObject const&> oldHook;
+
+        if (hookSetNumber < oldHookCount)
+            oldHook = ((*oldHooks)[hookSetNumber]).downcast<ripple::STObject const&>();
+        
+        bool oldBlank = !oldHook || !(hookSetObj->isFieldPresent(sfHookHash));
+        bool isUpdate = !oldBlank && txHasHash &&
+                        hookSetObj->getFieldH256(sfHookHash) == oldHook->getFieldH256;
+
+        if (!oldBlank && !isUpdate && !(flags & HS_FLAG_OVERRIDE))
+        {
+            // reject because: the old hook isn't blank, this isn't an update to an existing hook and
+            // the override flag is missing
+            JLOG(ctx.j.trace())
+                << "HookSet[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHooks must contain at least one non-blank sfHook.";
+            return tecREQUIRES_FLAG;
+        }
+
+        std::optional<STLedgerEntry const&> oldDirSLE;
+        std::optional<ripple::uint256> oldNamespace;
+        std::optional<ripple::uint256> newNamespace;
+        std::optional<ripple::keylet> oldDirKeylet;
+        std::optional<ripple::keylet> newDirKeylet;
+
+
+        std::optional<STLedgerEntry const&> oldDefSLE;
+
+        if (hookSetObj->isFieldPresent(sfHookNamespace))
+        {
+            newNamespace = hookSetObj->getFieldH256(sfHookNamespace);
+            newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
+        }
+
+        if (!oldBlank)
+        {
+            oldNamespace = oldHook->getFieldH256(sfHookNamespace);
+            oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
+            oldDirSLE = view().peek(*oldDirKeylet);
+            oldDefSLE = view().peek(keylet::hookDefinition(oldHook->getFieldH256(sfHookHash)));
+        }
+
+        // if the hook is being deleted or if the namespace is being updated then we need to decrement
+        // the reference count on the hook state directory, and this may result in the namespace being
+        // destroyed unless that namespace is used again on another hook in this same txn
+        if (newNamespace && *oldNamespace != *newNamespace || isDelete)
+        {
+            if (!oldDirSLE)
+            {
+                JLOG(ctx.j.warning())
+                    << "HookSet could not find old hook state dir" 
+                    << HS_ACC() << "!!!";
+                return tecINTERNAL;
+            }
+
+            uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount) - 1;
+            
+            oldDirSLE->getFieldU64(refCount);
+            view().update(*oldDirSLE);
+
+            if (refCount <= 0)
+                dirsToDestroy.push_back(*oldDirKeylet, flags & HS_FLAG_NSDELETE);
+        }
+
+
+        // decrement the reference count of the old hook where applicable
+        if (isDelete || txHasCode)
+        {
+            if (!oldDefSLE)
+            {
+                JLOG(ctx.j.warning())
+                    << "HookSet could not find old hook "
+                    << HS_ACC() << "!!!";
+                return tecINTERNAL;
+            }
+            
+            uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount) - 1;
+            
+            oldDirSLE->getFieldU64(refCount);
+            view().update(*oldDirSLE);
+
+            if (refCount <= 0)
+                defsToDestroy.push_back(*oldDefKeylet, flags & HS_FLAG_OVERRIDE);
+        }
+
+        // create the new hook where applicable
+        if (!isDelete && txHasCode)
+        {
+            // RH TODO: create code here
+
+            // update hook hash
+            newHook->setFieldH256(sfHookHash, newHash);
+        }
+        else
+            newHook->setFieldH256(sfHookHash, hookSetObj->getFieldH256(sfHookHash));
+
+       
+        // process the parameters
+        
+        // process the grants
+        
+        // process hookon
+        
+        // process api version 
+
+    }
+
+    // clean up any zero reference dirs and defs
+
+    // dirs
+    for (auto const& p : dirsToDelete)
+    {
+        auto const& sle = view().peek(p.first);
+        uint64_t refCount = sle->getFieldU64(sfReferenceCount);
+        if (refCount <= 0)
+        {
+            if (!p.second)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook operation would delete a namespace of hook states"
+                    << " but to do this you must set the NSDELETE flag";
+                return tecREQUIRES_FLAG;
+            }
+
+            destroyNamespace(app, view, account_, p.first); 
+            view().erase(sle);
+        }
+    }
+
+
+    // defs
+    for (auto const& p : defsToDelete)
+    {
+        auto const& sle = view().peek(p.first);
+        uint64_t refCount = sle->getFieldU64(sfReferenceCount);
+        if (refCount <= 0)
+        {
+            if (!p.second)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook operation would delete a hook"
+                    << " but to do this you must set the OVERRIDE flag";
+                return tecREQUIRES_FLAG;
+            }
+            view().erase(sle);
+        }
+    }
+
+    return tesSUCCESS;
+}
+
+/*
+
 
 TER
 SetHook::setHook()
@@ -1329,5 +1538,6 @@ SetHook::removeHookFromLedger(
     return tesSUCCESS;
 }
 
+*/
 
 }  // namespace ripple

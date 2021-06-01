@@ -131,12 +131,10 @@ emittedDir() noexcept
     return ret;
 }
 
-Keylet const&
-hookStateDir() noexcept
+Keylet 
+hookStateDir(AccountID const& id, uint256 const& ns) noexcept
 {
-    static Keylet const ret{
-        ltDIR_NODE, indexHash(LedgerNameSpace::HOOK_STATE_DIR)};
-    return ret;
+    return {ltDIR_NODE, indexHash(LedgerNameSpace::HOOK_STATE_DIR, id, ns)};
 }
 
 Keylet

@@ -36,44 +36,9 @@
 
 namespace ripple {
 
-enum HookSetOperation : uint8_t
-{
-    HSO_REORDER         = 0U,
-    HSO_CREATE          = 1U,
-	HSO_LINK            = 2U,
-	HSO_UNLINK          = 3U,
-	HSO_NSSET           = 4U,
-	HSO_NSDELETE        = 6U,
-	HSO_PASET           = 7U,
-	HSO_PARESET         = 8U,
-	HSO_FAUTH           = 9U,
-	HSO_FUNAUTH         = 10U,
-	HSO_HOOKON          = 11U,
-	HSO_ANNIHILATE      = 12U
-};
-
-enum HookSetFields : uint8_t
-{
-    HSF_OPERATION      =   1U,
-    HSF_SEQUENCE       =   2U,
-    HSF_REORDER        =   4U,
-    HSF_ON             =   8U,
-    HSF_NAMESPACE      =  16U,
-    HSF_HASH           =  32U,
-    HSF_PARAMETERS     =  64U,
-    HSF_DEFINITION     = 128U
-}
-
-/**
-See the README.md for an overview of the SetHook transaction that
-this class implements.
-*/
 class SetHook : public Transactor
 {
-private:
-    // Values determined during preCompute for use later.
-    Blob hook_;
-    uint32_t hookOn_;
+
 public:
     explicit SetHook(ApplyContext& ctx) : Transactor(ctx)
     {

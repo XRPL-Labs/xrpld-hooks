@@ -55,7 +55,8 @@ InnerObjectFormats::InnerObjectFormats()
         sfHookGrant.getCode(),
         {
             {sfHookHash,        soeREQUIRED},
-            {sfAuthorize,       soeOPTIONAL}
+            {sfAuthorize,       soeOPTIONAL},
+            {sfFlags,           soeOPTIONAL}
         });
 
     add(sfHookParameter.jsonName.c_str(),
