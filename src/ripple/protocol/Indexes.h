@@ -59,7 +59,7 @@ Keylet
 hookDefinition(uint256 const& hash) noexcept;
 
 Keylet
-hook(AccountID const& id, uint256 const& hash) noexcept;
+hook(AccountID const& id) noexcept;
 
 Keylet
 hookState(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept;

@@ -546,7 +546,7 @@ check_guard(
 }
 
 bool
-validateHookParams(STArray const& hookParams)
+validateHookParams(STArray const& hookParams, PreflightContext& ctx)
 {
     for (auto const& hookParam : hookParams)
     {
@@ -566,7 +566,7 @@ validateHookParams(STArray const& hookParams)
         {
             auto const& name = paramElement.getFName();
 
-            if (name != sfHookParameterName && name != sfHookParameterValue
+            if (name != sfHookParameterName && name != sfHookParameterValue)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
@@ -592,7 +592,7 @@ validateHookParams(STArray const& hookParams)
     return true;
 }
 
-bool validateHookSetEntry(STObject const& hookDef)
+bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
 {
     bool hasHash = hookDef.isFieldPresent(sfHookHash);
     bool hasCode = hookDef.isFieldPresent(sfCreateCode);
@@ -608,7 +608,7 @@ bool validateHookSetEntry(STObject const& hookDef)
 
     // validate hook params structure
     if (hookDef.isFieldPresent(sfHookParameters) &&
-        !validateHookParams(hookDef.getFieldArray(sfHookParameters)))
+        !validateHookParams(hookDef.getFieldArray(sfHookParameters), ctx))
         return temMALFORMED;
 
     // validate hook grants structure
@@ -1082,7 +1082,7 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
         // validate the "create code" part if it's present
-        if (!validateHookSetEntry(hookSetObj))
+        if (!validateHookSetEntry(hookSetObj, ctx))
                 return temMALFORMED;
     }
 
@@ -1182,8 +1182,6 @@ SetHook::destroyNamespace(
     return tesSUCCESS;
 }
 
-#define HS_FLAG_OVERRIDE 0b01 /* RH TODO move this to sethook.h as enum */
-#define HS_FLAG_NSDELETE 0b10
 
     TER
 SetHook::setHook()
@@ -1216,6 +1214,8 @@ SetHook::setHook()
     auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
     for (auto const& hookSet : hookSets)
     {
+        hookSetNumber++;
+
         auto const& hookSetObj = dynamic_cast<STObject const*>(&hookSet);
 
         bool txHasHash = hookSetObj->isFieldPresent(sfHookHash);
@@ -1224,15 +1224,13 @@ SetHook::setHook()
 
         uint32_t flags = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
         
-        
-        hookSetNumber++;
-
-        if (hookSetObj->getCount() == 0) // skip blank sethooks 
-           continue;
-
-
+        std::optional<ripple::uint256> oldNamespace;
+        std::optional<ripple::uint256> newNamespace;
+        std::optional<ripple::keylet> oldDirKeylet;
+        std::optional<ripple::keylet> newDirKeylet;
+        std::optional<STLedgerEntry const&> oldDefSLE;
+        std::optional<STLedgerEntry const&> oldDirSLE;
         ripple::STObject newHook { sfHook };
-
         std::optional<ripple::STObject const&> oldHook;
 
         if (hookSetNumber < oldHookCount)
@@ -1240,9 +1238,29 @@ SetHook::setHook()
         
         bool oldBlank = !oldHook || !(hookSetObj->isFieldPresent(sfHookHash));
         bool isUpdate = !oldBlank && txHasHash &&
-                        hookSetObj->getFieldH256(sfHookHash) == oldHook->getFieldH256;
+                        hookSetObj->getFieldH256(sfHookHash) == oldHook->getFieldH256(sfHookHash);
 
-        if (!oldBlank && !isUpdate && !(flags & HS_FLAG_OVERRIDE))
+        
+        // blank hookSet entries are allowed and means semantically: "do nothing to this hook entry in the chain"
+        if (hookSetObj->getCount() == 0)
+        {
+            // if a hook already exists here then migrate it to the new array
+            // if it doesn't exist just place a blank object here
+            newHooks[hookSetNumber] = ( oldHook ? *oldHook : newHook );
+            continue;
+        }
+
+        // non-blank hookSet entries can do one of three things:
+        // 1. modify an existing hook entry without changing which hook it points at
+        //      - by passing the same hookhash that already corresponds to this entry in the hook chain
+        // 2. create/replace/install/override an existing hook entry or a blank hook entry with a new hook
+        //      - by passing a new hookhash or by passing new bytecode via sfCreateCode
+        // 3. delete a hook entry
+        //      - by passing a blank sfCreateCode
+
+        // certain actions require explicit flagging to prevent user error
+        // overriding an existing hook entry with a new hook entry (or deleting it) requires FLAG_OVERRIDE
+        if (!oldBlank && !isUpdate && !(flags & FLAG_OVERRIDE))
         {
             // reject because: the old hook isn't blank, this isn't an update to an existing hook and
             // the override flag is missing
@@ -1252,21 +1270,14 @@ SetHook::setHook()
             return tecREQUIRES_FLAG;
         }
 
-        std::optional<STLedgerEntry const&> oldDirSLE;
-        std::optional<ripple::uint256> oldNamespace;
-        std::optional<ripple::uint256> newNamespace;
-        std::optional<ripple::keylet> oldDirKeylet;
-        std::optional<ripple::keylet> newDirKeylet;
-
-
-        std::optional<STLedgerEntry const&> oldDefSLE;
-
+        // if the sethook txn specifies a new namespace then extract those fields
         if (hookSetObj->isFieldPresent(sfHookNamespace))
         {
             newNamespace = hookSetObj->getFieldH256(sfHookNamespace);
             newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
         }
 
+        // if an existing hook exists at this position in the chain then extract the relevant fields
         if (!oldBlank)
         {
             oldNamespace = oldHook->getFieldH256(sfHookNamespace);
@@ -1294,11 +1305,13 @@ SetHook::setHook()
             view().update(*oldDirSLE);
 
             if (refCount <= 0)
-                dirsToDestroy.push_back(*oldDirKeylet, flags & HS_FLAG_NSDELETE);
+                dirsToDestroy.push_back(*oldDirKeylet, flags & FLAG_NSDELETE);
         }
 
 
-        // decrement the reference count of the old hook where applicable
+        // if the hook is being unlinked or deleted then we need to decrement the reference count
+        // on the unowned hook ledger entry, which will result in the hook being deleted completely
+        // from the ledger if the reference count becomes zero
         if (isDelete || txHasCode)
         {
             if (!oldDefSLE)
@@ -1309,17 +1322,25 @@ SetHook::setHook()
                 return tecINTERNAL;
             }
             
-            uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount) - 1;
+            uint64_t refCount = oldDefSLE->getFieldU64(sfReferenceCount) - 1;
             
-            oldDirSLE->getFieldU64(refCount);
-            view().update(*oldDirSLE);
+            oldDefSLE->getFieldU64(refCount);
+            view().update(*oldDefSLE);
 
             if (refCount <= 0)
-                defsToDestroy.push_back(*oldDefKeylet, flags & HS_FLAG_OVERRIDE);
+                defsToDestroy.push_back(*oldDefKeylet, flags & FLAG_OVERRIDE);
         }
 
-        // create the new hook where applicable
-        if (!isDelete && txHasCode)
+        // if we are deleting the hook we can now just replace it with a blank object in the new hooks array
+        // we could not do this earlier because we needed to reduce the reference counts first
+        if (isDelete)
+        {
+            newHooks[hookSetNumber] = newHook;
+            continue;
+        }
+
+
+        if (txHasCode) // this is a new hook that needs to be created
         {
             // RH TODO: create code here
 
@@ -1331,6 +1352,7 @@ SetHook::setHook()
 
        
         // process the parameters
+
         
         // process the grants
         

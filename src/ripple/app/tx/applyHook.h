@@ -293,9 +293,6 @@ namespace hook_api {
 
 namespace hook {
 
-
-
-
     bool canHook(ripple::TxType txType, uint64_t hookOn);
 
     struct HookResult;
@@ -313,7 +310,6 @@ namespace hook {
 
     int maxHookStateDataSize(void);
 
-
     struct HookResult
     {
         ripple::uint256 hookSetTxnID;
@@ -323,9 +319,16 @@ namespace hook {
         ripple::Keylet hookKeylet;
         ripple::AccountID account;
         ripple::AccountID otxnAccount;
+        ripple::uint256 hookNamespace;
         std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
-        // uint256 key -> [ has_been_modified, current_state ]
-        std::shared_ptr<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>> changedState;
+        std::shared_ptr<
+                std::map<ripple::AccountID,     // account to whom the state belongs
+                std::map<ripple::uint256,       // namespace 
+                std::map<ripple::uint256,       // state key
+                std::pair<  
+                    bool,                       // has been modified
+                ripple::Blob>>>>>               // actual state data 
+                    changedState;
         hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
         std::string exitReason {""};
         int64_t exitCode {-1};

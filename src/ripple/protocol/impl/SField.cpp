@@ -123,6 +123,8 @@ SF_U32 const sfCancelAfter(access, STI_UINT32, 36, "CancelAfter");
 SF_U32 const sfFinishAfter(access, STI_UINT32, 37, "FinishAfter");
 SF_U32 const sfSignerListID(access, STI_UINT32, 38, "SignerListID");
 SF_U32 const sfSettleDelay(access, STI_UINT32, 39, "SettleDelay");
+SF_U32 const sfHookStateCount(access, STI_UINT32, 40, "HookStateCount");
+// 42, 41 were used in early hooks
 SF_U32 const sfEmitGeneration(access, STI_UINT32, 43, "EmitGeneration");
 
 // 64-bit integers (common)

@@ -377,34 +377,33 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 
 
 // Update HookState ledger objects for the hook... only called after accept() or reject()
+// assumes the specified acc has already been checked for authoriation (hook grants)
 TER
 hook::setHookState(
     HookResult& hookResult,
     ripple::ApplyContext& applyCtx,
-    Keylet const& hookStateKeylet,
+    ripple::AccountID& acc,
+    ripple::uint256 ns,
     ripple::uint256 key,
     Slice& data
 ){
 
     auto& view = applyCtx.view();
     auto j = applyCtx.app.journal("View");
-    auto const sle = view.peek(hookResult.accountKeylet);
+    auto const sle = 
+        ( acc == hookResult.account ? 
+            view.peek(hookResult.accountKeylet) :
+            view.peek(ripple::keylet::account(acc)));
+
     if (!sle)
         return tefINTERNAL;
-
-    auto const hook = view.peek(hookResult.hookKeylet);
-    if (!hook) {
-        JLOG(j.warn())
-            << "HookError[" << HR_ACC() << "]: "
-            << "Attempted to set a hook state for a hook that doesnt exist";
-        return tefINTERNAL;
-    }
-
-    uint32_t hookDataMax = hook->getFieldU32(sfHookStateDataMaxSize);
-
+    
     // if the blob is too large don't set it
-    if (data.size() > hookDataMax)
+    if (data.size() > hook::maxHookStateDataSize())
        return temHOOK_DATA_TOO_LARGE;
+
+    auto hookStateKeylet    = ripple::keylet::hookState(acc, key, ns);
+    auto hookStateDirKeylet = ripple::keylet::hookStateDir(acc, ns);
 
     uint32_t stateCount = hook->getFieldU32(sfHookStateCount);
     uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
@@ -420,12 +419,10 @@ hook::setHookState(
 
         auto const hint = (*oldHookState)[sfOwnerNode];
 
-        // Remove the node from the account directory.
-        if (!view.dirRemove(hookResult.ownerDirKeylet, hint, hookStateKeylet.key, false))
-        {
+        // Remove the node from the namespace directory
+        if (!view.dirRemove(hookStateDirKeylet, hint, hookStateKeylet.key, false))
             return tefBAD_LEDGER;
-        }
-
+        
         // remove the actual hook state obj
         view.erase(oldHookState);
 
@@ -477,16 +474,17 @@ hook::setHookState(
     view.insert(newHookState);
     newHookState->setFieldVL(sfHookStateData, data);
     newHookState->setFieldH256(sfHookStateKey, key);
-    newHookState->setAccountID(sfAccount, hookResult.account);
+    newHookState->setAccountID(sfAccount, acc);         // RH TODO remove these
+    newHookState->setFieldH256(sfHookNamespace, ns);    // in prod
 
     if (!oldHookState) {
         // Add the hook to the account's directory if it wasn't there already
         auto const page = dirAdd(
             view,
-            hookResult.ownerDirKeylet,
+            hookStateDirKeylet,
             hookStateKeylet.key,
             false,
-            describeOwnerDir(hookResult.account),
+            describeOwnerDir(acc),
             j);
 
         JLOG(j.trace()) << "HookInfo[" << HR_ACC() << "]: "
@@ -526,7 +524,8 @@ hook::HookResult
             .account = account,
             .otxnAccount = applyCtx.tx.getAccountID(sfAccount),
             .changedState =
-                std::make_shared<std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>(),
+                std::make_shared<
+                    std::map<ripple::uint256, std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>>(),
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
             .exitCode = -1,
@@ -681,6 +680,92 @@ make_state_key(
     return ripple::uint256::fromVoid(key_buffer);
 }
 
+// check the state cache
+inline
+std::optional<
+    std::pair<
+        ripple::uint256, // key
+        std::pair<bool, ripple::Blob>>::iterator>   // modified, data
+lookup_state_cache(
+        HookContext& hookCtx,
+        ripple::AccountID& acc,
+        ripple::uint256& ns,
+        ripple::uint256& key)
+{
+    auto& changedState = hookCtx.result.changedState;
+    if (changedState.find(acc) == changedState.end())
+        return std::nullopt;
+
+    auto& changedStateAcc = changedState[acc];
+    if (changedStateAcc.find(ns) == changedStateAcc.end())
+        return std::nullopt;
+
+    auto& changedStateNs = changedStateAcc[ns];
+
+    auto& ret = changedStateNs.find(key);
+
+    if (ret == changedStateNs.end())
+        return std::nullopt;
+
+    return changedStateNs.find(key);
+}
+
+
+// update the state cache
+inline
+void
+set_state_cache(
+        HookContext& hookCtx,
+        ripple::AccountID& acc,
+        ripple::uint256& ns,
+        ripple::uint256& key,
+        ripple::Blob& data,
+        bool modified)
+{
+
+    auto& changedState = hookCtx.result.changedState;
+    if (changedState.find(acc) == changedState.end())
+    {
+        changedState[acc] = 
+            std::map<ripple::uint256,   //ns
+            std::map<ripple::uint256,   //key
+            std::pair<
+                bool,                   // modified
+                ripple::Blob>>>
+            {
+                { ns, { key, {modified, data} } }
+            };
+        return; 
+    }   
+
+    auto& changedStateAcc = changedState[acc];
+    if (changedStateAcc.find(ns) == changedStateAcc.end())
+    {
+        changedStateAcc[ns] = 
+            std::map<ripple::uint256,   //key
+            std::pair<
+                bool,                   // modified
+                ripple::Blob>>
+            {
+                { key, {modified, data} } 
+            };
+        return; 
+    }
+
+    auto& changedStateNs = changedStateAcc[ns];
+    if (changedStateNs.find(key) == changedStateNs.end())
+    {
+        changedStateNs[key] = std::pair<bool, ripple::Blob> { modified, data };
+        return;
+    }
+
+    if (modified)
+        changedStateNs[key].first = true;
+
+    changedStateNs[key].second = data;
+    return;
+}
+
 // update or create a hook state object
 // read_ptr = data to set, kread_ptr = key
 // RH NOTE passing 0 size causes a delete operation which is as-intended
@@ -714,17 +799,35 @@ DEFINE_HOOK_FUNCTION(
     if (!sle)
         return INTERNAL_ERROR;
 
-    uint32_t maxSize = sle->getFieldU32(sfHookStateDataMaxSize);
+    uint32_t maxSize = hook::maxHookStateDataSize();
     if (read_len > maxSize)
         return TOO_BIG;
 
     auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
-    (*hookCtx.result.changedState)[*key] =
+/*
+ * set_state_cache(
+        HookContext& hookCtx,
+        ripple::AccountID& acc,
+        ripple::uint256& ns,
+        ripple::uint256& key,
+        ripple::Blob& data,
+        bool modified)
+        */
+
+    set_state_cache(
+            hookCtx,
+            hookCtx.result.account,
+            hookCtx.result.hookNamespace,
+            *key,
+            ripple::Blob{memory + read_ptr,  memory + read_ptr + read_len},
+            true);
+/*
+    (*hookCtx.result.changedState)[hookCtx.hookNamespace][*key] =
         std::pair<bool, ripple::Blob> (true,
                 {memory + read_ptr,  memory + read_ptr + read_len});
-
+*/
     return read_len;
 }
 
@@ -760,17 +863,23 @@ void hook::commitChangesToLedger(
     if (cclMode & cclAPPLY)
     {
         // write all changes to state, if in "apply" mode
-        for (const auto& cacheEntry : *(hookResult.changedState)) {
-            bool is_modified = cacheEntry.second.first;
-            const auto& key = cacheEntry.first;
-            const auto& blob = cacheEntry.second.second;
-            if (is_modified) {
-                change_count++;
-                // this entry isn't just cached, it was actually modified
-                auto HSKeylet = keylet::hookState(hookResult.account, key);
-                auto slice = Slice(blob.data(), blob.size());
-                setHookState(hookResult, applyCtx, HSKeylet, key, slice);
-                // ^ should not fail... checks were done before map insert
+        for (const auto& accEntry : *(hookResult.changedState)) {
+            const auto& acc = accEntry.first;
+            for (const auto& nsEntry : accEntry.second) {
+                const auto& ns = nsEntry.first;
+                for (const auto& cacheEntry : nsEntry.second) {
+                    bool is_modified = cacheEntry.second.first;
+                    const auto& key = cacheEntry.first;
+                    const auto& blob = cacheEntry.second.second;
+                    if (is_modified) {
+                        change_count++;
+                        // this entry isn't just cached, it was actually modified
+                        auto slice = Slice(blob.data(), blob.size());
+
+                        setHookState(hookResult, applyCtx, acc, ns, key, slice);
+                        // ^ should not fail... checks were done before map insert
+                    }
+                }
             }
         }
 
@@ -945,22 +1054,19 @@ DEFINE_HOOK_FUNCTION(
         return INVALID_ARGUMENT;
 
     // first check if the requested state was previously cached this session
-    if (!is_foreign) // we only cache local
+    const auto& cacheEntry = hookCtx.result.changedState->find(*key);
+    if (cacheEntry != hookCtx.result.changedState->end())
     {
-        const auto& cacheEntry = hookCtx.result.changedState->find(*key);
-        if (cacheEntry != hookCtx.result.changedState->end())
-        {
-            if (write_ptr == 0)
-                return data_as_int64(cacheEntry->second.second.data(), cacheEntry->second.second.size());
+        if (write_ptr == 0)
+            return data_as_int64(cacheEntry->second.second.data(), cacheEntry->second.second.size());
 
-            if (cacheEntry->second.second.size() > write_len)
-                return TOO_SMALL;
+        if (cacheEntry->second.second.size() > write_len)
+            return TOO_SMALL;
 
-            WRITE_WASM_MEMORY_AND_RETURN(
-                write_ptr, write_len,
-                cacheEntry->second.second.data(), cacheEntry->second.second.size(),
-                memory, memory_length);
-        }
+        WRITE_WASM_MEMORY_AND_RETURN(
+            write_ptr, write_len,
+            cacheEntry->second.second.data(), cacheEntry->second.second.size(),
+            memory, memory_length);
     }
 
     // cache miss look it up

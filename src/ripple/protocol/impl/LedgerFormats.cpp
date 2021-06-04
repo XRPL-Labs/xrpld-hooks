@@ -204,11 +204,11 @@ LedgerFormats::LedgerFormats()
     add(jss::HookState,
         ltHOOK_STATE,
         {
-            {sfAccount, soeOPTIONAL},
+            {sfAccount, soeOPTIONAL},   //RH TODO: this can be removed for production
             {sfOwnerNode, soeREQUIRED},   
             {sfHookStateKey, soeREQUIRED},
             {sfHookStateData, soeREQUIRED},
-            {sfHookNamespace, soeOPTIONAL}
+            {sfHookNamespace, soeOPTIONAL}  // as can this
         },
         commonFields);
 

@@ -732,7 +732,7 @@ Transactor::operator()()
                 hook_executed = true;
                 sendResult =
                     hook::apply(
-                            hookSending->getFieldH256(sfHookCreationTxnID),
+                            hookSending->getFieldH256(sfHookSetTxnID),
                             hookSending->getFieldH256(sfHookHash),
                             hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
 
@@ -754,7 +754,7 @@ Transactor::operator()()
                     hook_executed = true;
                     recvResult =
                         hook::apply(
-                                hookReceiving->getFieldH256(sfHookCreationTxnID),
+                                hookReceiving->getFieldH256(sfHookSetTxnID),
                                 hookReceiving->getFieldH256(sfHookHash),
                                 hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
 
@@ -800,7 +800,7 @@ Transactor::operator()()
                 // this call will clean up ltEMITTED_NODE as well
                 try {
                 hook::apply(
-                    hookCallback->getFieldH256(sfHookCreationTxnID),
+                    hookCallback->getFieldH256(sfHookSetTxnID),
                     hookCallback->getFieldH256(sfHookHash),
                     hookCallback->getFieldVL(sfCreateCode),
                     ctx_,

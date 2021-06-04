@@ -36,6 +36,12 @@
 
 namespace ripple {
 
+
+enum SetHookFlags : uint8_t {
+    FLAG_OVERRIDE = 1U,
+    FLAG_NSDELETE = 2U
+};
+
 class SetHook : public Transactor
 {
 

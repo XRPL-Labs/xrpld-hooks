@@ -395,6 +395,7 @@ extern SF_U32 const sfCancelAfter;
 extern SF_U32 const sfFinishAfter;
 extern SF_U32 const sfSignerListID;
 extern SF_U32 const sfSettleDelay;
+extern SF_U32 const sfHookStateCount;
 extern SF_U32 const sfEmitGeneration; 
 
 // 64-bit integers
@@ -536,6 +537,7 @@ extern SField const sfNegativeUNLEntry;
 extern SField const sfEmittedTxn;
 extern SField const sfHook;
 extern SField const sfHookParameter;
+extern SField const sfHookGrant;
 
 // array of objects
 // ARRAY/1 is reserved for end of array
@@ -554,7 +556,7 @@ extern SField const sfHookExecutions; // array of executions
 extern SField const sfHookExecution;  // actual execution result
 extern SField const sfHookParameters;
 extern SField const sfHooks;
-extern SField const sfHookForeignAuth;
+extern SField const sfHookGrants;
 //------------------------------------------------------------------------------
 
 }  // namespace ripple

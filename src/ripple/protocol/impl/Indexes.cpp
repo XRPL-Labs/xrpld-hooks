@@ -144,9 +144,9 @@ emitted(uint256 const& id) noexcept
 }
 
 Keylet
-hook(AccountID const& id, uint256 const& hash) noexcept
+hook(AccountID const& id) noexcept
 {
-    return {ltHOOK, indexHash(LedgerNameSpace::HOOK, id, hash)};
+    return {ltHOOK, indexHash(LedgerNameSpace::HOOK, id)};
 }
 
 Keylet
