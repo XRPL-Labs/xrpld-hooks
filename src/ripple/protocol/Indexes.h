@@ -64,8 +64,8 @@ hook(AccountID const& id) noexcept;
 Keylet
 hookState(AccountID const& id, uint256 const& key, uint256 const& ns) noexcept;
 
-Keylet const&
-hookDir() noexcept;
+Keylet
+hookStateDir(AccountID const& id, uint256 const& ns) noexcept;
 
 /** AccountID root */
 Keylet

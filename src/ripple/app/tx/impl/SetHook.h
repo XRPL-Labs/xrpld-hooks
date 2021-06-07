@@ -70,15 +70,12 @@ private:
     setHook();
 
     TER
-    destroyEntireHookState(
+    destroyNamespace(
         Application& app,
         ApplyView& view,
         const AccountID& account,
-        const Keylet & accountKeylet,
-        const Keylet & ownerDirKeylet,
-        const Keylet & hookKeylet
+        const Keylet & dirKeylet        // the keylet of the namespace directory
     );
-
 
     TER
     removeHookFromLedger(

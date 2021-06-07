@@ -33,8 +33,11 @@
 #include <vector>
 #include <stack>
 #include <string>
+#include <utility>
 #include <ripple/app/tx/applyHook.h>
 #include <ripple/app/ledger/LedgerMaster.h>
+#include <ripple/app/ledger/OpenLedger.h>
+#include <functional>
 #include "common/value.h"
 #include "vm/configure.h"
 #include "vm/vm.h"
@@ -74,7 +77,7 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     {\
         JLOG(ctx.j.trace())\
            << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook truncated or otherwise invalid\n";\
-        return temMALFORMED;\
+        return false;\
     }\
 }
 
@@ -153,7 +156,7 @@ const std::set<std::string> import_whitelist
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
-NotTEC
+bool
 check_guard(
         PreflightContext const& ctx, ripple::Blob& hook, int codesec,
         int start_offset, int end_offset, int guard_func_idx, int last_import_idx)
@@ -206,7 +209,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Hook calls a function outside of the whitelisted imports "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return temMALFORMED;
+                return false;
             }
 
             if (callee_idx == guard_func_idx)
@@ -221,7 +224,7 @@ check_guard(
                             << "HookSet[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return temMALFORMED;
+                        return false;
                     }
 
                     uint64_t a = stack.top();
@@ -238,7 +241,7 @@ check_guard(
                         JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return temMALFORMED;
+                        return false;
                     }
 
                     // update the instruction count for this block depth to the largest possible guard
@@ -269,7 +272,7 @@ check_guard(
             JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
                 << "codesec: " << codesec << " hook byte offset: " << i;
-            return temMALFORMED;
+            return false;
             /*
             if (DEBUG_GUARD_CHECK)
                 printf("%d - call_indirect instruction at %d\n", mode, i);
@@ -295,7 +298,7 @@ check_guard(
                 JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "_g() did not occur at start of function or loop statement "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return temMALFORMED;
+                return false;
             }
 
             // execution to here means we are in 'search mode' for loop instructions
@@ -439,7 +442,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Memory.grow instruction not allowed at "
                     << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                return temMALFORMED;
+                return false;
             }
             continue;
         }
@@ -509,7 +512,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Unexpected 0x0B instruction, malformed"
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return temMALFORMED;
+                return false;
             }
 
             // perform the instruction count * guard accounting
@@ -530,23 +533,23 @@ check_guard(
             << "HookSet[" << HS_ACC() << "]: GuardCheck "
             << "Maximum possible instructions exceed 1048575, please make your hook smaller "
             << "or check your guards!";
-        return temMALFORMED;
+        return false;
     }
 
     // if we reach the end of the code looking for another trigger the guards are installed correctly
     if (mode == 1)
-        return tesSUCCESS;
+        return true;
 
     JLOG(ctx.j.trace())
         << "HookSet[" << HS_ACC() << "]: GuardCheck "
         << "Guard did not occur before end of loop / function. "
         << "Codesec: " << codesec;
-    return temMALFORMED;
+    return false;
 
 }
 
 bool
-validateHookParams(STArray const& hookParams, PreflightContext& ctx)
+validateHookParams(STArray const& hookParams, PreflightContext const& ctx)
 {
     for (auto const& hookParam : hookParams)
     {
@@ -592,7 +595,7 @@ validateHookParams(STArray const& hookParams, PreflightContext& ctx)
     return true;
 }
 
-bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
+bool validateHookSetEntry(STObject const& hookDef, PreflightContext const& ctx)
 {
     bool hasHash = hookDef.isFieldPresent(sfHookHash);
     bool hasCode = hookDef.isFieldPresent(sfCreateCode);
@@ -609,7 +612,7 @@ bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
     // validate hook params structure
     if (hookDef.isFieldPresent(sfHookParameters) &&
         !validateHookParams(hookDef.getFieldArray(sfHookParameters), ctx))
-        return temMALFORMED;
+        return false;
 
     // validate hook grants structure
     if (hookDef.isFieldPresent(sfHookGrants))
@@ -621,15 +624,15 @@ bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHookGrants empty.";
-            return temMALFORMED;
+            return false;
         }
 
-        if (hookSets.size() > 8)
+        if (hookGrants.size() > 8)
         {
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHookGrants contains more than 8 entries.";
-            return temMALFORMED;
+            return false;
         }
         
         for (auto const& hookGrant : hookGrants)
@@ -640,7 +643,7 @@ bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
-                return temMALFORMED;
+                return false;
             }
         }
     }
@@ -651,22 +654,24 @@ bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
         // ensure no hookapiversion field was provided
         if (hookDef.isFieldPresent(sfHookApiVersion))
         {
-            JLOG(j.trace())
+            JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC() 
-                << "]: Malformed transaction: HookApiVersion can only be provided when creating a new hook."
+                << "]: Malformed transaction: HookApiVersion can only be provided when creating a new hook.";
             return false;
         }
+
+        // RH REVIEW: should preflight be checking this?
+        auto const view = ctx.app.openLedger().current();
 
         // check if the specified hook exists
         auto const& hash = hookDef.getFieldH256(sfHookHash);
         {
             Keylet const key{ltHOOK_DEFINITION, hash};
-            auto sleItem = view.peek(key);
-            if (!sleItem)
+            if (!view->exists(key))
             {
-                JLOG(j.trace())
+                JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC() 
-                    << "]: Malformed transaction: No hook exists with the specified hash."
+                    << "]: Malformed transaction: No hook exists with the specified hash.";
                 return false;
             }
         }
@@ -968,9 +973,8 @@ bool validateHookSetEntry(STObject const& hookDef, PreflightContext& ctx)
 
                 // execution to here means we are up to the actual expr for the codesec/function
 
-                auto result = check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
-                if (result != tesSUCCESS)
-                    return result;
+                if (!check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number))
+                    return false;
 
                 i = code_end;
 
@@ -1082,7 +1086,7 @@ SetHook::preflight(PreflightContext const& ctx)
         }
 
         // validate the "create code" part if it's present
-        if (!validateHookSetEntry(hookSetObj, ctx))
+        if (!validateHookSetEntry(*hookSetObj, ctx))
                 return temMALFORMED;
     }
 
@@ -1120,7 +1124,7 @@ SetHook::destroyNamespace(
     auto j = app.journal("View");
     JLOG(j.trace())
         << "HookSet[" << HS_ACC() << "]: DeleteState "
-        << "Destroying Entire HookState for " << account << " namespace " << ns;
+        << "Destroying Hook Namespace for " << account << " namespace keylet " << dirKeylet.key;
 
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
@@ -1183,7 +1187,7 @@ SetHook::destroyNamespace(
 }
 
 
-    TER
+TER
 SetHook::setHook()
 {
     auto const& ctx = ctx_;
@@ -1198,17 +1202,17 @@ SetHook::setHook()
     auto newHookSLE = std::make_shared<SLE>(hookKeylet);
 
     int oldHookCount = 0;
-    std::optional<ripple::STArray const&> oldHooks;
+    std::optional<std::reference_wrapper<ripple::STArray const>> oldHooks;
     auto const& oldHookSLE = view().peek(hookKeylet);
+
     if (oldHookSLE)
     {
-       oldHooks = oldHookSLE.getFieldArray(sfHooks);
-       oldHookCount = oldHooks->size();
+       oldHooks = oldHookSLE->getFieldArray(sfHooks);
+       oldHookCount = (oldHooks->get()).size();
     }
 
-
-    std::vector<std::pair<keylet, bool>> defsToDestroy {}; // keylet, override was in flags
-    std::vector<std::pair<keylet, bool>> dirsToDestroy {}; // keylet, nsdelete was in flags
+    std::vector<std::pair<ripple::keylet, bool>> defsToDestroy {}; // keylet, override was in flags
+    std::vector<std::pair<ripple::keylet, bool>> dirsToDestroy {}; // keylet, nsdelete was in flags
 
     int hookSetNumber = -1;
     auto const& hookSets = ctx.tx.getFieldArray(sfHooks);

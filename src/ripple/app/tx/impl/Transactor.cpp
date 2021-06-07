@@ -734,6 +734,7 @@ Transactor::operator()()
                     hook::apply(
                             hookSending->getFieldH256(sfHookSetTxnID),
                             hookSending->getFieldH256(sfHookHash),
+                            hookSending->getFieldH256(sfHookNamespace),
                             hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
 
                 if (sendResult->exitType != hook_api::ExitType::ACCEPT)
@@ -756,6 +757,7 @@ Transactor::operator()()
                         hook::apply(
                                 hookReceiving->getFieldH256(sfHookSetTxnID),
                                 hookReceiving->getFieldH256(sfHookHash),
+                                hookReceiving->getFieldH256(sfHookNamespace),
                                 hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
 
                     if (recvResult->exitType != hook_api::ExitType::ACCEPT)
@@ -802,6 +804,7 @@ Transactor::operator()()
                 hook::apply(
                     hookCallback->getFieldH256(sfHookSetTxnID),
                     hookCallback->getFieldH256(sfHookHash),
+                    hookCallback->getFieldH256(sfHookNamespace),
                     hookCallback->getFieldVL(sfCreateCode),
                     ctx_,
                     callbackAccountID,

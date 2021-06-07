@@ -13,6 +13,7 @@
 #include <optional>
 #include <any>
 #include <vector>
+#include <utility>
 #include "support/span.h"
 
 using namespace ripple;
@@ -385,7 +386,7 @@ hook::setHookState(
     ripple::AccountID& acc,
     ripple::uint256 ns,
     ripple::uint256 key,
-    Slice& data
+    ripple::Slice& data
 ){
 
     auto& view = applyCtx.view();
@@ -405,7 +406,7 @@ hook::setHookState(
     auto hookStateKeylet    = ripple::keylet::hookState(acc, key, ns);
     auto hookStateDirKeylet = ripple::keylet::hookStateDir(acc, ns);
 
-    uint32_t stateCount = hook->getFieldU32(sfHookStateCount);
+    uint32_t stateCount = sle->getFieldU32(sfHookStateCount);
     uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
 
     auto const oldHookState = view.peek(hookStateKeylet);
@@ -434,8 +435,8 @@ hook::setHookState(
         if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) < oldStateReserve)
             adjustOwnerCount(view, sle, -1, j);
 
-        hook->setFieldU32(sfHookStateCount, COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount));
-
+        sle->setFieldU32(sfHookStateCount, stateCount);
+        view.update(sle);
         return tesSUCCESS;
     }
 
@@ -465,8 +466,8 @@ hook::setHookState(
         }
 
         // update state count
-        hook->setFieldU32(sfHookStateCount, stateCount);
-
+        sle->setFieldU32(sfHookStateCount, stateCount);
+        view.update(sle);
     }
 
     // add new data to ledger
@@ -495,7 +496,6 @@ hook::setHookState(
             return tecDIR_FULL;
 
         newHookState->setFieldU64(sfOwnerNode, *page);
-
     }
 
     return tesSUCCESS;
@@ -505,11 +505,22 @@ hook::HookResult
     hook::apply(
         ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
         ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */
+        ripple::uint256 hookNamespace,
         Blob hook, ApplyContext& applyCtx,
         const AccountID& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
         bool callback = false,
         uint32_t param)
 {
+
+/*
+        std::shared_ptr<
+                std::map<ripple::AccountID,     // account to whom the state belongs
+                std::map<ripple::uint256,       // namespace 
+                std::map<ripple::uint256,       // state key
+                std::pair<  
+                    bool,                       // has been modified
+                ripple::Blob>>>>>               // actual state data 
+*/
 
     HookContext hookCtx =
     {
@@ -523,9 +534,15 @@ hook::HookResult
             .hookKeylet = keylet::hook(account),
             .account = account,
             .otxnAccount = applyCtx.tx.getAccountID(sfAccount),
+            .hookNamespace = hookNamespace,
             .changedState =
                 std::make_shared<
-                    std::map<ripple::uint256, std::map<ripple::uint256, std::pair<bool, ripple::Blob>>>>(),
+                    std::map<ripple::AccountID,
+                    std::map<ripple::uint256,
+                    std::map<ripple::uint256,
+                    std::pair<
+                        bool, 
+                        ripple::Blob>>>>>(),
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
             .exitCode = -1,
@@ -682,10 +699,7 @@ make_state_key(
 
 // check the state cache
 inline
-std::optional<
-    std::pair<
-        ripple::uint256, // key
-        std::pair<bool, ripple::Blob>>::iterator>   // modified, data
+std::optional<std::pair<bool, ripple::Blob>>
 lookup_state_cache(
         HookContext& hookCtx,
         ripple::AccountID& acc,
@@ -1009,18 +1023,21 @@ DEFINE_HOOK_FUNCTION(
     return  state_foreign(
                 hookCtx, memoryCtx,
                 write_ptr, write_len,
+                0, 0,
                 kread_ptr, kread_len,
                 0, 0);
 }
 
 /* This api actually serves both local and foreign state requests
- * feeding aread_ptr = 0 and aread_len = 0 will cause it to read local */
+ * feeding aread_ptr = 0 and aread_len = 0 will cause it to read local
+ * feeding nread_len = 0 will cause hook's native namespace to be used */
 DEFINE_HOOK_FUNCTION(
     int64_t,
     state_foreign,
     uint32_t write_ptr, uint32_t write_len,
-    uint32_t kread_ptr, uint32_t kread_len,
-    uint32_t aread_ptr, uint32_t aread_len )
+    uint32_t kread_ptr, uint32_t kread_len,         // key
+    uint32_t nread_ptr, uint32_t nread_len,         // namespace
+    uint32_t aread_ptr, uint32_t aread_len )        // account
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -1037,15 +1054,33 @@ DEFINE_HOOK_FUNCTION(
 
     if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
         NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+        NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length) ||
         NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     if (kread_len > 32)
         return TOO_BIG;
 
+
+    if (!is_foreign && nread_len == 0)
+    {
+       // local account will be populated with local hook namespace unless otherwise specified
+    }
+    else if (nread_len != 32)
+        return INVALID_ARGUMENT;
+
     if (is_foreign && aread_len != 20)
         return INVALID_ACCOUNT;
 
+    uint256 ns = 
+        nread_len == 0
+            ? hookCtx.hookResult.hookNamespace
+            : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
+
+    ripple::AccountID acc =
+        is_foreign
+            ? AccountID::fromVoid(memory + aread_ptr)
+            : hookCtx.result.account;
 
     auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
@@ -1054,37 +1089,31 @@ DEFINE_HOOK_FUNCTION(
         return INVALID_ARGUMENT;
 
     // first check if the requested state was previously cached this session
-    const auto& cacheEntry = hookCtx.result.changedState->find(*key);
-    if (cacheEntry != hookCtx.result.changedState->end())
+    auto cacheEntry = lookup_state_cache(hookCtx, acc, ns, key); 
+    if (cacheEntry)
     {
         if (write_ptr == 0)
-            return data_as_int64(cacheEntry->second.second.data(), cacheEntry->second.second.size());
+            return data_as_int64(cacheEntry->second.data(), cacheEntry->second.size());
 
-        if (cacheEntry->second.second.size() > write_len)
+        if (cacheEntry->second.size() > write_len)
             return TOO_SMALL;
 
         WRITE_WASM_MEMORY_AND_RETURN(
             write_ptr, write_len,
-            cacheEntry->second.second.data(), cacheEntry->second.second.size(),
+            cacheEntry->second.data(), cacheEntry->second.size(),
             memory, memory_length);
     }
 
-    // cache miss look it up
-    auto const sle = view.peek(hookCtx.result.hookKeylet);
-    if (!sle)
-        return INTERNAL_ERROR;
-
-    auto hsSLE = view.peek(keylet::hookState(
-                (is_foreign ? AccountID::fromVoid(memory + aread_ptr) : hookCtx.result.account), *key));
+    auto hsSLE =
+        view.peek(keylet::hookState(acc, key, ns));
+    
     if (!hsSLE)
         return DOESNT_EXIST;
 
     Blob b = hsSLE->getFieldVL(sfHookStateData);
 
     // it exists add it to cache and return it
-
-    if (!is_foreign)
-        hookCtx.result.changedState->emplace(*key, std::pair<bool, ripple::Blob>(false, b));
+    state_state_cache(hookCtx, acc, ns, key, b, false);
 
     if (write_ptr == 0)
         return data_as_int64(b.data(), b.size());

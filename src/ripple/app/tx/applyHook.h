@@ -300,6 +300,7 @@ namespace hook {
     HookResult apply(
             ripple::uint256,
             ripple::uint256,
+            ripple::uint256,
             ripple::Blob,
             ripple::ApplyContext&,
             const ripple::AccountID&,
@@ -374,10 +375,10 @@ namespace hook {
     setHookState(
         HookResult& hookResult,
         ripple::ApplyContext& applyCtx,
-        ripple::Keylet const& hookStateKeylet,
+        ripple::AccountID& acc,
+        ripple::uint256 ns,
         ripple::uint256 key,
-        ripple::Slice& data
-    );
+        ripple::Slice& data);
 
     // commit changes to ledger flags
     enum cclFlags : uint8_t {
