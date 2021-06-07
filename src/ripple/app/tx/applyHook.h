@@ -102,7 +102,9 @@ namespace hook_api {
         OVERFLOW = -30,                 // if an operation with a float results in an overflow
         NOT_IOU_AMOUNT = -31,
         NOT_AN_AMOUNT = -32,
-        CANT_RETURN_NEGATIVE = -33
+        CANT_RETURN_NEGATIVE = -33,
+        NOT_AUTHORIZED = -34,
+        PREVIOUS_FAILURE_PREVENTS_RETRY = -35
     };
 
     enum ExitType : uint8_t {
@@ -269,10 +271,15 @@ namespace hook_api {
 
     DECLARE_HOOK_FUNCTION(int64_t,	state_set,          uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	state_foreign_set,  uint32_t read_ptr,  uint32_t read_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len,
+                                                        uint32_t nread_ptr, uint32_t nread_len,
+                                                        uint32_t aread_ptr, uint32_t aread_len );
     DECLARE_HOOK_FUNCTION(int64_t,	state,              uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t kread_ptr, uint32_t kread_len );
     DECLARE_HOOK_FUNCTION(int64_t,	state_foreign,      uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t kread_ptr, uint32_t kread_len,
+                                                        uint32_t nread_ptr, uint32_t nread_len,
                                                         uint32_t aread_ptr, uint32_t aread_len );
     DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t read_ptr, uint32_t read_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t mread_ptr, uint32_t mread_len,
@@ -328,8 +335,9 @@ namespace hook {
                 std::map<ripple::uint256,       // state key
                 std::pair<  
                     bool,                       // has been modified
-                ripple::Blob>>>>>               // actual state data 
-                    changedState;
+                    ripple::Blob>>>>>           // actual state data 
+                        changedState;
+        bool hookGrantsDisabled = false;
         hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
         std::string exitReason {""};
         int64_t exitCode {-1};

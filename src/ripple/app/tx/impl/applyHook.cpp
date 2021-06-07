@@ -391,14 +391,14 @@ hook::setHookState(
 
     auto& view = applyCtx.view();
     auto j = applyCtx.app.journal("View");
-    auto const sle = 
-        ( acc == hookResult.account ? 
+    auto const sle =
+        ( acc == hookResult.account ?
             view.peek(hookResult.accountKeylet) :
             view.peek(ripple::keylet::account(acc)));
 
     if (!sle)
         return tefINTERNAL;
-    
+
     // if the blob is too large don't set it
     if (data.size() > hook::maxHookStateDataSize())
        return temHOOK_DATA_TOO_LARGE;
@@ -423,7 +423,7 @@ hook::setHookState(
         // Remove the node from the namespace directory
         if (!view.dirRemove(hookStateDirKeylet, hint, hookStateKeylet.key, false))
             return tefBAD_LEDGER;
-        
+
         // remove the actual hook state obj
         view.erase(oldHookState);
 
@@ -515,11 +515,11 @@ hook::HookResult
 /*
         std::shared_ptr<
                 std::map<ripple::AccountID,     // account to whom the state belongs
-                std::map<ripple::uint256,       // namespace 
+                std::map<ripple::uint256,       // namespace
                 std::map<ripple::uint256,       // state key
-                std::pair<  
+                std::pair<
                     bool,                       // has been modified
-                ripple::Blob>>>>>               // actual state data 
+                ripple::Blob>>>>>               // actual state data
 */
 
     HookContext hookCtx =
@@ -541,15 +541,16 @@ hook::HookResult
                     std::map<ripple::uint256,
                     std::map<ripple::uint256,
                     std::pair<
-                        bool, 
+                        bool,
                         ripple::Blob>>>>>(),
+            .hookGrantsDisabled = false,
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
             .exitCode = -1,
             .callback = callback,
             .param = param
         },
-        .emitFailure = 
+        .emitFailure =
                 callback && param & 1
                 ? std::optional<ripple::STObject>(
                     (*(applyCtx.view().peek(
@@ -632,13 +633,13 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(mread_ptr, mread_len, memory_length) ||
         NOT_IN_BOUNDS(dread_ptr, dread_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     if (!j.trace())
         return 0;
 
     if (mread_len > 128)
         mread_len = 128;
-    
+
     if (dread_len > 1024)
         dread_len = 1024;
 
@@ -663,8 +664,8 @@ DEFINE_HOOK_FUNCTION(
         for (int i = 0; i < out_len; ++i)
             output[i] = memory[dread_ptr + i * 2];
     }
-   
-    RETURN_HOOK_TRACE(mread_ptr, mread_len, 
+
+    RETURN_HOOK_TRACE(mread_ptr, mread_len,
            std::string_view((const char*)output, out_len));
 }
 
@@ -699,14 +700,14 @@ make_state_key(
 
 // check the state cache
 inline
-std::optional<std::pair<bool, ripple::Blob>>
+std::optional<std::reference_wrapper<std::pair<bool, ripple::Blob> const>>
 lookup_state_cache(
-        HookContext& hookCtx,
+        hook::HookContext& hookCtx,
         ripple::AccountID& acc,
         ripple::uint256& ns,
         ripple::uint256& key)
 {
-    auto& changedState = hookCtx.result.changedState;
+    auto& changedState = *(hookCtx.result.changedState);
     if (changedState.find(acc) == changedState.end())
         return std::nullopt;
 
@@ -716,12 +717,12 @@ lookup_state_cache(
 
     auto& changedStateNs = changedStateAcc[ns];
 
-    auto& ret = changedStateNs.find(key);
+    auto const& ret = changedStateNs.find(key);
 
     if (ret == changedStateNs.end())
         return std::nullopt;
 
-    return changedStateNs.find(key);
+    return std::cref(ret->second);
 }
 
 
@@ -729,7 +730,7 @@ lookup_state_cache(
 inline
 void
 set_state_cache(
-        HookContext& hookCtx,
+        hook::HookContext& hookCtx,
         ripple::AccountID& acc,
         ripple::uint256& ns,
         ripple::uint256& key,
@@ -737,39 +738,49 @@ set_state_cache(
         bool modified)
 {
 
-    auto& changedState = hookCtx.result.changedState;
+    auto& changedState = *(hookCtx.result.changedState);
     if (changedState.find(acc) == changedState.end())
     {
-        changedState[acc] = 
-            std::map<ripple::uint256,   //ns
-            std::map<ripple::uint256,   //key
-            std::pair<
-                bool,                   // modified
-                ripple::Blob>>>
-            {
-                { ns, { key, {modified, data} } }
-            };
-        return; 
-    }   
+        changedState[acc] =
+        std::map<
+            ripple::base_uint<256>, 
+            std::map<
+                ripple::base_uint<256>, 
+                std::pair<
+                    bool, 
+                    std::vector<unsigned char>>>>
+        {
+            { ns, {
+                      { key, {
+                                 { modified, data }
+                             } 
+                      }
+                  } 
+            }
+        };
+        return;
+    }
 
     auto& changedStateAcc = changedState[acc];
     if (changedStateAcc.find(ns) == changedStateAcc.end())
     {
-        changedStateAcc[ns] = 
-            std::map<ripple::uint256,   //key
-            std::pair<
-                bool,                   // modified
-                ripple::Blob>>
-            {
-                { key, {modified, data} } 
-            };
-        return; 
+        changedStateAcc[ns] =
+        {
+            { key, {
+                       { modified, data }
+                   } 
+            }
+        };
+        return;
     }
 
     auto& changedStateNs = changedStateAcc[ns];
     if (changedStateNs.find(key) == changedStateNs.end())
     {
-        changedStateNs[key] = std::pair<bool, ripple::Blob> { modified, data };
+        changedStateNs[key] = 
+        {
+            { modified, data }
+        };
         return;
     }
 
@@ -780,15 +791,36 @@ set_state_cache(
     return;
 }
 
-// update or create a hook state object
-// read_ptr = data to set, kread_ptr = key
-// RH NOTE passing 0 size causes a delete operation which is as-intended
-// RH TODO: check reserve
 DEFINE_HOOK_FUNCTION(
     int64_t,
     state_set,
     uint32_t read_ptr, uint32_t read_len,
     uint32_t kread_ptr, uint32_t kread_len )
+{
+    return
+        state_foreign_set(
+                read_ptr,   read_len,
+                kread_ptr,  kread_len,
+                0, 0,
+                0, 0);
+}
+// update or create a hook state object
+// read_ptr = data to set, kread_ptr = key
+// RH NOTE passing 0 size causes a delete operation which is as-intended
+// RH TODO: check reserve
+/*
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t kread_ptr, uint32_t kread_len,         // key
+    uint32_t nread_ptr, uint32_t nread_len,         // namespace
+    uint32_t aread_ptr, uint32_t aread_len )        // account
+ */
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    state_foreign_set,
+    uint32_t read_ptr,  uint32_t read_len,
+    uint32_t kread_ptr, uint32_t kread_len,
+    uint32_t nread_ptr, uint32_t nread_len,
+    uint32_t aread_ptr, uint32_t aread_len)
 {
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
@@ -809,39 +841,115 @@ DEFINE_HOOK_FUNCTION(
     if (kread_len < 1)
         return TOO_SMALL;
 
-    auto const sle = view.peek(hookCtx.result.hookKeylet);
-    if (!sle)
-        return INTERNAL_ERROR;
+    // ns can be null if and only if this is a local set
+    if (nread_ptr == 0 && nread_len == 0 && !(aread_ptr == 0 && aread_len == 0))
+        return INVALID_ARGUMENT;
+
+    if ((nread_len && !NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length)) ||
+        (kread_len && !NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length)) ||
+        (aread_len && !NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length)))
+        return OUT_OF_BOUNDS;
 
     uint32_t maxSize = hook::maxHookStateDataSize();
     if (read_len > maxSize)
         return TOO_BIG;
 
+    uint256 ns =
+        nread_len == 0
+            ? hookCtx.hookResult.hookNamespace
+            : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
+
+    ripple::AccountID acc =
+        aread_len == 0
+            ? AccountID::fromVoid(memory + aread_ptr)
+            : hookCtx.result.account;
+
     auto const key =
         make_state_key( std::string_view { (const char*)(memory + kread_ptr), (size_t)kread_len } );
 
-/*
- * set_state_cache(
-        HookContext& hookCtx,
-        ripple::AccountID& acc,
-        ripple::uint256& ns,
-        ripple::uint256& key,
-        ripple::Blob& data,
-        bool modified)
-        */
+    ripple::Blob data {memory + read_ptr,  memory + read_ptr + read_len};
+
+    // local modifications are always allowed
+    if (aread_len == 0 || acc == hookCtx.result.account)
+    {
+        set_state_cache(hookCtx, acc, ns, *key, data, true);
+        return read_len;
+    }
+
+    // execution to here means it's actually a foreign set
+    if (hookCtx.hookResult.hookGrantsDisabled)
+        return PREVIOUS_FAILURE_PREVENTS_RETRY;
+
+    // first check if we've already modified this state
+    auto cacheEntry = lookup_state_cache(hookCtx, acc, ns, key);
+    if (cacheEntry && cacheEntry->get().first)
+    {
+        // if a cache entry already exists and it has already been modified don't check grants again
+        set_state_cache(hookCtx, acc, ns, *key, data, true);
+        return read_len;
+    }
+
+    // cache miss or cache was present but entry was not marked as previously modified
+    // therefore before continuing we need to check grants
+    auto const sle = view.peek(ripple::keylet::hook(acc));
+    if (!sle)
+        return INTERNAL_ERROR;
+
+    bool found_auth = false;
+
+    // we do this by iterating the hooks installed on the foreign account and in turn their grants and namespaces
+    auto const& hooks = sle.getFieldArray(sfHooks);
+    for (auto const& hook : hooks)
+    {
+        auto const& hookObj = dynamic_cast<STObject const*>(&hook);  
+        
+        // skip blank entries
+        if (!hookObj.isFieldPresent(sfHookGrants))
+            continue;
+
+        auto const& hookGrants = hookObj.getFieldArray(sfHookGrants);
+
+        if (hookGrants.size() < 1)
+            continue;
+
+        // the grant allows the hook to modify the granter's namespace only
+        if (hookObj.getFieldH256(sfHookNamespace) != ns)
+            continue;
+
+        // this is expensive search so we'll disallow after one failed attempt
+        for (auto const& hookGrant : hookGrants)
+        {
+            auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
+            bool hasAuthorizedField = hookGrantObj.isFieldPresent(sfAuthorized);
+            
+            if (hookGrantObj.getFieldH256(sfHookHash) == hookCtx.hookResult.hookHash &&
+               (!hasAuthorizedField  ||
+                hasAuthorizedField &&
+                hookGrantObj.getAccountID(sfAuthorized) == hookCtx.hookResult.account))
+            {
+                found_auth = true;
+                break;
+            }
+        }
+
+        if (found_auth)
+            break;
+    }
+
+    if (!found_auth)
+    {
+        hookCtx.hookResult.hookGrantsDisabled = true;
+        return NOT_AUTHORIZED;
+    }
 
     set_state_cache(
             hookCtx,
-            hookCtx.result.account,
-            hookCtx.result.hookNamespace,
+            acc,
+            ns,
             *key,
-            ripple::Blob{memory + read_ptr,  memory + read_ptr + read_len},
+            data,
             true);
-/*
-    (*hookCtx.result.changedState)[hookCtx.hookNamespace][*key] =
-        std::pair<bool, ripple::Blob> (true,
-                {memory + read_ptr,  memory + read_ptr + read_len});
-*/
+
     return read_len;
 }
 
@@ -1020,12 +1128,13 @@ DEFINE_HOOK_FUNCTION(
     uint32_t write_ptr, uint32_t write_len,
     uint32_t kread_ptr, uint32_t kread_len )
 {
-    return  state_foreign(
-                hookCtx, memoryCtx,
-                write_ptr, write_len,
-                0, 0,
-                kread_ptr, kread_len,
-                0, 0);
+    return
+        state_foreign(
+            hookCtx, memoryCtx,
+            write_ptr, write_len,
+            0, 0,
+            kread_ptr, kread_len,
+            0, 0);
 }
 
 /* This api actually serves both local and foreign state requests
@@ -1053,8 +1162,8 @@ DEFINE_HOOK_FUNCTION(
     } else return INVALID_ARGUMENT;
 
     if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
-        NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
         NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length) ||
+        NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
         NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -1072,7 +1181,7 @@ DEFINE_HOOK_FUNCTION(
     if (is_foreign && aread_len != 20)
         return INVALID_ACCOUNT;
 
-    uint256 ns = 
+    uint256 ns =
         nread_len == 0
             ? hookCtx.hookResult.hookNamespace
             : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
@@ -1089,9 +1198,10 @@ DEFINE_HOOK_FUNCTION(
         return INVALID_ARGUMENT;
 
     // first check if the requested state was previously cached this session
-    auto cacheEntry = lookup_state_cache(hookCtx, acc, ns, key); 
-    if (cacheEntry)
+    auto cacheEntryLookup = lookup_state_cache(hookCtx, acc, ns, key);
+    if (cacheEntryLookup)
     {
+        auto const& cacheEntry = chaceEntryLookup->get();
         if (write_ptr == 0)
             return data_as_int64(cacheEntry->second.data(), cacheEntry->second.size());
 
@@ -1106,7 +1216,7 @@ DEFINE_HOOK_FUNCTION(
 
     auto hsSLE =
         view.peek(keylet::hookState(acc, key, ns));
-    
+
     if (!hsSLE)
         return DOESNT_EXIST;
 
@@ -1158,7 +1268,7 @@ DEFINE_HOOK_FUNCTION(
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    auto const& txID = 
+    auto const& txID =
         (hookCtx.emitFailure && !flags
          ? applyCtx.tx.getFieldH256(sfTransactionHash)
          : applyCtx.tx.getTransactionID());
@@ -1206,7 +1316,7 @@ DEFINE_HOOK_FUNCTION(
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
-    
+
     auto const& st_tx =
         std::make_shared<ripple::STObject>(
             hookCtx.emitFailure
@@ -1214,7 +1324,7 @@ DEFINE_HOOK_FUNCTION(
                 : const_cast<ripple::STTx&>(applyCtx.tx).downcast<ripple::STObject>()
         );
 
-    auto const& txID = 
+    auto const& txID =
         hookCtx.emitFailure
             ? applyCtx.tx.getFieldH256(sfTransactionHash)
             : applyCtx.tx.getTransactionID();
@@ -1320,7 +1430,7 @@ DEFINE_HOOK_FUNCTION(
         return TOO_SMALL;
 
     uint256 hash = applyCtx.app.getLedgerMaster().getValidatedLedger()->info().hash;
-    
+
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
         hash.data(), 32,
@@ -1348,7 +1458,7 @@ DEFINE_HOOK_FUNCTION(
     if (!applyCtx.tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
-    auto const& field = 
+    auto const& field =
         hookCtx.emitFailure
         ? hookCtx.emitFailure->getField(fieldType)
         : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
@@ -1386,7 +1496,7 @@ DEFINE_HOOK_FUNCTION(
     if (!applyCtx.tx.isFieldPresent(fieldType))
         return DOESNT_EXIST;
 
-    auto const& field = 
+    auto const& field =
         hookCtx.emitFailure
         ? hookCtx.emitFailure->getField(fieldType)
         : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
@@ -1769,7 +1879,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
-    
+
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -1787,7 +1897,7 @@ DEFINE_HOOK_FUNCTION(
         output[i*2 + 1] = low;
     }
 
-    RETURN_HOOK_TRACE(read_ptr, read_len, 
+    RETURN_HOOK_TRACE(read_ptr, read_len,
             "Slot " << slot_no << " - "
             << std::string_view((const char*)output, (size_t)(id_size*2)));
 }
@@ -2122,7 +2232,7 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
-    
+
     if (NOT_IN_BOUNDS(write_ptr, 32, memory_length))
         return OUT_OF_BOUNDS;
 
@@ -2354,9 +2464,9 @@ DEFINE_HOOK_FUNCTION(
 
     hookCtx.result.emittedTxn.push(tpTrans);
 
-    auto const& txID = 
+    auto const& txID =
         tpTrans->getID();
-    
+
     if (txID.size() > write_len)
         return TOO_SMALL;
 
@@ -3225,7 +3335,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (float1 == 0)
         RETURN_HOOK_TRACE(read_ptr, read_len, "Float 0*10^(0) <ZERO>");
-        
+
     int64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
@@ -3367,7 +3477,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (decimal_places > 15)
         return INVALID_ARGUMENT;
-    
+
     if (neg1 && !absolute)
         return CANT_RETURN_NEGATIVE;
 
@@ -3686,7 +3796,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (read_len < 8)
         return NOT_AN_OBJECT;
-    
+
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
