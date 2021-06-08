@@ -5,6 +5,7 @@ if (process.argv.length < 3)
 }
 const RippleAPI = require('ripple-lib').RippleAPI;
 const keypairs = require('ripple-keypairs');
+const addr = require('ripple-address-codec')
 const fs = require('fs');
 const api = new RippleAPI({server: 'ws://localhost:6005'});
 
@@ -15,7 +16,6 @@ api.on('error', (errorCode, errorMessage) => {console.log(errorCode + ': ' + err
 api.on('connected', () => {console.log('connected');});
 api.on('disconnected', (code) => {console.log('disconnected, code:', code);});
 api.connect().then(() => {
-    binary = fs.readFileSync('accept.wasm').toString('hex').toUpperCase();
     j = {
         Account: address,
         TransactionType: "SetHook",
@@ -23,8 +23,10 @@ api.connect().then(() => {
         [
             {
                 Hook: {
-                    CreateCode: binary,
-                    HookOn: '0000000000000000'
+                    CreateCode: fs.readFileSync('accept.wasm').toString('hex').toUpperCase(),
+                    HookOn: '0000000000000000',
+                    HookNamespace: addr.codec.sha256('accept').toString('hex').toUpperCase(),
+                    HookApiVersion: 0
                 }
             }
         ]

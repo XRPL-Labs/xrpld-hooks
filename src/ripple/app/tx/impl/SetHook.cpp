@@ -1231,6 +1231,8 @@ SetHook::setHook()
     for (auto const& hookSet : hookSets)
     {
         hookSetNumber++;
+
+        ripple::STObject                                                newHook         { sfHook };
         std::optional<std::reference_wrapper<ripple::STObject const>>   oldHook;
         // an existing hook would only be present if the array slot also exists on the ltHOOK object
         if (hookSetNumber < oldHookCount)
@@ -1242,7 +1244,7 @@ SetHook::setHook()
         {
             // if a hook already exists here then migrate it to the new array
             // if it doesn't exist just place a blank object here
-            newHooks[hookSetNumber] = ( oldHook ? oldHook->get() : ripple::STObject{sfHook} );
+            newHooks.push_back( oldHook ? oldHook->get() : ripple::STObject{sfHook} );
             continue;
         }
 
@@ -1256,7 +1258,6 @@ SetHook::setHook()
 
         std::optional<ripple::uint256>                                  newNamespace;
         std::optional<ripple::Keylet>                                   newDirKeylet;
-        ripple::STObject                                                newHook         { sfHook };
 
         /**
          * This is the primary HookSet loop. We iterate the sfHooks array inside the txn
@@ -1327,7 +1328,7 @@ SetHook::setHook()
         // update reference counts as appropriate for the operation we are performing
         {
             // decrement reference count of HOOK_STATE_DIR when appropriate
-            if ((newNamespace && *oldNamespace != *newNamespace) ||     // namespace override
+            if ((newNamespace && oldNamespace && *oldNamespace != *newNamespace) ||     // namespace override
                     isDeleteOperation)                                  // or deleteop
             {
                 if (!oldDirSLE)
@@ -1375,7 +1376,7 @@ SetHook::setHook()
         // handle delete operation
         if (isDeleteOperation)
         {
-            newHooks[hookSetNumber] = ripple::STObject{sfHook};
+            newHooks.push_back(ripple::STObject{sfHook});
             continue;
         }
 
@@ -1426,7 +1427,6 @@ SetHook::setHook()
             newHook.setFieldH256(      sfHookNamespace, *newNamespace);
             newHook.setFieldU16(       sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
             newHook.setFieldH256(      sfHookHash, hash);
-            newHook.setFieldH256(      sfHookSetTxnID, ctx.tx.getTransactionID());
 
             if (hasParameters)
                 newHook.setFieldArray( sfHookParameters, hookSetObj->getFieldArray(sfHookParameters));
@@ -1434,7 +1434,7 @@ SetHook::setHook()
             if (hasGrants)
                 newHook.setFieldArray( sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
-            newHooks[hookSetNumber] = std::move(newHook);
+            newHooks.push_back(newHook);
             view().insert(newHookDef);
             continue;
         }
@@ -1533,7 +1533,7 @@ SetHook::setHook()
             if (hasGrants)
                 newHook.setFieldArray(sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
-            newHooks[hookSetNumber] = std::move(newHook);
+            newHooks.push_back(newHook);
             continue;
         }
 
@@ -1587,6 +1587,13 @@ SetHook::setHook()
             view().erase(sle);
         }
     }
+
+    newHookSLE->setFieldArray(sfHooks, newHooks);
+//    newHookSLE->setFieldH256(sfPreviousTxnID, ctx.tx.getTransactionID());
+
+    if (oldHookSLE)
+        view().erase(oldHookSLE);
+    view().insert(newHookSLE);
 
     return tesSUCCESS;
 }
