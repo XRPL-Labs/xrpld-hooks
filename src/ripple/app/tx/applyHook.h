@@ -475,6 +475,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(state, ctx);
             ADD_HOOK_FUNCTION(state_foreign, ctx);
             ADD_HOOK_FUNCTION(state_set, ctx);
+            ADD_HOOK_FUNCTION(state_foreign_set, ctx);
 
             ADD_HOOK_FUNCTION(slot, ctx);
             ADD_HOOK_FUNCTION(slot_clear, ctx);

@@ -136,6 +136,7 @@ const std::set<std::string> import_whitelist
     "state",
     "state_foreign",
     "state_set",
+    "state_foreign_set",
     "trace",
     "trace_num",
     "trace_float",

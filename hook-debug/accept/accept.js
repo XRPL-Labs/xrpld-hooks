@@ -19,8 +19,15 @@ api.connect().then(() => {
     j = {
         Account: address,
         TransactionType: "SetHook",
-        CreateCode: binary,
-        HookOn: '0000000000000000'
+        Hooks:
+        [
+            {
+                Hook: {
+                    CreateCode: binary,
+                    HookOn: '0000000000000000'
+                }
+            }
+        ]
     }
     api.prepareTransaction(j).then( (x)=> 
     {

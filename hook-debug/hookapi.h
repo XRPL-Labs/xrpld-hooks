@@ -264,8 +264,13 @@ extern int64_t state               (uint32_t write_ptr,  uint32_t write_len,
  */
 extern int64_t state_foreign       (uint32_t write_ptr,  uint32_t write_len,
                                     uint32_t kread_ptr,  uint32_t kread_len,
+                                    uint32_t nread_ptr,  uint32_t nread_len,
                                     uint32_t aread_ptr,  uint32_t aread_len);
 
+extern int64_t state_foreign_set   (uint32_t read_ptr,   uint32_t read_len,
+                                    uint32_t kread_ptr,  uint32_t kread_len,
+                                    uint32_t nread_ptr,  uint32_t nread_len,
+                                    uint32_t aread_ptr,  uint32_t aread_len);
 /**
  * Print some output to the trace log on xrpld. Any xrpld instance set to "trace" log level will see this.
  * @param read_ptr A buffer containing either data or text (in either utf8, or utf16le)
