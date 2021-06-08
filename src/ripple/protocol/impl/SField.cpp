@@ -271,6 +271,7 @@ SF_Account const sfRegularKey(access, STI_ACCOUNT, 8, "RegularKey");
 
 SF_Account const sfEmitCallback(access, STI_ACCOUNT, 9, "EmitCallback"); //hook to callback when pseudo is included in a ledger 
 // account (uncommon)
+SF_Account const sfHookAccount(access, STI_ACCOUNT, 16, "HookAccount"); // used in metadata
 
 // path set
 SField const sfPaths(access, STI_PATHSET, 1, "Paths");

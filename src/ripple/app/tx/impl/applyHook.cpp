@@ -343,10 +343,10 @@ bool hook::isEmittedTxn(ripple::STTx const& tx)
 }
 // many datatypes can be encoded into an int64_t
 inline int64_t data_as_int64(
-        void* ptr_raw,
+        void const* ptr_raw,
         uint32_t len)
 {
-    unsigned char* ptr = reinterpret_cast<unsigned char*>(ptr_raw);
+    uint8_t const* ptr = reinterpret_cast<uint8_t const*>(ptr_raw);
     if (len > 8)
         return hook_api::hook_return_code::TOO_BIG;
     uint64_t output = 0;
@@ -393,10 +393,10 @@ TER
 hook::setHookState(
     HookResult& hookResult,
     ripple::ApplyContext& applyCtx,
-    ripple::AccountID& acc,
-    ripple::uint256 ns,
-    ripple::uint256 key,
-    ripple::Slice& data
+    ripple::AccountID const& acc,
+    ripple::uint256 const& ns,
+    ripple::uint256 const& key,
+    ripple::Slice const& data
 ){
 
     auto& view = applyCtx.view();
@@ -713,9 +713,9 @@ inline
 std::optional<std::reference_wrapper<std::pair<bool, ripple::Blob> const>>
 lookup_state_cache(
         hook::HookContext& hookCtx,
-        ripple::AccountID& acc,
-        ripple::uint256& ns,
-        ripple::uint256& key)
+        ripple::AccountID const& acc,
+        ripple::uint256 const& ns,
+        ripple::uint256 const& key)
 {
     auto& changedState = *(hookCtx.result.changedState);
     if (changedState.find(acc) == changedState.end())
@@ -741,9 +741,9 @@ inline
 void
 set_state_cache(
         hook::HookContext& hookCtx,
-        ripple::AccountID& acc,
-        ripple::uint256& ns,
-        ripple::uint256& key,
+        ripple::AccountID const& acc,
+        ripple::uint256 const& ns,
+        ripple::uint256 const& key,
         ripple::Blob& data,
         bool modified)
 {
@@ -752,20 +752,13 @@ set_state_cache(
     if (changedState.find(acc) == changedState.end())
     {
         changedState[acc] =
-        std::map<
-            ripple::base_uint<256>, 
-            std::map<
-                ripple::base_uint<256>, 
-                std::pair<
-                    bool, 
-                    std::vector<unsigned char>>>>
         {
-            { ns, {
-                      { key, {
+            { ns,
+                {
+                      { key,
                                  { modified, data }
-                             } 
                       }
-                  } 
+                }
             }
         };
         return;
@@ -776,9 +769,8 @@ set_state_cache(
     {
         changedStateAcc[ns] =
         {
-            { key, {
+            { key,
                        { modified, data }
-                   } 
             }
         };
         return;
@@ -787,10 +779,7 @@ set_state_cache(
     auto& changedStateNs = changedStateAcc[ns];
     if (changedStateNs.find(key) == changedStateNs.end())
     {
-        changedStateNs[key] = 
-        {
-            { modified, data }
-        };
+        changedStateNs[key] = { modified, data };
         return;
     }
 
@@ -809,6 +798,7 @@ DEFINE_HOOK_FUNCTION(
 {
     return
         state_foreign_set(
+                hookCtx, memoryCtx,
                 read_ptr,   read_len,
                 kread_ptr,  kread_len,
                 0, 0,
@@ -866,7 +856,7 @@ DEFINE_HOOK_FUNCTION(
 
     uint256 ns =
         nread_len == 0
-            ? hookCtx.hookResult.hookNamespace
+            ? hookCtx.result.hookNamespace
             : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
 
     ripple::AccountID acc =
@@ -887,11 +877,11 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // execution to here means it's actually a foreign set
-    if (hookCtx.hookResult.hookGrantsDisabled)
+    if (hookCtx.result.hookGrantsDisabled)
         return PREVIOUS_FAILURE_PREVENTS_RETRY;
 
     // first check if we've already modified this state
-    auto cacheEntry = lookup_state_cache(hookCtx, acc, ns, key);
+    auto cacheEntry = lookup_state_cache(hookCtx, acc, ns, *key);
     if (cacheEntry && cacheEntry->get().first)
     {
         // if a cache entry already exists and it has already been modified don't check grants again
@@ -908,34 +898,34 @@ DEFINE_HOOK_FUNCTION(
     bool found_auth = false;
 
     // we do this by iterating the hooks installed on the foreign account and in turn their grants and namespaces
-    auto const& hooks = sle.getFieldArray(sfHooks);
+    auto const& hooks = sle->getFieldArray(sfHooks);
     for (auto const& hook : hooks)
     {
-        auto const& hookObj = dynamic_cast<STObject const*>(&hook);  
-        
+        STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
+
         // skip blank entries
-        if (!hookObj.isFieldPresent(sfHookGrants))
+        if (!hookObj->isFieldPresent(sfHookGrants))
             continue;
 
-        auto const& hookGrants = hookObj.getFieldArray(sfHookGrants);
+        auto const& hookGrants = hookObj->getFieldArray(sfHookGrants);
 
         if (hookGrants.size() < 1)
             continue;
 
         // the grant allows the hook to modify the granter's namespace only
-        if (hookObj.getFieldH256(sfHookNamespace) != ns)
+        if (hookObj->getFieldH256(sfHookNamespace) != ns)
             continue;
 
         // this is expensive search so we'll disallow after one failed attempt
         for (auto const& hookGrant : hookGrants)
         {
-            auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
-            bool hasAuthorizedField = hookGrantObj.isFieldPresent(sfAuthorized);
-            
-            if (hookGrantObj.getFieldH256(sfHookHash) == hookCtx.hookResult.hookHash &&
+            STObject const* hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
+            bool hasAuthorizedField = hookGrantObj->isFieldPresent(sfAuthorize);
+
+            if (hookGrantObj->getFieldH256(sfHookHash) == hookCtx.result.hookHash &&
                (!hasAuthorizedField  ||
-                hasAuthorizedField &&
-                hookGrantObj.getAccountID(sfAuthorized) == hookCtx.hookResult.account))
+                (hasAuthorizedField &&
+                 hookGrantObj->getAccountID(sfAuthorize) == hookCtx.result.account)))
             {
                 found_auth = true;
                 break;
@@ -948,7 +938,7 @@ DEFINE_HOOK_FUNCTION(
 
     if (!found_auth)
     {
-        hookCtx.hookResult.hookGrantsDisabled = true;
+        hookCtx.result.hookGrantsDisabled = true;
         return NOT_AUTHORIZED;
     }
 
@@ -1193,7 +1183,7 @@ DEFINE_HOOK_FUNCTION(
 
     uint256 ns =
         nread_len == 0
-            ? hookCtx.hookResult.hookNamespace
+            ? hookCtx.result.hookNamespace
             : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
 
     ripple::AccountID acc =
@@ -1208,24 +1198,24 @@ DEFINE_HOOK_FUNCTION(
         return INVALID_ARGUMENT;
 
     // first check if the requested state was previously cached this session
-    auto cacheEntryLookup = lookup_state_cache(hookCtx, acc, ns, key);
+    auto cacheEntryLookup = lookup_state_cache(hookCtx, acc, ns, *key);
     if (cacheEntryLookup)
     {
-        auto const& cacheEntry = chaceEntryLookup->get();
+        auto const& cacheEntry = cacheEntryLookup->get();
         if (write_ptr == 0)
-            return data_as_int64(cacheEntry->second.data(), cacheEntry->second.size());
+            return data_as_int64(cacheEntry.second.data(), cacheEntry.second.size());
 
-        if (cacheEntry->second.size() > write_len)
+        if (cacheEntry.second.size() > write_len)
             return TOO_SMALL;
 
         WRITE_WASM_MEMORY_AND_RETURN(
             write_ptr, write_len,
-            cacheEntry->second.data(), cacheEntry->second.size(),
+            cacheEntry.second.data(), cacheEntry.second.size(),
             memory, memory_length);
     }
 
     auto hsSLE =
-        view.peek(keylet::hookState(acc, key, ns));
+        view.peek(keylet::hookState(acc, *key, ns));
 
     if (!hsSLE)
         return DOESNT_EXIST;
@@ -1233,7 +1223,7 @@ DEFINE_HOOK_FUNCTION(
     Blob b = hsSLE->getFieldVL(sfHookStateData);
 
     // it exists add it to cache and return it
-    state_state_cache(hookCtx, acc, ns, key, b, false);
+    set_state_cache(hookCtx, acc, ns, *key, b, false);
 
     if (write_ptr == 0)
         return data_as_int64(b.data(), b.size());
@@ -2082,22 +2072,22 @@ DEFINE_HOOK_FUNCTION(
                 if (a == 0 || b == 0 || c == 0 || d == 0)
                    return INVALID_ARGUMENT;
 
-                if (e != 0 || f != 0)
-                   return INVALID_ARGUMENT;
 
-                uint32_t aread_ptr = a, aread_len = b, kread_ptr = c, kread_len = d;
+                uint32_t aread_ptr = a, aread_len = b, kread_ptr = c, kread_len = d, nread_ptr = e, nread_len = f;
 
                 if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
-                    NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+                    NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
+                    NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length))
                    return OUT_OF_BOUNDS;
 
-                if (aread_len != 20 || kread_len != 32)
+                if (aread_len != 20 || kread_len != 32 || nread_len != 32)
                     return INVALID_ARGUMENT;
 
                 ripple::Keylet kl =
                     ripple::keylet::hookState(
                             ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr),
-                            ripple::base_uint<256>::fromVoid(memory + kread_ptr));
+                            ripple::base_uint<256>::fromVoid(memory + kread_ptr),
+                            ripple::base_uint<256>::fromVoid(memory + nread_ptr));
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }

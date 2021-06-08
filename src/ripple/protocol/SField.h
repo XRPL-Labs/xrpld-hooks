@@ -510,6 +510,7 @@ extern SF_Account const sfRegularKey;
 extern SF_Account const sfEmitCallback;
 
 // account (uncommon)
+extern SF_Account const sfHookAccount;
 
 // path set
 extern SField const sfPaths;
