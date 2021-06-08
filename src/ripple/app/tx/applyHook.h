@@ -317,6 +317,8 @@ namespace hook {
     struct HookContext;
 
     int maxHookStateDataSize(void);
+    int maxHookWasmSize(void);
+    int maxHookParameterSize(void);
 
     struct HookResult
     {

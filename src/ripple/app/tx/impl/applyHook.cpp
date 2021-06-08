@@ -327,6 +327,16 @@ int hook::maxHookStateDataSize(void) {
     return 128;
 }
 
+int hook::maxHookWasmSize(void)
+{
+    return 0xFFFFU;
+}
+
+int hook::maxHookParameterSize(void)
+{
+    return 128;
+}
+
 bool hook::isEmittedTxn(ripple::STTx const& tx)
 {
     return tx.isFieldPresent(ripple::sfEmitDetails);

@@ -89,7 +89,7 @@ enum class HashPrefix : std::uint32_t {
     emitTxnNonce = detail::make_hash_prefix('E', 'T', 'X'),
 
     /* Hash of a Hook's actual code */
-    hookByteCode = detail::make_hash_prefix('H', 'O', 'K')
+    hookDefinition = detail::make_hash_prefix('W', 'S', 'M')
 };
 
 template <class Hasher>
