@@ -27,6 +27,12 @@ api.connect().then(() => {
                     HookOn: '0000000000000000',
                     HookNamespace: addr.codec.sha256('accept').toString('hex').toUpperCase(),
                     HookApiVersion: 0
+                },
+                Hook: {
+                    CreateCode: fs.readFileSync('accept.wasm').toString('hex').toUpperCase(),
+                    HookOn: '0000000000000000',
+                    HookNamespace: addr.codec.sha256('accept').toString('hex').toUpperCase(),
+                    HookApiVersion: 0
                 }
             }
         ]

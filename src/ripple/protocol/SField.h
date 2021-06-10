@@ -437,6 +437,7 @@ extern SF_U256 const sfRootIndex;
 extern SF_U256 const sfAccountTxnID;
 extern SF_U256 const sfEmitParentTxnID;
 extern SF_U256 const sfEmitNonce;
+extern SF_U256 const sfEmitHookHash;
 
 // 256-bit (uncommon)
 extern SF_U256 const sfBookDirectory;

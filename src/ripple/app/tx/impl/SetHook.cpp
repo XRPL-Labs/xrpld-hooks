@@ -1589,7 +1589,7 @@ SetHook::setHook()
     }
 
     newHookSLE->setFieldArray(sfHooks, newHooks);
-//    newHookSLE->setFieldH256(sfPreviousTxnID, ctx.tx.getTransactionID());
+    newHookSLE->setAccountID(sfAccount, account_);
 
     if (oldHookSLE)
         view().erase(oldHookSLE);

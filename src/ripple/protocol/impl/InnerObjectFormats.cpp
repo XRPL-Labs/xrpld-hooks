@@ -23,6 +23,17 @@ namespace ripple {
 
 InnerObjectFormats::InnerObjectFormats()
 {
+    add(sfEmitDetails.jsonName.c_str(),
+        sfEmitDetails.getCode(),
+        {
+            {sfEmitGeneration,  soeREQUIRED},
+            {sfEmitBurden,      soeREQUIRED},
+            {sfEmitParentTxnID, soeREQUIRED},
+            {sfEmitNonce,       soeREQUIRED},
+            {sfEmitCallback,    soeREQUIRED},
+            {sfEmitHookHash,    soeREQUIRED}
+        });
+
     add(sfSignerEntry.jsonName.c_str(),
         sfSignerEntry.getCode(),
         {
@@ -36,6 +47,20 @@ InnerObjectFormats::InnerObjectFormats()
             {sfAccount, soeREQUIRED},
             {sfSigningPubKey, soeREQUIRED},
             {sfTxnSignature, soeREQUIRED},
+        });
+
+    add(sfHookExecution.jsonName.c_str(),
+        sfHookExecution.getCode(),
+        {
+            {sfHookResult,              soeREQUIRED},
+            {sfHookHash,                soeREQUIRED},
+            {sfHookAccount,             soeREQUIRED},
+            {sfHookReturnCode,          soeREQUIRED},
+            {sfHookReturnString,        soeREQUIRED},
+            {sfHookInstructionCount,    soeREQUIRED},
+            {sfHookExecutionIndex,      soeREQUIRED},
+            {sfHookStateChangeCount,    soeREQUIRED},
+            {sfHookEmitCount,           soeREQUIRED}
         });
 
     add(sfHook.jsonName.c_str(),

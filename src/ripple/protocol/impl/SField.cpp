@@ -179,6 +179,7 @@ SF_U256 const sfAccountTxnID(access, STI_HASH256, 9, "AccountTxnID");
 
 SF_U256 const sfEmitParentTxnID(access, STI_HASH256, 10, "EmitParentTxnID");
 SF_U256 const sfEmitNonce(access, STI_HASH256, 11, "EmitNonce");
+SF_U256 const sfEmitHookHash(access, STI_HASH256, 12, "EmitHookHash");
 
 // 256-bit (uncommon)
 SF_U256 const sfBookDirectory(access, STI_HASH256, 16, "BookDirectory");

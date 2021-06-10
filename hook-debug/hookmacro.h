@@ -478,7 +478,7 @@ int out_len = 0;\
     ENCODE_SIGNING_PUBKEY_NULL(buf_out );
 
 
-#define PREPARE_PAYMENT_SIMPLE_SIZE 237
+#define PREPARE_PAYMENT_SIMPLE_SIZE 270
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount_raw, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
@@ -501,10 +501,10 @@ int out_len = 0;\
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        etxn_details((uint32_t)buf_out, 105);                                               /* emitdet | size 105 */ \
+        etxn_details((uint32_t)buf_out,  138);                                              /* emitdet | size 138 */ \
     }
 
-#define PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE 277
+#define PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE 310
 #define PREPARE_PAYMENT_SIMPLE_TRUSTLINE(buf_out_master, tlamt, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
@@ -526,7 +526,7 @@ int out_len = 0;\
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        etxn_details((uint32_t)buf_out, 105);                                               /* emitdet | size 105 */ \
+        etxn_details((uint32_t)buf_out, 138);                                               /* emitdet | size 138 */ \
     }
 
 

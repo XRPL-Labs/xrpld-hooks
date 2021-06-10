@@ -1103,7 +1103,6 @@ void hook::commitChangesToLedger(
     // add a metadata entry for this hook execution result
     STObject meta { sfHookExecution };
     meta.setFieldU8(sfHookResult, hookResult.exitType );
-    meta.setFieldH256(sfHookHash, hookResult.hookSetTxnID);
     meta.setAccountID(sfHookAccount, hookResult.account);
 
     // RH NOTE: this is probably not necessary, a direct cast should always put the (negative) 1 bit at the MSB
@@ -1118,6 +1117,7 @@ void hook::commitChangesToLedger(
     meta.setFieldU16(sfHookEmitCount, emission_count); // this will never wrap, hard limit
     meta.setFieldU16(sfHookExecutionIndex, exec_index );
     meta.setFieldU16(sfHookStateChangeCount, change_count );
+    meta.setFieldH256(sfHookHash, hookResult.hookHash);
     avi.addHookMetaData(std::move(meta));
 }
 
@@ -2324,7 +2324,8 @@ DEFINE_HOOK_FUNCTION(
         !emitDetails.isFieldPresent(sfEmitBurden) ||
         !emitDetails.isFieldPresent(sfEmitParentTxnID) ||
         !emitDetails.isFieldPresent(sfEmitNonce) ||
-        !emitDetails.isFieldPresent(sfEmitCallback))
+        !emitDetails.isFieldPresent(sfEmitCallback) ||
+        !emitDetails.isFieldPresent(sfEmitHookHash))
     {
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: sfEmitDetails malformed.";
@@ -2341,9 +2342,10 @@ DEFINE_HOOK_FUNCTION(
 
     uint32_t gen = emitDetails.getFieldU32(sfEmitGeneration);
     uint64_t bur = emitDetails.getFieldU64(sfEmitBurden);
-    ripple::uint256 pTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
-    ripple::uint256 nonce = emitDetails.getFieldH256(sfEmitNonce);
-    auto callback = emitDetails.getAccountID(sfEmitCallback);
+    ripple::uint256 const& pTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
+    ripple::uint256 const& nonce = emitDetails.getFieldH256(sfEmitNonce);
+    auto const& callback = emitDetails.getAccountID(sfEmitCallback);
+    auto const& hash = emitDetails.getFieldH256(sfEmitHookHash);
 
     uint32_t gen_proper = etxn_generation(hookCtx, memoryCtx);
 
@@ -2387,6 +2389,13 @@ DEFINE_HOOK_FUNCTION(
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: sfEmitCallback account must be the account "
             << "of the emitting hook";
+        return EMISSION_FAILURE;
+    }
+
+    if (hash != hookCtx.result.hookHash)
+    {
+        JLOG(j.trace())
+            << "HookEmit[" << HC_ACC() << "]: sfEmitHookHash must be the hash of the emitting hook";
         return EMISSION_FAILURE;
     }
 
@@ -3253,15 +3262,18 @@ DEFINE_HOOK_FUNCTION(
     if (nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++ = 0x89; // sfEmitCallback preamble                         /* upto =  82 | size = 22 */
+    *out++= 0x5C; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
+    for (int i = 0; i < 32; ++i)
+        *out++ = hookCtx.result.hookHash.data()[i];                   
+    *out++ = 0x89; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
     *out++ = 0x14; // preamble cont
     if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
         return INTERNAL_ERROR;
     out += 20;
-    *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 104 | size =  1 */
-                                                                      /* upto = 105 | --------- */
+    *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 137 | size =  1 */
+                                                                      /* upto = 138 | --------- */
     DBG_PRINTF("emitdetails size = %d\n", (out - memory - write_ptr));
-    return 105;
+    return 138;
 }
 
 

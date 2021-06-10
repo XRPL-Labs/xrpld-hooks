@@ -694,8 +694,10 @@ Transactor::operator()()
 
     auto result = ctx_.preclaimResult;
 
-    bool hook_executed = false;
+    int executed_hook_count = 0;
+    bool rollback = false;
     uint64_t prehook_cycles = rdtsc();
+
 
     if (ctx_.view().rules().enabled(featureHooks) &&
         (result == tesSUCCESS || result == tecHOOK_REJECTED))
@@ -703,82 +705,144 @@ Transactor::operator()()
 
         auto const& ledger = ctx_.view();
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
-        std::optional<hook::HookResult> sendResult;
-        std::optional<hook::HookResult> recvResult;
-        do
+        std::vector<hook::HookResult> sendResults;
+        std::vector<hook::HookResult> recvResults;
+
+        auto const& hooksSending = ledger.read(keylet::hook(accountID));
+
+        // First check if the Sending account has any hooks that can be fired
+        if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
         {
-
-            /**
-             * Hook Application Logic
-             * > Hooks may fire on the: (S)ending account, (R)eceiving account, (C)allback account
-             * > Hooks are applied S -> R -> C
-             * > The callback may not rollback a transaction.
-             * > If and only if S ACCEPTs the transaction, hook application on R can proceed
-             * > If and only if R ACCEPTs the transaction, hook application on C can proceed
-             * > If S or R rollback both rollback
-             * > If a hook is not present it is deemed as though it ran and called ACCEPT()
-             */
-
-            auto const& hookSending = ledger.read(keylet::hook(accountID));
-
-            // First check if the Sending account has a hook that can be fired
-            bool fireSendingHook = hookSending &&
-                !ctx_.emitted() && /* emitted tx cannot activate sending hooks */
-                hook::canHook(ctx_.tx.getTxnType(), hookSending->getFieldU64(sfHookOn));
-
-            if (fireSendingHook)
+            auto const& hooks = hooksSending->getFieldArray(sfHooks);
+            for (auto const& hook : hooks)
             {
-                // execute the hook on the sending account
-                hook_executed = true;
-                sendResult =
-                    hook::apply(
-                            hookSending->getFieldH256(sfHookSetTxnID),
-                            hookSending->getFieldH256(sfHookHash),
-                            hookSending->getFieldH256(sfHookNamespace),
-                            hookSending->getFieldVL(sfCreateCode), ctx_, accountID, false);
+                STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
-                if (sendResult->exitType != hook_api::ExitType::ACCEPT)
-                    break;
-            }
+                if (hookObj->getCount() == 0) // skip blanks
+                    continue;
 
-
-            // Next check if the Receiving account has as a hook that can be fired...
-            bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
-            if (ctx_.tx.isFieldPresent(sfDestination) || (is_owner = ctx_.tx.isFieldPresent(sfOwner)))
-            {
-                auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
-                auto const& hookReceiving = ledger.read(keylet::hook(destAccountID));
-                if (hookReceiving &&
-                    hook::canHook(ctx_.tx.getTxnType(), hookReceiving->getFieldU64(sfHookOn)))
+                // lookup hook definition
+                uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
+                auto const& hookDef = view().peek(keylet::hookDefinition(hookHash));
+                if (!hookDef)
                 {
-                    // execute the hook on the receiving account
-                    hook_executed = true;
-                    recvResult =
-                        hook::apply(
-                                hookReceiving->getFieldH256(sfHookSetTxnID),
-                                hookReceiving->getFieldH256(sfHookHash),
-                                hookReceiving->getFieldH256(sfHookNamespace),
-                                hookReceiving->getFieldVL(sfCreateCode), ctx_, destAccountID, false);
+                    JLOG(j_.fatal())
+                        << "HookError[]: Failure: hook def missing (send)";
+                    rollback = true;
+                    break;
+                }
 
-                    if (recvResult->exitType != hook_api::ExitType::ACCEPT)
-                        break;
+                // check if the hook can fire
+                uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
+                        ? hookObj->getFieldU64(sfHookOn)
+                        : hookDef->getFieldU64(sfHookOn));
+
+                if (!hook::canHook(ctx_.tx.getTxnType(), hookOn))
+                    continue;    // skip if it can't
+
+                // fetch the namespace either from the hook object of, if absent, the hook def
+                uint256 const& ns = 
+                    (hookObj->isFieldPresent(sfHookNamespace)
+                         ?  hookObj->getFieldH256(sfHookNamespace)
+                         :  hookDef->getFieldH256(sfHookNamespace));
+
+
+                sendResults.push_back(
+                    hook::apply(
+                            hookDef->getFieldH256(sfHookSetTxnID),
+                            hookHash,
+                            ns,
+                            hookDef->getFieldVL(sfCreateCode),
+                            ctx_,
+                            accountID,
+                            false,
+                            0));
+
+                executed_hook_count++;
+
+                if (sendResults.back().exitType != hook_api::ExitType::ACCEPT)
+                {
+                    if (sendResults.back().exitType == hook_api::ExitType::WASM_ERROR)
+                        result = temMALFORMED;
+                    rollback = true;
+                    break;
                 }
             }
         }
-        while (0); // used to make above control flow easy
 
 
+        // Next check if the Receiving account has as a hook that can be fired...
+        bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
+        if (!rollback && 
+                (ctx_.tx.isFieldPresent(sfDestination) || (is_owner = ctx_.tx.isFieldPresent(sfOwner))))
+        {
+            auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
+            auto const& hooksReceiving = ledger.read(keylet::hook(destAccountID));
+            if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
+            {
+            
+                auto const& hooks = hooksReceiving->getFieldArray(sfHooks);
+                for (auto const& hook : hooks)
+                {
+                    STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
-        // Three possible outcomes after execution: An error, a rollback or an accept
-        if ((sendResult && sendResult->exitType == hook_api::ExitType::WASM_ERROR) ||
-            (recvResult && recvResult->exitType == hook_api::ExitType::WASM_ERROR))
-            // error condition
-            result = temMALFORMED;
-        else if ((sendResult && sendResult->exitType == hook_api::ExitType::ROLLBACK) ||
-                   (recvResult && recvResult->exitType == hook_api::ExitType::ROLLBACK))
-            // rollback condition
+                    if (hookObj->getCount() == 0) // skip blanks
+                        continue;
+
+                    // lookup hook definition
+                    uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
+                    auto const& hookDef = view().peek(keylet::hookDefinition(hookHash));
+                    if (!hookDef)
+                    {
+                        JLOG(j_.fatal())
+                            << "HookError[]: Failure: hook def missing (recv)";
+                        rollback = true;
+                        break;
+                    }
+
+                    // check if the hook can fire
+                    uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
+                            ? hookObj->getFieldU64(sfHookOn)
+                            : hookDef->getFieldU64(sfHookOn));
+
+                    if (!hook::canHook(ctx_.tx.getTxnType(), hookOn))
+                        continue;    // skip if it can't
+
+                    // fetch the namespace either from the hook object of, if absent, the hook def
+                    uint256 const& ns = 
+                        (hookObj->isFieldPresent(sfHookNamespace)
+                             ?  hookObj->getFieldH256(sfHookNamespace)
+                             :  hookDef->getFieldH256(sfHookNamespace));
+
+                    executed_hook_count++;
+                    
+                    // execute the hook on the receiving account
+                    recvResults.push_back(
+                        hook::apply(
+                                hookDef->getFieldH256(sfHookSetTxnID),
+                                hookHash,
+                                ns,
+                                hookDef->getFieldVL(sfCreateCode),
+                                ctx_,
+                                destAccountID,
+                                false,
+                                0));
+                
+                    if (recvResults.back().exitType != hook_api::ExitType::ACCEPT)
+                    {
+                        if (recvResults.back().exitType == hook_api::ExitType::WASM_ERROR)
+                            result = temMALFORMED;
+                        rollback = true;
+                        break;
+                    }
+                }
+            }
+        }
+
+
+        if (rollback && result != temMALFORMED)
             result = tecHOOK_REJECTED;
-        
+
         // Finally check if there is a callback
         do
         {
@@ -789,48 +853,87 @@ Transactor::operator()()
 
                 if (!emitDetails.isFieldPresent(sfEmitCallback))
                 {
-                    JLOG(j_.fatal()) 
+                    JLOG(j_.fatal())
                         << "HookError[]: Callback Processing: Failure: sfEmitCallback missing";
                     break;
                 }
 
-                AccountID callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+                AccountID const& callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
+                uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
 
-                hook_executed = true;
-                auto const& hookCallback = ledger.read(keylet::hook(callbackAccountID));
-
-                // this call will clean up ltEMITTED_NODE as well
-                try {
-                hook::apply(
-                    hookCallback->getFieldH256(sfHookSetTxnID),
-                    hookCallback->getFieldH256(sfHookHash),
-                    hookCallback->getFieldH256(sfHookNamespace),
-                    hookCallback->getFieldVL(sfCreateCode),
-                    ctx_,
-                    callbackAccountID,
-                    true, 
-                    safe_cast<TxType>(
-                        ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL);
-                }
-                catch (std::exception& e)
+                
+                auto const& hooksCallback = ledger.read(keylet::hook(callbackAccountID));
+                auto const& hookDef = view().peek(keylet::hookDefinition(callbackHookHash));
+                if (!hookDef)
                 {
-                    JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
+                    JLOG(j_.warn())
+                        << "HookError[]: Hook def missing on callback";
+                    rollback = true;
+                    break;
+                }
+
+                bool found = false;
+                auto const& hooks = hooksCallback->getFieldArray(sfHooks);
+                for (auto const& hook : hooks)
+                {
+                    STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
+
+                    if (hookObj->getCount() == 0) // skip blanks
+                        continue;
+
+                    if (hookObj->getFieldH256(sfHookHash) != callbackHookHash)
+                        continue;
+                
+                    // fetch the namespace either from the hook object of, if absent, the hook def
+                    uint256 const& ns = 
+                        (hookObj->isFieldPresent(sfHookNamespace)
+                             ?  hookObj->getFieldH256(sfHookNamespace)
+                             :  hookDef->getFieldH256(sfHookNamespace));
+
+                    executed_hook_count++;
+                    found = true;
+
+                    // this call will clean up ltEMITTED_NODE as well
+                    try {
+                    hook::apply(
+                        hookDef->getFieldH256(sfHookSetTxnID),
+                        callbackHookHash,
+                        ns,
+                        hookDef->getFieldVL(sfCreateCode),
+                        ctx_,
+                        callbackAccountID,
+                        true,
+                        safe_cast<TxType>(
+                            ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL);
+                    }
+                    catch (std::exception& e)
+                    {
+                        JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
+                    }
+
+                    break;
+                }
+
+                if (!found)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[]: Hookhash not found on callback account";
                 }
             }
         }
         while(0);
 
-        if (sendResult)
-            hook::commitChangesToLedger(*sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
+        for (auto& sendResult: sendResults)
+            hook::commitChangesToLedger(sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE);
 
-        if (recvResult)
-            hook::commitChangesToLedger(*recvResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
+        for (auto& recvResult: recvResults)
+            hook::commitChangesToLedger(recvResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
     }
 
     uint64_t posthook_cycles = rdtsc();
     JLOG(j_.trace())
-        << "HookStats[]: " << (hook_executed ? "hook " : "non-hook ") << " txn execution took "
-        << (posthook_cycles - prehook_cycles);
+        << "HookStats[]: " << executed_hook_count << " hooks executed. Execution took "
+        << (posthook_cycles - prehook_cycles) << " cycles.";
 
     // fall through allows normal apply
     if (result == tesSUCCESS)
