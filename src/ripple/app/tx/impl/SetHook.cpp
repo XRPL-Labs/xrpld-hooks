@@ -1188,6 +1188,64 @@ SetHook::destroyNamespace(
 }
 
 
+#define DIRECTORY_DEC()\
+{\
+    if (!oldDirSLE)\
+    {\
+        JLOG(viewJ.warn())\
+            << "HookSet could not find old hook state dir"\
+            << HS_ACC() << "!!!";\
+        return tecINTERNAL;\
+    }\
+    uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount);\
+    if (refCount == 0)\
+    {\
+        JLOG(viewJ.warn())\
+            << "HookSet dir reference count below 0"\
+            << HS_ACC() << "!!!";\
+        return tecINTERNAL;\
+    }\
+    oldDirSLE->setFieldU64(sfReferenceCount, refCount-1);\
+    view().update(oldDirSLE);\
+    if (refCount <= 0)\
+        dirsToDestroy[oldDirKeylet->key] =  flags & FLAG_NSDELETE;\
+}
+
+#define DIRECTORY_INC()\
+{\
+    newDirSLE->setFieldU64(sfReferenceCount, newDirSLE->getFieldU64(sfReferenceCount) + 1);\
+    view().update(newDirSLE);\
+}
+
+#define DEFINITION_DEC()\
+{\
+    if (!oldDefSLE)\
+    {\
+        JLOG(viewJ.warn())\
+            << "HookSet could not find old hook "\
+            << HS_ACC() << "!!!";\
+        return tecINTERNAL;\
+    }\
+    uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount);\
+    if (refCount == 0)\
+    {\
+        JLOG(viewJ.warn())\
+            << "HookSet dir reference count below 0"\
+            << HS_ACC() << "!!!";\
+        return tecINTERNAL;\
+    }\
+    oldDefSLE->setFieldU64(sfReferenceCount, refCount-1);\
+    view().update(oldDefSLE);\
+    if (refCount <= 0)\
+        defsToDestroy[oldDefKeylet->key] = flags & FLAG_OVERRIDE;\
+}
+
+#define DEFINITION_INC()\
+{\
+    newDefSLE->setFieldU64(sfReferenceCount, newDefSLE->getFieldU64(sfReferenceCount) + 1);\
+    view().update(newDefSLE);\
+}
+
 TER
 SetHook::setHook()
 {
@@ -1251,13 +1309,21 @@ SetHook::setHook()
         // execution to here means the hookset entry is not blank
 
         std::optional<ripple::uint256>                                  oldNamespace;
+        std::optional<ripple::uint256>                                  defNamespace;
         std::optional<ripple::Keylet>                                   oldDirKeylet;
         std::optional<ripple::Keylet>                                   oldDefKeylet;
+        std::optional<ripple::Keylet>                                   newDefKeylet;
         std::shared_ptr<STLedgerEntry>                                  oldDefSLE;
+        std::shared_ptr<STLedgerEntry>                                  newDefSLE;
         std::shared_ptr<STLedgerEntry>                                  oldDirSLE;
+        std::shared_ptr<STLedgerEntry>                                  newDirSLE;
 
         std::optional<ripple::uint256>                                  newNamespace;
         std::optional<ripple::Keylet>                                   newDirKeylet;
+        
+        std::optional<uint64_t>                                         oldHookOn;
+        std::optional<uint64_t>                                         newHookOn;
+        std::optional<uint64_t>                                         defHookOn;
 
         /**
          * This is the primary HookSet loop. We iterate the sfHooks array inside the txn
@@ -1287,6 +1353,8 @@ SetHook::setHook()
         bool        isCreateOperation =
                         !isUpdateOperation && !isDeleteOperation && hasCreateCode;
 
+        bool        isInstallOperation =
+                        !isUpdateOperation && !isDeleteOperation && hasHookHash;
 
         /**
          * Variables for logic:
@@ -1295,6 +1363,7 @@ SetHook::setHook()
          * isDeleteOperation    <=> the current HookSet operation contains a blank sfCreateCode
          * isUpdateOperation    <=> old hook exists and the current operation updates it
          * isCreateOperation    <=> old hook does not exist and is not a delete operaiton and code is present
+         * isInstallOperation   <=> old hook does not exist, and we're installing from a hash
          * oldHookExists        <=> old hook exists and is not blank
         */
 
@@ -1308,78 +1377,50 @@ SetHook::setHook()
             return tecREQUIRES_FLAG;
         }
 
+
         // if an existing hook exists at this position in the chain then extract the relevant fields
         if (oldHookExists)
         {
-            oldNamespace = oldHook->get().getFieldH256(sfHookNamespace);
             oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
             oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
             oldDirSLE = view().peek(*oldDirKeylet);
             oldDefSLE = view().peek(*oldDefKeylet);
+            defNamespace = oldDefSLE->getFieldH256(sfHookNamespace);
+            oldNamespace = oldHook->get().isFieldPresent(sfHookNamespace)
+                    ? oldHook->get().getFieldH256(sfHookNamespace)
+                    : *defNamespace;
+            defHookOn = oldDefSLE->getFieldU64(sfHookOn);
+            oldHookOn = oldHook->get().isFieldPresent(sfHookOn)
+                    ? oldHook->get().getFieldU64(sfHookOn)
+                    : *defHookOn;
         }
+
+            
+        if (hasHookHash)
+        {
+            newDefKeylet = keylet::hookDefinition(hookSetObj->getFieldH256(sfHookHash));
+            newDefSLE = view().peek(*newDefKeylet);
+        }
+
+        if (hookSetObj->isFieldPresent(sfHookOn))
+            newHookOn = hookSetObj->getFieldU64(sfHookOn);
 
         // if the sethook txn specifies a new namespace then extract those fields
         if (hookSetObj->isFieldPresent(sfHookNamespace))
         {
             newNamespace = hookSetObj->getFieldH256(sfHookNamespace);
             newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
-        }
-
-        // update reference counts as appropriate for the operation we are performing
-        {
-            // decrement reference count of HOOK_STATE_DIR when appropriate
-            if ((newNamespace && oldNamespace && *oldNamespace != *newNamespace) ||     // namespace override
-                    isDeleteOperation)                                  // or deleteop
-            {
-                if (!oldDirSLE)
-                {
-                    JLOG(viewJ.warn())
-                        << "HookSet could not find old hook state dir"
-                        << HS_ACC() << "!!!";
-                    return tecINTERNAL;
-                }
-
-                // decrement reference count on state directory
-
-                uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount) - 1;
-
-                oldDirSLE->setFieldU64(sfReferenceCount, refCount);
-                view().update(oldDirSLE);
-
-                if (refCount <= 0)
-                    dirsToDestroy[oldDirKeylet->key] =  flags & FLAG_NSDELETE;
-            }
-
-            // decrement reference count of ltHOOK_DEFINITIOn when appropriate
-            if (isDeleteOperation || (isCreateOperation && oldHookExists))
-            {
-                if (!oldDefSLE)
-                {
-                    JLOG(viewJ.warn())
-                        << "HookSet could not find old hook "
-                        << HS_ACC() << "!!!";
-                    return tecINTERNAL;
-                }
-
-                // decrement reference count on hook definition
-
-                uint64_t refCount = oldDefSLE->getFieldU64(sfReferenceCount) - 1;
-
-                oldDefSLE->setFieldU64(sfReferenceCount, refCount);
-                view().update(oldDefSLE);
-
-                if (refCount <= 0)
-                    defsToDestroy[oldDefKeylet->key] = flags & FLAG_OVERRIDE;
-            }
+            newDirSLE = view().peek(*newDirKeylet);
         }
 
         // handle delete operation
         if (isDeleteOperation)
         {
+            DIRECTORY_DEC();
+            DEFINITION_DEC();
             newHooks.push_back(ripple::STObject{sfHook});
             continue;
         }
-
 
         // handle create operation
         if (isCreateOperation)
@@ -1395,47 +1436,134 @@ SetHook::setHook()
             }
 
             auto hash = ripple::sha512Half(
-                ripple::HashPrefix::hookDefinition,
                 wasmBytes
             );
+
+            // update hook hash
+            newHook.setFieldH256(sfHookHash, hash);
 
             auto keylet = ripple::keylet::hookDefinition(hash);
 
             if (view().exists(keylet))
             {
-                JLOG(viewJ.warn())
+                JLOG(viewJ.trace())
                     << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: SetHook operation would create a duplicate wasm blob";
+                    << "]: SetHook operation would create a duplicate wasm blob, using hash only";
+
+                // update reference count
+                newDefSLE = view().peek(keylet);
+                newDefKeylet = keylet;
+                isInstallOperation = true;
+                isCreateOperation = false;
+               
+                // this falls through to install 
+            }
+            else
+            {
+                // create hook definition SLE
+                auto newHookDef = std::make_shared<SLE>( keylet );
+                fprintf(stderr,"1\n");
+                newHookDef->setFieldU64(    sfHookOn, *newHookOn);
+                fprintf(stderr,"2\n");
+                newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
+                fprintf(stderr,"3\n");
+                newHookDef->setFieldArray(  sfHookParameters, 
+                        hookSetObj->isFieldPresent(sfHookParameters)
+                        ? hookSetObj->getFieldArray(sfHookParameters)
+                        : STArray {} );
+
+                fprintf(stderr,"4\n");
+                newHookDef->setFieldU16(    sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
+                fprintf(stderr,"5\n");
+                newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
+                fprintf(stderr,"6\n");
+                newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
+                fprintf(stderr,"7\n");
+                newHookDef->setFieldU64(    sfReferenceCount, 1);
+                fprintf(stderr,"8\n");
+                view().insert(newHookDef);
+                fprintf(stderr,"9\n");
+         
+                //DIRECTORY_INC();
+                fprintf(stderr,"10\n");
+
+                newHooks.push_back(newHook);
+                fprintf(stderr,"11\n");
+                continue;
+            }
+        }
+        else if (isInstallOperation) // this needs to be here to allow duplicate wasm blob fallthrough case above
+            newHook.setFieldH256(sfHookHash, hookSetObj->getFieldH256(sfHookHash));
+
+
+
+        // install operations are half way between create and update operations
+        // here we install an existing hook definition into an unused hook slot
+        // but care must be taken to ensure parameters, namespaces etc are as the user intends
+        // without needlessly duplicating these from the hook definition
+        if (isInstallOperation)
+        {
+            DEFINITION_INC();
+            DIRECTORY_INC();
+
+            if (newNamespace && *defNamespace != *newNamespace)
+                newHook.setFieldH256(sfHookNamespace, *newNamespace);
+
+            if (newHookOn && defHookOn != *newHookOn)
+                newHook.setFieldU64(sfHookOn, *newHookOn);
+
+            std::map<ripple::Blob, ripple::Blob> parameters;
+
+            // first pull the parameters into a map
+            auto const& hookParameters = hookSetObj->getFieldArray(sfHookParameters);
+            for (auto const& hookParameter : hookParameters)
+            {
+                auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+                parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+                    hookParameterObj->getFieldVL(sfHookParameterValue);
+
+            } 
+
+            // then erase anything that is the same as the definition's default parameters
+            if (parameters.size() > 0)
+            {
+                auto const& defParameters = oldDefSLE->getFieldArray(sfHookParameters);
+                for (auto const& hookParameter : defParameters)
+                {
+                    auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+                    ripple::Blob n = hookParameterObj->getFieldVL(sfHookParameterName);
+                    ripple::Blob v = hookParameterObj->getFieldVL(sfHookParameterValue);
+
+                    if (parameters.find(n) != parameters.end() && parameters[n] == v)
+                        parameters.erase(n);
+                }
+            }
+            
+            int parameterCount = (int)(parameters.size());
+            if (parameterCount > 16)
+            {
+                JLOG(viewJ.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: Txn would result in too many parameters on hook";
                 return tecINTERNAL;
             }
 
-            // update hook hash
-            newHook.setFieldH256(sfHookHash, hash);
+            STArray newParameters {sfHookParameters, parameterCount};
+            int upto = 0;
+            for (const auto& [parameterName, parameterValue] : parameters)
+            {
+                STObject param { sfHookParameter };
+                param.setFieldVL(sfHookParameterName, parameterName);
+                param.setFieldVL(sfHookParameterValue, parameterValue);
+                newParameters[upto++] = std::move(param);
+            }
 
-            // create hook definition SLE
-            auto newHookDef = std::make_shared<SLE>( keylet );
-            newHookDef->setFieldU64(    sfHookOn, hookSetObj->getFieldU64(sfHookOn));
-            newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
-            newHookDef->setFieldArray(  sfHookParameters, hookSetObj->getFieldArray(sfHookParameters));
-            newHookDef->setFieldU16(    sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
-            newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
-            newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
-            newHookDef->setFieldU64(    sfReferenceCount, 1);
-
-            // create sfHook entry
-            newHook.setFieldU64(       sfHookOn, hookSetObj->getFieldU64(sfHookOn));
-            newHook.setFieldH256(      sfHookNamespace, *newNamespace);
-            newHook.setFieldU16(       sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
-            newHook.setFieldH256(      sfHookHash, hash);
-
-            if (hasParameters)
-                newHook.setFieldArray( sfHookParameters, hookSetObj->getFieldArray(sfHookParameters));
+            newHook.setFieldArray(sfHookParameters, std::move(newParameters));
 
             if (hasGrants)
                 newHook.setFieldArray( sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
             newHooks.push_back(newHook);
-            view().insert(newHookDef);
             continue;
         }
 
@@ -1443,17 +1571,41 @@ SetHook::setHook()
         // handle update operation
         if (isUpdateOperation)
         {
-            newHook.setFieldH256(   sfHookHash, hookSetObj->getFieldH256(sfHookHash));
-            newHook.setFieldU64(    sfHookOn, hookSetObj->getFieldU64(sfHookOn));
-            newHook.setFieldH256(   sfHookNamespace, *newNamespace);
-            newHook.setFieldU16(    sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
+
+            newHook.setFieldH256(sfHookHash, hookSetObj->getFieldH256(sfHookHash));
+            
+            // handle HookOn update logic 
+            if (hookSetObj->isFieldPresent(sfHookOn))
+            {
+                uint64_t newHookOn = hookSetObj->getFieldU64(sfHookOn);
+                if (newHookOn != defHookOn)
+                    newHook.setFieldU64(sfHookOn, hookSetObj->getFieldU64(sfHookOn));
+            }
+            else if (oldHookOn != defHookOn)
+                newHook.setFieldU64(sfHookOn, *oldHookOn);
+
+
+            // handle namespace update logic
+            if (newNamespace)
+            {
+                if (*newNamespace != *defNamespace)
+                    newHook.setFieldH256(sfHookNamespace, *newNamespace);
+
+                if (*newNamespace != *oldNamespace)
+                {
+                    DIRECTORY_DEC();
+                    DIRECTORY_INC();
+                }
+            }
+            else if (oldNamespace && *oldNamespace != *defNamespace)
+                    newHook.setFieldH256(sfHookNamespace, *oldNamespace);
 
             // process the parameters
             if (hasParameters)
             {
                 std::map<ripple::Blob, ripple::Blob> parameters;
 
-                // gather up existing parameters
+                // gather up existing parameters, but only if this is an update
                 if (oldHook->get().isFieldPresent(sfHookParameters))
                 {
                     auto const& oldParameters = oldHook->get().getFieldArray(sfHookParameters);
@@ -1505,6 +1657,18 @@ SetHook::setHook()
                         // parameter delete operation
                         parameters.erase(hookParameterObj->getFieldVL(sfHookParameterName));
                     }
+                }
+
+                // remove any duplicate entries that exist in the sle
+                auto const& defParameters = newDefSLE->getFieldArray(sfHookParameters);
+                for (auto const& hookParameter : defParameters)
+                {
+                    auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+                    ripple::Blob n = hookParameterObj->getFieldVL(sfHookParameterName);
+                    ripple::Blob v = hookParameterObj->getFieldVL(sfHookParameterValue);
+
+                    if (parameters.find(n) != parameters.end() && parameters[n] == v)
+                        parameters.erase(n);
                 }
 
                 int parameterCount = (int)(parameters.size());

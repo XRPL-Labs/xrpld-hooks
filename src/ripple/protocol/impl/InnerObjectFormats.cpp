@@ -63,6 +63,17 @@ InnerObjectFormats::InnerObjectFormats()
             {sfHookEmitCount,           soeREQUIRED}
         });
 
+    add(sfHookDefinition.jsonName.c_str(),
+        sfHook.getCode(),
+        {
+            {sfCreateCode,      soeREQUIRED},
+            {sfHookGrants,      soeREQUIRED},
+            {sfHookNamespace,   soeREQUIRED},
+            {sfHookParameters,  soeREQUIRED},
+            {sfHookOn,          soeREQUIRED},
+            {sfHookApiVersion,  soeREQUIRED},
+            {sfFlags,           soeREQUIRED}
+        });
     add(sfHook.jsonName.c_str(),
         sfHook.getCode(),
         {
@@ -71,8 +82,8 @@ InnerObjectFormats::InnerObjectFormats()
             {sfHookGrants,      soeOPTIONAL},
             {sfHookNamespace,   soeOPTIONAL},
             {sfHookParameters,  soeOPTIONAL},
-            {sfHookApiVersion,  soeOPTIONAL},
             {sfHookOn,          soeOPTIONAL},
+            {sfHookApiVersion,  soeOPTIONAL},
             {sfFlags,           soeOPTIONAL}
         });
 

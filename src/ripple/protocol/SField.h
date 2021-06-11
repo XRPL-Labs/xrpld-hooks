@@ -538,6 +538,7 @@ extern SField const sfMajority;
 extern SField const sfNegativeUNLEntry;
 extern SField const sfEmittedTxn;
 extern SField const sfHook;
+extern SField const sfHookDefinition;
 extern SField const sfHookParameter;
 extern SField const sfHookGrant;
 
