@@ -667,8 +667,7 @@ bool validateHookSetEntry(STObject const& hookSetObj, PreflightContext const& ct
         // check if the specified hook exists
         auto const& hash = hookSetObj.getFieldH256(sfHookHash);
         {
-            Keylet const key{ltHOOK_DEFINITION, hash};
-            if (!view->exists(key))
+            if (!view->exists(keylet::hookDefinition(hash)))
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
@@ -1193,19 +1192,22 @@ SetHook::destroyNamespace(
     if (!oldDirSLE)\
     {\
         JLOG(viewJ.warn())\
-            << "HookSet could not find old hook state dir"\
+            << "HookSet could not find old hook state dir "\
             << HS_ACC() << "!!!";\
         return tecINTERNAL;\
     }\
     uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount);\
+    printf("refcount1: %d\n", refCount);\
     if (refCount == 0)\
     {\
         JLOG(viewJ.warn())\
-            << "HookSet dir reference count below 0"\
+            << "HookSet dir reference count below 0 "\
             << HS_ACC() << "!!!";\
         return tecINTERNAL;\
     }\
-    oldDirSLE->setFieldU64(sfReferenceCount, refCount-1);\
+    --refCount;\
+    printf("refcount2: %d\n", refCount);\
+    oldDirSLE->setFieldU64(sfReferenceCount, refCount);\
     view().update(oldDirSLE);\
     if (refCount <= 0)\
         dirsToDestroy[oldDirKeylet->key] =  flags & FLAG_NSDELETE;\
@@ -1247,11 +1249,11 @@ SetHook::destroyNamespace(
             << HS_ACC() << "!!!";\
         return tecINTERNAL;\
     }\
-    uint64_t refCount = oldDirSLE->getFieldU64(sfReferenceCount);\
+    uint64_t refCount = oldDefSLE->getFieldU64(sfReferenceCount);\
     if (refCount == 0)\
     {\
         JLOG(viewJ.warn())\
-            << "HookSet dir reference count below 0"\
+            << "HookSet def reference count below 0 "\
             << HS_ACC() << "!!!";\
         return tecINTERNAL;\
     }\
@@ -1362,13 +1364,13 @@ SetHook::setHook()
         bool        hasGrants         = hookSetObj->isFieldPresent(sfHookGrants);
 
         uint32_t    flags             = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
-        bool        oldHookExists     = oldHook && oldHook->get().isFieldPresent(sfCreateCode);
 
         bool        isDeleteOperation =
                         hasCreateCode && hookSetObj->getFieldVL(sfCreateCode).size() == 0;
 
+        printf("PATH X\n");
         bool        isUpdateOperation =
-                        oldHookExists && hasHookHash &&
+                        oldHook && hasHookHash &&
                         (hookSetObj->getFieldH256(sfHookHash) == oldHook->get().getFieldH256(sfHookHash));
         
         bool        isCreateOperation =
@@ -1385,31 +1387,31 @@ SetHook::setHook()
          * isUpdateOperation    <=> old hook exists and the current operation updates it
          * isCreateOperation    <=> old hook does not exist and is not a delete operaiton and code is present
          * isInstallOperation   <=> old hook does not exist, and we're installing from a hash
-         * oldHookExists        <=> old hook exists and is not blank
         */
 
-        // certain actions require explicit flagging to prevent user error
-        if (!(flags & FLAG_OVERRIDE) && oldHookExists && !isUpdateOperation)
-        {
-            // deletes (and creates that override an existing hook) require a flag
-            JLOG(viewJ.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: sethook entry must be flagged for override.";
-            return tecREQUIRES_FLAG;
-        }
 
-
+        printf("PATH Y\n");
         // if an existing hook exists at this position in the chain then extract the relevant fields
-        if (oldHookExists)
+        if (oldHook)
         {
+            // certain actions require explicit flagging to prevent user error
+            if (!(flags & FLAG_OVERRIDE) && !isUpdateOperation)
+            {
+                // deletes (and creates that override an existing hook) require a flag
+                JLOG(viewJ.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: sethook entry must be flagged for override.";
+                return tecREQUIRES_FLAG;
+            }
+            printf("PATH Z\n");
+            oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
+            oldDefSLE = view().peek(*oldDefKeylet);
             defNamespace = oldDefSLE->getFieldH256(sfHookNamespace);
             oldNamespace = oldHook->get().isFieldPresent(sfHookNamespace)
                     ? oldHook->get().getFieldH256(sfHookNamespace)
                     : *defNamespace;
             oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
-            oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
             oldDirSLE = view().peek(*oldDirKeylet);
-            oldDefSLE = view().peek(*oldDefKeylet);
             defHookOn = oldDefSLE->getFieldU64(sfHookOn);
             oldHookOn = oldHook->get().isFieldPresent(sfHookOn)
                     ? oldHook->get().getFieldU64(sfHookOn)
@@ -1434,12 +1436,25 @@ SetHook::setHook()
             newDirSLE = view().peek(*newDirKeylet);
         }
 
+        if (oldDirSLE)
+        {
+            printf("PATH A\n");
+            DIRECTORY_DEC();
+        }
+        else
+            printf("PATH B\n");
+
+        if (oldDefSLE)
+        {
+            printf("PATH C\n");
+            DEFINITION_DEC();
+        }
+        else
+            printf("PATH D\n");
 
         // handle delete operation
         if (isDeleteOperation)
         {
-            DIRECTORY_DEC();
-            DEFINITION_DEC();
             newHooks.push_back(ripple::STObject{sfHook});
             continue;
         }
@@ -1462,6 +1477,8 @@ SetHook::setHook()
             newDirSLE = view().peek(*newDirKeylet);
         }
 
+        DIRECTORY_INC();
+
         // handle create operation
         if (isCreateOperation)
         {
@@ -1475,10 +1492,17 @@ SetHook::setHook()
                 return tecINTERNAL;
             }
 
-            auto hash = ripple::sha512Half(
-                wasmBytes
+            auto hash = ripple::sha512Half_s(
+                ripple::Slice(wasmBytes.data(), wasmBytes.size())
             );
 
+            printf("wasm bytes:\n```");
+            for (uint8_t x : wasmBytes)
+                printf("%02X", x);
+            printf("```\n");
+
+
+            std::cout << "hash: ```" << hash << "```\n";
             // update hook hash
             newHook.setFieldH256(sfHookHash, hash);
 
@@ -1513,7 +1537,6 @@ SetHook::setHook()
                 newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                 newHookDef->setFieldU64(    sfReferenceCount, 1);
                 view().insert(newHookDef);
-                DIRECTORY_INC();
                 newHooks.push_back(newHook);
                 continue;
             }
@@ -1530,7 +1553,6 @@ SetHook::setHook()
         if (isInstallOperation)
         {
             DEFINITION_INC();
-            DIRECTORY_INC();
 
             if (newNamespace && *defNamespace != *newNamespace)
                 newHook.setFieldH256(sfHookNamespace, *newNamespace);
@@ -1597,6 +1619,7 @@ SetHook::setHook()
         // handle update operation
         if (isUpdateOperation)
         {
+            DEFINITION_INC();
 
             newHook.setFieldH256(sfHookHash, hookSetObj->getFieldH256(sfHookHash));
             
@@ -1612,17 +1635,8 @@ SetHook::setHook()
 
 
             // handle namespace update logic
-            if (newNamespace)
-            {
-                if (*newNamespace != *defNamespace)
+            if (newNamespace && *newNamespace != *defNamespace)
                     newHook.setFieldH256(sfHookNamespace, *newNamespace);
-
-                if (*newNamespace != *oldNamespace)
-                {
-                    DIRECTORY_DEC();
-                    DIRECTORY_INC();
-                }
-            }
             else if (oldNamespace && *oldNamespace != *defNamespace)
                     newHook.setFieldH256(sfHookNamespace, *oldNamespace);
 
