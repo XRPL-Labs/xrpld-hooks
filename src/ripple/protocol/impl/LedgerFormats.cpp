@@ -67,6 +67,8 @@ LedgerFormats::LedgerFormats()
             {sfTakerGetsIssuer, soeOPTIONAL},    // for order book directories
             {sfExchangeRate, soeOPTIONAL},       // for order book directories
             {sfHookNamespace, soeOPTIONAL},      // for hook state directories
+            {sfOwnerNode, soeOPTIONAL},          // for hook state directories
+            {sfReferenceCount, soeOPTIONAL},     // for hook state directories
             {sfIndexes, soeREQUIRED},
             {sfRootIndex, soeREQUIRED},
             {sfIndexNext, soeOPTIONAL},

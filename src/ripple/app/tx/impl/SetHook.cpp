@@ -1213,8 +1213,29 @@ SetHook::destroyNamespace(
 
 #define DIRECTORY_INC()\
 {\
-    newDirSLE->setFieldU64(sfReferenceCount, newDirSLE->getFieldU64(sfReferenceCount) + 1);\
-    view().update(newDirSLE);\
+    if (!newDirSLE)\
+    {\
+        newDirSLE = std::make_shared<SLE>(*newDirKeylet);\
+        auto const page = dirAdd(\
+            view(),\
+            ownerDirKeylet,\
+            newDirKeylet->key,\
+            false,\
+            describeOwnerDir(account_),\
+            viewJ);\
+        JLOG(viewJ.trace()) << "Create state dir for account " << toBase58(account_)\
+                         << ": " << (page ? "success" : "failure");\
+        if (!page)\
+            return tecDIR_FULL;\
+        newDirSLE->setFieldU64(sfOwnerNode, *page);\
+        newDirSLE->setFieldU64(sfReferenceCount, 1);\
+        view().insert(newDirSLE);\
+    }\
+    else\
+    {\
+        newDirSLE->setFieldU64(sfReferenceCount, newDirSLE->getFieldU64(sfReferenceCount) + 1);\
+        view().update(newDirSLE);\
+    }\
 }
 
 #define DEFINITION_DEC()\
@@ -1243,7 +1264,7 @@ SetHook::destroyNamespace(
 #define DEFINITION_INC()\
 {\
     newDefSLE->setFieldU64(sfReferenceCount, newDefSLE->getFieldU64(sfReferenceCount) + 1);\
-    view().update(newDefSLE);\
+        view().update(newDefSLE);\
 }
 
 TER
@@ -1381,14 +1402,14 @@ SetHook::setHook()
         // if an existing hook exists at this position in the chain then extract the relevant fields
         if (oldHookExists)
         {
-            oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
-            oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
-            oldDirSLE = view().peek(*oldDirKeylet);
-            oldDefSLE = view().peek(*oldDefKeylet);
             defNamespace = oldDefSLE->getFieldH256(sfHookNamespace);
             oldNamespace = oldHook->get().isFieldPresent(sfHookNamespace)
                     ? oldHook->get().getFieldH256(sfHookNamespace)
                     : *defNamespace;
+            oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
+            oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
+            oldDirSLE = view().peek(*oldDirKeylet);
+            oldDefSLE = view().peek(*oldDefKeylet);
             defHookOn = oldDefSLE->getFieldU64(sfHookOn);
             oldHookOn = oldHook->get().isFieldPresent(sfHookOn)
                     ? oldHook->get().getFieldU64(sfHookOn)
@@ -1413,6 +1434,7 @@ SetHook::setHook()
             newDirSLE = view().peek(*newDirKeylet);
         }
 
+
         // handle delete operation
         if (isDeleteOperation)
         {
@@ -1420,6 +1442,24 @@ SetHook::setHook()
             DEFINITION_DEC();
             newHooks.push_back(ripple::STObject{sfHook});
             continue;
+        }
+
+        // if we're not performing a delete operation then we must have a newDirKeylet and newDirSLE 
+        // otherwise we will not be able to create/update a state directory
+        if (!newDirKeylet)
+        {
+            if (newDefSLE)
+                newDirKeylet = keylet::hookStateDir(account_, newDefSLE->getFieldH256(sfHookNamespace));
+            else if (oldDirKeylet)
+                newDirKeylet = oldDirKeylet;
+            else
+            {
+                JLOG(viewJ.warn())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: sethook could not find a namespace to place hook state into.";
+                return tecINTERNAL;
+            }
+            newDirSLE = view().peek(*newDirKeylet);
         }
 
         // handle create operation
@@ -1462,33 +1502,19 @@ SetHook::setHook()
             {
                 // create hook definition SLE
                 auto newHookDef = std::make_shared<SLE>( keylet );
-                fprintf(stderr,"1\n");
                 newHookDef->setFieldU64(    sfHookOn, *newHookOn);
-                fprintf(stderr,"2\n");
                 newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
-                fprintf(stderr,"3\n");
                 newHookDef->setFieldArray(  sfHookParameters, 
                         hookSetObj->isFieldPresent(sfHookParameters)
                         ? hookSetObj->getFieldArray(sfHookParameters)
                         : STArray {} );
-
-                fprintf(stderr,"4\n");
                 newHookDef->setFieldU16(    sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
-                fprintf(stderr,"5\n");
                 newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
-                fprintf(stderr,"6\n");
                 newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
-                fprintf(stderr,"7\n");
                 newHookDef->setFieldU64(    sfReferenceCount, 1);
-                fprintf(stderr,"8\n");
                 view().insert(newHookDef);
-                fprintf(stderr,"9\n");
-         
-                //DIRECTORY_INC();
-                fprintf(stderr,"10\n");
-
+                DIRECTORY_INC();
                 newHooks.push_back(newHook);
-                fprintf(stderr,"11\n");
                 continue;
             }
         }
