@@ -194,6 +194,7 @@ LedgerFormats::LedgerFormats()
     add(jss::HookDefinition,
         ltHOOK_DEFINITION,
         {
+            {sfHookHash, soeREQUIRED},
             {sfHookOn, soeREQUIRED},  
             {sfHookNamespace, soeREQUIRED},
             {sfHookParameters, soeREQUIRED},

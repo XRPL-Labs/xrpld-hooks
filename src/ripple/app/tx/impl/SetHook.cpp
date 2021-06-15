@@ -1496,13 +1496,6 @@ SetHook::setHook()
                 ripple::Slice(wasmBytes.data(), wasmBytes.size())
             );
 
-            printf("wasm bytes:\n```");
-            for (uint8_t x : wasmBytes)
-                printf("%02X", x);
-            printf("```\n");
-
-
-            std::cout << "hash: ```" << hash << "```\n";
             // update hook hash
             newHook.setFieldH256(sfHookHash, hash);
 
@@ -1526,6 +1519,7 @@ SetHook::setHook()
             {
                 // create hook definition SLE
                 auto newHookDef = std::make_shared<SLE>( keylet );
+                newHookDef->setFieldH256(sfHookHash, hash);
                 newHookDef->setFieldU64(    sfHookOn, *newHookOn);
                 newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
                 newHookDef->setFieldArray(  sfHookParameters, 
@@ -1537,7 +1531,7 @@ SetHook::setHook()
                 newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                 newHookDef->setFieldU64(    sfReferenceCount, 1);
                 view().insert(newHookDef);
-                newHooks.push_back(newHook);
+                newHooks.push_back(std::move(newHook));
                 continue;
             }
         }
@@ -1597,13 +1591,12 @@ SetHook::setHook()
             }
 
             STArray newParameters {sfHookParameters, parameterCount};
-            int upto = 0;
             for (const auto& [parameterName, parameterValue] : parameters)
             {
                 STObject param { sfHookParameter };
                 param.setFieldVL(sfHookParameterName, parameterName);
                 param.setFieldVL(sfHookParameterValue, parameterValue);
-                newParameters[upto++] = std::move(param);
+                newParameters.push_back(std::move(param));
             }
 
             newHook.setFieldArray(sfHookParameters, std::move(newParameters));
@@ -1611,7 +1604,7 @@ SetHook::setHook()
             if (hasGrants)
                 newHook.setFieldArray( sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
-            newHooks.push_back(newHook);
+            newHooks.push_back(std::move(newHook));
             continue;
         }
 
@@ -1630,7 +1623,7 @@ SetHook::setHook()
                 if (newHookOn != defHookOn)
                     newHook.setFieldU64(sfHookOn, hookSetObj->getFieldU64(sfHookOn));
             }
-            else if (oldHookOn != defHookOn)
+            else if (*oldHookOn != *defHookOn)
                 newHook.setFieldU64(sfHookOn, *oldHookOn);
 
 
@@ -1643,27 +1636,33 @@ SetHook::setHook()
             // process the parameters
             if (hasParameters)
             {
+                fprintf(stderr, "PATH L\n");
                 std::map<ripple::Blob, ripple::Blob> parameters;
 
                 // gather up existing parameters, but only if this is an update
                 if (oldHook->get().isFieldPresent(sfHookParameters))
                 {
+                    fprintf(stderr, "PATH M\n");
                     auto const& oldParameters = oldHook->get().getFieldArray(sfHookParameters);
                     for (auto const& hookParameter : oldParameters)
                     {
+                        fprintf(stderr, "PATH N\n");
                         auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
                         parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
                             hookParameterObj->getFieldVL(sfHookParameterValue);
                     }
                 }
 
+                fprintf(stderr, "PATH O\n");
                 // process hookset parameters
                 auto const& hookParameters = hookSetObj->getFieldArray(sfHookParameters);
                 for (auto const& hookParameter : hookParameters)
                 {
+                    fprintf(stderr, "PATH P\n");
                     auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
                     if (!hookParameterObj->isFieldPresent(sfHookParameterName))
                     {
+                        fprintf(stderr, "PATH Q\n");
                         JLOG(viewJ.trace())
                             << "HookSet[" << HS_ACC()
                             << "]: Malformed transaction: Parameter without ParameterName";
@@ -1671,20 +1670,26 @@ SetHook::setHook()
                     }
 
                     ripple::Blob paramName = hookParameterObj->getFieldVL(sfHookParameterName);
+                    fprintf(stderr, "PATH R\n");
                     if (paramName.size() > paramMax)
                     {
+                        fprintf(stderr, "PATH S\n");
                         JLOG(viewJ.trace())
                             << "HookSet[" << HS_ACC()
                             << "]: Malformed transaction: ParameterName too large";
                         return tecINTERNAL;
                     }
 
+                    fprintf(stderr, "PATH T\n");
                     if (hookParameterObj->isFieldPresent(sfHookParameterValue))
                     {
+                        fprintf(stderr, "PATH U\n");
                         // parameter update or set operation
                         ripple::Blob newValue = hookParameterObj->getFieldVL(sfHookParameterValue);
+                        fprintf(stderr, "PATH V\n");
                         if (newValue.size() > paramMax)
                         {
+                            fprintf(stderr, "PATH W\n");
                             JLOG(viewJ.trace())
                                 << "HookSet[" << HS_ACC()
                                 << "]: Malformed transaction: ParameterValue too large";
@@ -1694,15 +1699,19 @@ SetHook::setHook()
                     }
                     else
                     {
+
+                        fprintf(stderr, "PATH @\n");
                         // parameter delete operation
                         parameters.erase(hookParameterObj->getFieldVL(sfHookParameterName));
                     }
                 }
 
+                fprintf(stderr, "PATH #\n");
                 // remove any duplicate entries that exist in the sle
                 auto const& defParameters = newDefSLE->getFieldArray(sfHookParameters);
                 for (auto const& hookParameter : defParameters)
                 {
+                    fprintf(stderr, "PATH $\n");
                     auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
                     ripple::Blob n = hookParameterObj->getFieldVL(sfHookParameterName);
                     ripple::Blob v = hookParameterObj->getFieldVL(sfHookParameterValue);
@@ -1711,6 +1720,7 @@ SetHook::setHook()
                         parameters.erase(n);
                 }
 
+                fprintf(stderr, "PATH %\n");
                 int parameterCount = (int)(parameters.size());
                 if (parameterCount > 16)
                 {
@@ -1720,16 +1730,18 @@ SetHook::setHook()
                     return tecINTERNAL;
                 }
 
+                fprintf(stderr, "PATH ^\n");
                 STArray newParameters {sfHookParameters, parameterCount};
-                int upto = 0;
                 for (const auto& [parameterName, parameterValue] : parameters)
                 {
+                    fprintf(stderr, "PATH &\n");
                     STObject param { sfHookParameter };
                     param.setFieldVL(sfHookParameterName, parameterName);
                     param.setFieldVL(sfHookParameterValue, parameterValue);
-                    newParameters[upto++] = std::move(param);
+                    newParameters.push_back(std::move(param));
                 }
 
+                fprintf(stderr, "PATH *\n");
                 newHook.setFieldArray(sfHookParameters, std::move(newParameters));
             }
 
@@ -1737,7 +1749,9 @@ SetHook::setHook()
             if (hasGrants)
                 newHook.setFieldArray(sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
-            newHooks.push_back(newHook);
+            fprintf(stderr, "PATH (\n");
+            newHooks.push_back(std::move(newHook));
+            fprintf(stderr, "PATH )\n");
             continue;
         }
 
