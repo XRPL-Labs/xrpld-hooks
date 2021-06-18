@@ -8,6 +8,7 @@
 #include <optional>
 #include <any>
 #include <memory>
+#include <vector>
 #include <ripple/protocol/digest.h>
 #include "common/value.h"
 #include "vm/configure.h"
@@ -18,9 +19,8 @@
 
 namespace hook {
     struct HookContext;
-
+    struct HookResult;
     bool isEmittedTxn(ripple::STTx const& tx);
-
 }
 
 namespace hook_api {
@@ -104,7 +104,8 @@ namespace hook_api {
         NOT_AN_AMOUNT = -32,
         CANT_RETURN_NEGATIVE = -33,
         NOT_AUTHORIZED = -34,
-        PREVIOUS_FAILURE_PREVENTS_RETRY = -35
+        PREVIOUS_FAILURE_PREVENTS_RETRY = -35,
+        TOO_MANY_PARAMS = -36
     };
 
     enum ExitType : uint8_t {
@@ -118,6 +119,7 @@ namespace hook_api {
     const int max_slots = 255;
     const int max_nonce = 255;
     const int max_emit = 255;
+    const int max_params = 16;
     const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
 
@@ -228,7 +230,7 @@ namespace hook_api {
 
     DECLARE_HOOK_FUNCTION(int64_t,  float_set,          int32_t exponent,   int64_t mantissa );
     DECLARE_HOOK_FUNCTION(int64_t,  float_multiply,     int64_t float1,     int64_t float2 );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_mulratio,     int64_t float1,     uint32_t round_up, 
+    DECLARE_HOOK_FUNCTION(int64_t,  float_mulratio,     int64_t float1,     uint32_t round_up,
                                                         uint32_t numerator, uint32_t denominator );
     DECLARE_HOOK_FUNCTION(int64_t,  float_negate,       int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_compare,      int64_t float1,     int64_t float2, uint32_t mode );
@@ -251,12 +253,22 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,  float_int,          int64_t float1,     uint32_t decimal_places, uint32_t abs );
 
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len, int32_t hook_no );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
     DECLARE_HOOK_FUNCTION(int64_t,  ledger_last_hash,   uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
 
+
+    DECLARE_HOOK_FUNCTION(int64_t,  hook_param_set,     uint32_t read_ptr,  uint32_t read_len,
+                                                        uint32_t kread_ptr, uint32_t kread_len,
+                                                        uint32_t hread_ptr, uint32_t hread_len);
+    
+    DECLARE_HOOK_FUNCTION(int64_t,  hook_param,         uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len);
+
+    DECLARE_HOOK_FUNCTION(int64_t,  hook_skip,          uint32_t read_ptr,  uint32_t read_len, uint32_t flags);
+    DECLARE_HOOK_FUNCNARG(int64_t,  hook_pos);
 
     DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
@@ -309,10 +321,15 @@ namespace hook {
             ripple::uint256,
             ripple::uint256,
             ripple::Blob,
+            std::map<
+                std::vector<uint8_t>,          /* param name  */
+                std::vector<uint8_t>           /* param value */
+            > const&,
             ripple::ApplyContext&,
             const ripple::AccountID&,
             bool callback,
-            uint32_t param = 0);
+            uint32_t wasmParam = 0,
+            int32_t hookChainPosition = -1);
 
     struct HookContext;
 
@@ -322,30 +339,44 @@ namespace hook {
 
     struct HookResult
     {
-        ripple::uint256 hookSetTxnID;
-        ripple::uint256 hookHash;
-        ripple::Keylet accountKeylet;
-        ripple::Keylet ownerDirKeylet;
-        ripple::Keylet hookKeylet;
-        ripple::AccountID account;
-        ripple::AccountID otxnAccount;
-        ripple::uint256 hookNamespace;
+        ripple::uint256     const&      hookSetTxnID;
+        ripple::uint256     const&      hookHash;
+        ripple::Keylet      const&      accountKeylet;
+        ripple::Keylet      const&      ownerDirKeylet;
+        ripple::Keylet      const&      hookKeylet;
+        ripple::AccountID   const&      account;
+        ripple::AccountID   const&      otxnAccount;
+        ripple::uint256     const&      hookNamespace;
+
         std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
         std::shared_ptr<
                 std::map<ripple::AccountID,     // account to whom the state belongs
-                std::map<ripple::uint256,       // namespace 
+                std::map<ripple::uint256,       // namespace
                 std::map<ripple::uint256,       // state key
-                std::pair<  
+                std::pair<
                     bool,                       // has been modified
-                    ripple::Blob>>>>>           // actual state data 
+                    ripple::Blob>>>>>           // actual state data
                         changedState;
-        bool hookGrantsDisabled = false;
+        std::map<
+            ripple::uint256,                    // hook hash
+            std::map<
+                std::vector<uint8_t>,                // hook param name
+                std::vector<uint8_t>                 // hook param value
+            >> hookParamOverrides;
+
+        std::map<
+            std::vector<uint8_t>,
+            std::vector<uint8_t>>
+                const& hookParams;
+        std::set<ripple::uint256> hookSkips;
         hook_api::ExitType exitType = hook_api::ExitType::ROLLBACK;
         std::string exitReason {""};
         int64_t exitCode {-1};
         uint64_t instructionCount {0};
         bool callback = false;
-        uint32_t param = 0;
+        uint32_t wasmParam = 0;
+        uint32_t overrideCount = 0;
+        int32_t hookChainPosition = -1;
     };
 
     class HookModule;
@@ -374,7 +405,7 @@ namespace hook {
         int64_t fee_base = 0;
         std::map<uint32_t, uint32_t> guard_map {}; // iteration guard map <id -> upto_iteration>
         HookResult result;
-        std::optional<ripple::STObject> emitFailure;    // if this is a callback from a failed 
+        std::optional<ripple::STObject> emitFailure;    // if this is a callback from a failed
                                                         // emitted txn then this optional becomes
                                                         // populated with the SLE
         const HookModule* module = 0;
@@ -434,7 +465,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(etxn_details, ctx);
             ADD_HOOK_FUNCTION(etxn_reserve, ctx);
             ADD_HOOK_FUNCTION(etxn_generation, ctx);
-            
+
             ADD_HOOK_FUNCTION(float_set, ctx);
             ADD_HOOK_FUNCTION(float_multiply, ctx);
             ADD_HOOK_FUNCTION(float_mulratio, ctx);
@@ -442,7 +473,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(float_compare, ctx);
             ADD_HOOK_FUNCTION(float_sum, ctx);
             ADD_HOOK_FUNCTION(float_sto, ctx);
-            ADD_HOOK_FUNCTION(float_sto_set, ctx);            
+            ADD_HOOK_FUNCTION(float_sto_set, ctx);
             ADD_HOOK_FUNCTION(float_invert, ctx);
             ADD_HOOK_FUNCTION(float_mantissa, ctx);
             ADD_HOOK_FUNCTION(float_exponent, ctx);
@@ -458,7 +489,7 @@ namespace hook {
             ADD_HOOK_FUNCTION(float_int, ctx);
 
 
-            
+
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
             ADD_HOOK_FUNCTION(otxn_field_txt, ctx);
@@ -472,6 +503,12 @@ namespace hook {
             ADD_HOOK_FUNCTION(ledger_seq, ctx);
             ADD_HOOK_FUNCTION(ledger_last_hash, ctx);
             ADD_HOOK_FUNCTION(nonce, ctx);
+
+            ADD_HOOK_FUNCTION(hook_param, ctx);
+            ADD_HOOK_FUNCTION(hook_param_set, ctx);
+            ADD_HOOK_FUNCTION(hook_skip, ctx);
+            ADD_HOOK_FUNCTION(hook_pos, ctx);
+
             ADD_HOOK_FUNCTION(state, ctx);
             ADD_HOOK_FUNCTION(state_foreign, ctx);
             ADD_HOOK_FUNCTION(state_set, ctx);

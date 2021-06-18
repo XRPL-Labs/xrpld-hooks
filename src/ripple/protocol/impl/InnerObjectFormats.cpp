@@ -67,7 +67,6 @@ InnerObjectFormats::InnerObjectFormats()
         sfHook.getCode(),
         {
             {sfCreateCode,      soeREQUIRED},
-            {sfHookGrants,      soeREQUIRED},
             {sfHookNamespace,   soeREQUIRED},
             {sfHookParameters,  soeREQUIRED},
             {sfHookOn,          soeREQUIRED},

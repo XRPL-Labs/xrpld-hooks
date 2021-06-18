@@ -668,6 +668,157 @@ static __inline__ unsigned long long rdtsc(void)
     return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
 }
 
+bool /* error = true */
+gatherHookParameters(
+        std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
+        ripple::STObject const* hookObj,
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>>& parameters,
+        beast::Journal& j_)
+{
+    if (!hookDef->isFieldPresent(sfHookParameters))
+    {
+        JLOG(j_.fatal())
+            << "HookError[]: Failure: hook def missing parameters (send)";
+        return true;
+    }
+
+    // first defaults
+    auto const& defaultParameters = hookDef->getFieldArray(sfHookParameters);
+    for (auto const& hookParameter : defaultParameters)
+    {
+        auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+        parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+            hookParameterObj->getFieldVL(sfHookParameterValue);
+    } 
+
+    // and then custom
+    if (hookObj->isFieldPresent(sfHookParameters))
+    {
+        auto const& hookParameters = hookObj->getFieldArray(sfHookParameters);
+        for (auto const& hookParameter : hookParameters)
+        {
+            auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+            parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+                hookParameterObj->getFieldVL(sfHookParameterValue);
+        } 
+    }
+    return false;
+}
+
+bool /* error = true */
+executeHookChain(
+        std::shared_ptr<ripple::STLedgerEntry> const& hookSLE,
+        std::vector<hook::HookResult>& results,
+        int& executedHookCount,
+        ripple::AccountID& account,
+        ripple::ApplyContext& ctx,
+        beast::Journal& j_)
+{
+    std::set<uint256> hookSkips;
+    std::map<
+        uint256,
+        std::map<
+            std::vector<uint8_t>,
+            std::vector<uint8_t>
+        >> hookParamOverrides {};
+
+    auto const& hooks = hookSLE->getFieldArray(sfHooks);
+    int hook_no = 0;
+    for (auto const& hook : hooks)
+    {
+        ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
+
+        if (hookObj->getCount() == 0) // skip blanks
+            continue;
+
+        // lookup hook definition
+        uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
+
+        if (hookSkips.find(hookHash) != hookSkips.end())
+        {
+            JLOG(j_.trace())
+                << "HookInfo: Skipping " << hookHash;
+            continue;
+        }
+
+        auto const& hookDef = ctx.view().peek(keylet::hookDefinition(hookHash));
+        if (!hookDef)
+        {
+            JLOG(j_.fatal())
+                << "HookError[]: Failure: hook def missing (send)";
+            return true;
+        }
+
+        // check if the hook can fire
+        uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
+                ? hookObj->getFieldU64(sfHookOn)
+                : hookDef->getFieldU64(sfHookOn));
+
+        if (!hook::canHook(ctx.tx.getTxnType(), hookOn))
+            continue;    // skip if it can't
+
+        // fetch the namespace either from the hook object of, if absent, the hook def
+        uint256 const& ns = 
+            (hookObj->isFieldPresent(sfHookNamespace)
+                 ?  hookObj->getFieldH256(sfHookNamespace)
+                 :  hookDef->getFieldH256(sfHookNamespace));
+
+        // gather parameters
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
+        if (gatherHookParameters(hookDef, hookObj, parameters, j_))
+            return true;
+
+        results.push_back(
+            hook::apply(
+                hookDef->getFieldH256(sfHookSetTxnID),
+                hookHash,
+                ns,
+                hookDef->getFieldVL(sfCreateCode),
+                parameters,
+                hookParamOverrides,
+                ctx,
+                account,
+                false,
+                0,
+                hook_no));
+
+        executedHookCount++;
+
+        hook::HookResult& result = results.back();
+
+        if (result.exitType != hook_api::ExitType::ACCEPT)
+        {
+            if (results.back().exitType == hook_api::ExitType::WASM_ERROR)
+                result = temMALFORMED;
+            rollback = true;
+            break;
+        }
+
+        // gather skips
+        for (uint256 const& hash : result.hookSkips)
+            if (hookSkips.find(hash) == hookSkips.end())
+                hookSkips.emplace(hash);
+
+        // gather overrides
+        auto const& resultOverrides = result.hookParamOverrides;
+        for (uint256 const& hash : resultOverrides)
+        {
+            if (hookParamOverrides.find(hash) == hookParamOverrides.end())
+                hookParamOverrides[hash] = {};
+
+            auto& overrides = hookParamOverrides[hash];
+
+            auto const& params = resultOverrides[hash];
+            for (auto const& [k, v] : params)
+                overrides[k] = v;
+        }
+
+        hook_no++;
+    }
+    return false;
+}
+
+
 
 //------------------------------------------------------------------------------
 std::pair<TER, bool>
@@ -692,9 +843,10 @@ Transactor::operator()()
     }
 #endif
 
+
     auto result = ctx_.preclaimResult;
 
-    int executed_hook_count = 0;
+    int executedHookCount = 0;
     bool rollback = false;
     uint64_t prehook_cycles = rdtsc();
 
@@ -712,64 +864,7 @@ Transactor::operator()()
 
         // First check if the Sending account has any hooks that can be fired
         if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
-        {
-            auto const& hooks = hooksSending->getFieldArray(sfHooks);
-            for (auto const& hook : hooks)
-            {
-                STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
-
-                if (hookObj->getCount() == 0) // skip blanks
-                    continue;
-
-                // lookup hook definition
-                uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
-                auto const& hookDef = view().peek(keylet::hookDefinition(hookHash));
-                if (!hookDef)
-                {
-                    JLOG(j_.fatal())
-                        << "HookError[]: Failure: hook def missing (send)";
-                    rollback = true;
-                    break;
-                }
-
-                // check if the hook can fire
-                uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
-                        ? hookObj->getFieldU64(sfHookOn)
-                        : hookDef->getFieldU64(sfHookOn));
-
-                if (!hook::canHook(ctx_.tx.getTxnType(), hookOn))
-                    continue;    // skip if it can't
-
-                // fetch the namespace either from the hook object of, if absent, the hook def
-                uint256 const& ns = 
-                    (hookObj->isFieldPresent(sfHookNamespace)
-                         ?  hookObj->getFieldH256(sfHookNamespace)
-                         :  hookDef->getFieldH256(sfHookNamespace));
-
-
-                sendResults.push_back(
-                    hook::apply(
-                            hookDef->getFieldH256(sfHookSetTxnID),
-                            hookHash,
-                            ns,
-                            hookDef->getFieldVL(sfCreateCode),
-                            ctx_,
-                            accountID,
-                            false,
-                            0));
-
-                executed_hook_count++;
-
-                if (sendResults.back().exitType != hook_api::ExitType::ACCEPT)
-                {
-                    if (sendResults.back().exitType == hook_api::ExitType::WASM_ERROR)
-                        result = temMALFORMED;
-                    rollback = true;
-                    break;
-                }
-            }
-        }
-
+            rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_);
 
         // Next check if the Receiving account has as a hook that can be fired...
         bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
@@ -779,66 +874,8 @@ Transactor::operator()()
             auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
             auto const& hooksReceiving = ledger.read(keylet::hook(destAccountID));
             if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
-            {
-            
-                auto const& hooks = hooksReceiving->getFieldArray(sfHooks);
-                for (auto const& hook : hooks)
-                {
-                    STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
-
-                    if (hookObj->getCount() == 0) // skip blanks
-                        continue;
-
-                    // lookup hook definition
-                    uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
-                    auto const& hookDef = view().peek(keylet::hookDefinition(hookHash));
-                    if (!hookDef)
-                    {
-                        JLOG(j_.fatal())
-                            << "HookError[]: Failure: hook def missing (recv)";
-                        rollback = true;
-                        break;
-                    }
-
-                    // check if the hook can fire
-                    uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
-                            ? hookObj->getFieldU64(sfHookOn)
-                            : hookDef->getFieldU64(sfHookOn));
-
-                    if (!hook::canHook(ctx_.tx.getTxnType(), hookOn))
-                        continue;    // skip if it can't
-
-                    // fetch the namespace either from the hook object of, if absent, the hook def
-                    uint256 const& ns = 
-                        (hookObj->isFieldPresent(sfHookNamespace)
-                             ?  hookObj->getFieldH256(sfHookNamespace)
-                             :  hookDef->getFieldH256(sfHookNamespace));
-
-                    executed_hook_count++;
-                    
-                    // execute the hook on the receiving account
-                    recvResults.push_back(
-                        hook::apply(
-                                hookDef->getFieldH256(sfHookSetTxnID),
-                                hookHash,
-                                ns,
-                                hookDef->getFieldVL(sfCreateCode),
-                                ctx_,
-                                destAccountID,
-                                false,
-                                0));
-                
-                    if (recvResults.back().exitType != hook_api::ExitType::ACCEPT)
-                    {
-                        if (recvResults.back().exitType == hook_api::ExitType::WASM_ERROR)
-                            result = temMALFORMED;
-                        rollback = true;
-                        break;
-                    }
-                }
-            }
+                rollback = executeHookChain(hooksReceiving, recvResults, executedHookCount, destAccountID, ctx_, j_);
         }
-
 
         if (rollback && result != temMALFORMED)
             result = tecHOOK_REJECTED;
@@ -874,8 +911,11 @@ Transactor::operator()()
 
                 bool found = false;
                 auto const& hooks = hooksCallback->getFieldArray(sfHooks);
+                int hook_no = 0;
                 for (auto const& hook : hooks)
                 {
+                    hook_no++;
+
                     STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
                     if (hookObj->getCount() == 0) // skip blanks
@@ -890,7 +930,12 @@ Transactor::operator()()
                              ?  hookObj->getFieldH256(sfHookNamespace)
                              :  hookDef->getFieldH256(sfHookNamespace));
 
-                    executed_hook_count++;
+                    executedHookCount++;
+        
+                    std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
+                    if (gatherHookParameters(hookDef, hookObj, parameters, j_))
+                        return true;
+
                     found = true;
 
                     // this call will clean up ltEMITTED_NODE as well
@@ -900,11 +945,14 @@ Transactor::operator()()
                         callbackHookHash,
                         ns,
                         hookDef->getFieldVL(sfCreateCode),
+                        // params
+                        parameters,
+                        {},
                         ctx_,
                         callbackAccountID,
                         true,
                         safe_cast<TxType>(
-                            ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL);
+                            ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL, hook_no - 1);
                     }
                     catch (std::exception& e)
                     {

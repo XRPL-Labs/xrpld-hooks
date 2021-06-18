@@ -26,6 +26,13 @@
 #include <ripple/beast/utility/Journal.h>
 #include <boost/optional.hpp>
 
+namespace hook {
+    // RH TODO: fix applyHook.h so this prototype isn't needed
+    struct HookContext;
+    struct HookResult;
+    bool isEmittedTxn(ripple::STTx const& tx);
+}
+
 namespace ripple {
 
 /** State information when preflighting a tx. */
@@ -48,6 +55,7 @@ public:
     PreflightContext&
     operator=(PreflightContext const&) = delete;
 };
+
 
 /** State information when determining if a tx is likely to claim a fee. */
 struct PreclaimContext
@@ -99,6 +107,8 @@ protected:
     operator=(Transactor const&) = delete;
 
 public:
+
+
     /** Process the transaction. */
     std::pair<TER, bool>
     operator()();

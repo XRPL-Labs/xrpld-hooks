@@ -513,24 +513,27 @@ hook::setHookState(
 
 hook::HookResult
     hook::apply(
-        ripple::uint256 hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
-        ripple::uint256 hookHash,     /* hash of the actual hook byte code, used for metadata */
-        ripple::uint256 hookNamespace,
+        ripple::uint256 const& hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
+        ripple::uint256 const& hookHash,     /* hash of the actual hook byte code, used for metadata */
+        ripple::uint256 const& hookNamespace,
+        ripple::Blob const& wasm,
+        std::map<
+            vector<uint8_t>,          /* param name  */
+            vector<uint8_t>           /* param value */
+            > const& hookParams,
+        std::map<
+            ripple::uint256,          /* hook hash */
+            std::map<
+                vector<uint8_t>,
+                vector<uint8_t>
+            >> const& hookParamOverrides,
         Blob hook, ApplyContext& applyCtx,
-        const AccountID& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
+        AccountID const& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
         bool callback = false,
-        uint32_t param)
+        uint32_t wasmParam,
+        int32_t hookChainPosition)
 {
 
-/*
-        std::shared_ptr<
-                std::map<ripple::AccountID,     // account to whom the state belongs
-                std::map<ripple::uint256,       // namespace
-                std::map<ripple::uint256,       // state key
-                std::pair<
-                    bool,                       // has been modified
-                ripple::Blob>>>>>               // actual state data
-*/
 
     HookContext hookCtx =
     {
@@ -553,15 +556,18 @@ hook::HookResult
                     std::pair<
                         bool,
                         ripple::Blob>>>>>(),
-            .hookGrantsDisabled = false,
+            .hookParamOverrides = hookParamOverrides,
+            .hookParams = hookParams,
+            .hookSkips = {},
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
             .exitCode = -1,
             .callback = callback,
-            .param = param
+            .wasmParam = wasmParam,
+            .hookChainPosition = hookChainPosition
         },
         .emitFailure =
-                callback && param & 1
+                callback && wasmParam & 1
                 ? std::optional<ripple::STObject>(
                     (*(applyCtx.view().peek(
                         keylet::emitted(applyCtx.tx.getFieldH256(sfTransactionHash)))
@@ -579,13 +585,13 @@ hook::HookResult
     vm.registerModule(env);
 
     std::vector<SSVM::ValVariant> params, results;
-    params.push_back(param);
+    params.push_back(wasmParam);
 
     JLOG(j.trace())
         << "HookInfo[" << HC_ACC() << "]: creating wasm instance";
     if (auto result =
             vm.runWasmFile(
-                SSVM::Span<const uint8_t>(hook.data(), hook.size()), (callback ? "cbak" : "hook"), params))
+                SSVM::Span<const uint8_t>(wasm.data(), wasm.size()), (callback ? "cbak" : "hook"), params))
         hookCtx.result.instructionCount = vm.getStatistics().getInstrCount();
     else
     {
@@ -2492,7 +2498,7 @@ DEFINE_HOOK_FUNCTION(
 DEFINE_HOOK_FUNCTION(
     int64_t,
     hook_hash,
-    uint32_t write_ptr, uint32_t write_len )
+    uint32_t write_ptr, uint32_t write_len, int32_t hook_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
@@ -2502,9 +2508,32 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
+    if (hook_no == -1)
+    {
+
+        WRITE_WASM_MEMORY_AND_RETURN(
+            write_ptr, write_len,
+            hookCtx.result.hookHash.data(), 32,
+            memory, memory_length);
+    }
+
+    std::shared_ptr<SLE> hookSLE = applyCtx.view().peek(hookCtx.result.hookKeylet);
+    if (!hookSLE || !hookSLE->isFieldPresent(sfHooks))
+        return INTERNAL_ERROR;
+
+    ripple::STArray const& hooks = hookSLE->getFieldArray(sfHooks);
+    if (hook_no >= hooks.size())
+        return DOESNT_EXIST;
+    
+    auto const& hook = hooks[hook_no];
+    if (!hook.isFieldPresent(sfHookHash))
+        return DOESNT_EXIST;
+
+    ripple::uint256 const& hash = hook.getFieldH256(sfHookHash);
+
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, write_len,
-        hookCtx.result.hookHash.data(), 32,
+        hash.data(), hash.size(),
         memory, memory_length);
 }
 
@@ -4038,4 +4067,182 @@ DEFINE_HOOK_FUNCTION(
     return set_mantissa(float1, mantissa);
 }
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    hook_param,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr,  uint32_t read_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (read_len < 1)
+        return TOO_SMALL;
+
+    if (read_len > 32)
+        return TOO_BIG;
+
+    std::vector paramName { read_ptr + memory, read_ptr + read_len + memory }; 
+
+    // first check for overrides set by prior hooks in the chain
+    auto const& overrides = hookCtx.result.hookParamOverrides;
+    if (overrides.find(hookCtx.result.hookHash) != overrides.end())
+    {
+        auto const& params = overrides[hookCtx.result.hookHash];
+        if (params.find(paramName) != params.end())
+        {
+            auto const& param = params[paramName];
+            if (param.size() == 0)
+                return DOESNT_EXIST;    // allow overrides to "delete" parameters
+
+            WRITE_WASM_MEMORY_AND_RETURN(
+                write_ptr, write_len,
+                params[paramName].data(), params[paramName].size(),
+                memory, memory_length);
+        }
+    }
+
+    // next check if there's a param set on this hook    
+    auto const& params = hookCtx.result.hookParams;
+    if (params.find(paramName) != params.end())
+    {
+        auto const& param = params[paramName];
+        if (param.size() == 0)
+            return DOESNT_EXIST;
+
+        WRITE_WASM_MEMORY_AND_RETURN(
+            write_ptr, write_len,
+            params[paramName].data(), params[paramName].size(),
+            memory, memory_length);
+    }
+
+    return DOESNT_EXIST;
+}
+
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    hook_param_set,
+    uint32_t read_ptr, uint32_t read_len,
+    uint32_t kread_ptr, uint32_t kread_len,
+    uint32_t hread_ptr, uint32_t hread_len)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length) ||
+        NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (kread_len < 1)
+        return TOO_SMALL;
+
+    if (kread_len > 32)
+        return TOO_BIG;
+
+    if (hread_len != 32)
+        return INVALID_ARGUMENT;
+
+    if (read_len > maxHookParameterSize())
+        return TOO_BIG;
+
+    std::vector paramName   { kread_ptr + memory, kread_ptr + kread_len + memory };
+    std::vector paramValue  { read_ptr + memory, read_ptr + read_len + memory };
+    
+    ripple::uint256 hash = ripple::uint256::fromVoid(memory + hiread_ptr);
+
+    if (hookCtx.result.overrideCount >= hook::max_params)
+        return TOO_MANY_PARAMS;
+
+    hookCtx.result.overrideCount++;
+
+    auto& overrides = hookCtx.result.paramOverrides;
+    if (overrides.find(hash) == overrides.end())
+    {
+        overrides[hash] =
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>>
+        {
+            {
+                std::move(paramName),
+                std::move(paramValue)
+            }
+        }
+    }
+    else
+        overrides[hash][std::move(paramName)] = std::move(paramValue);
+
+    return read_len;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    hook_skip,
+    uint32_t read_ptr, uint32_t read_len, uint32_t flags)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (read_len != 32)
+        return INVALID_ARGUMENT;
+
+    auto const& skips = hookCtx.result.hookSkips;
+    ripple::uint256 hash = ripple::uint256::fromVoid(memory + read_ptr);
+
+    if (flags == 1)
+    {
+        // delete flag
+        if (skips.find(hash) == skips.end())
+            return DOESNT_EXIST;
+        skips.erase(hash);
+        return 1;
+    }
+
+    // first check if it's already in the skips set
+    if (skips.find(hash) != skips.end())
+        return 1;
+
+    // next check if it's even in this chain
+    std::shared_ptr<SLE> hookSLE = applyCtx.view().peek(hookCtx.result.hookKeylet);
+
+    if (!hookSLE || !hookSLE->isFieldPresent(sfHooks))
+        return INTERNAL_ERROR;
+
+    ripple::STArray const& hooks = hookSLE->getFieldArray(sfHooks);
+    if (hook_no >= hooks.size())
+        return DOESNT_EXIST;
+
+    int hook_no = 0;
+    bool found = false;
+    for (auto const& hook : hooks)
+    {
+        auto const& hookObj = dynamic_cast<STObject const*>(&hook);
+        if (hookObj->isFieldPresent(sfHookHash))
+        {
+            if (hookObj->getFieldH256(sfHookHash) == hash)
+            {
+                found = true;
+                break;
+            }
+        }
+        hook_no++;
+    }
+
+    if (!found)
+        return DOESNT_EXIST;
+
+    // finally add it to the skips list
+    hookCtx.result.hookSkips.emplace(hash);
+    return 1;
+
+}
+
+DEFINE_HOOK_FUNCNARG(
+    int64_t,
+    hook_pos)
+{
+    return hookCtx.hookChainPosition;
+}
 

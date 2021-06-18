@@ -150,8 +150,13 @@ const std::set<std::string> import_whitelist
     "sto_validate",
     "sto_emplace",
     "sto_erase",
-    "util_keylet"
+    "util_keylet",
+    "hook_pos",
+    "hook_param",
+    "hook_param_set",
+    "hook_skip"
 };
+
 
 #define DEBUG_GUARD_CHECK 0
 
