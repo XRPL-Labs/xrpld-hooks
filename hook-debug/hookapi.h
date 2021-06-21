@@ -189,7 +189,19 @@ extern int64_t hook_account        (uint32_t write_ptr,  uint32_t write_len);
  * @param write_len The length of that buffer
  * @return The number of bytes written into the buffer of a negative integer if an error occured.
  */
-extern int64_t hook_hash           (uint32_t write_ptr,  uint32_t write_len);
+extern int64_t hook_hash           (uint32_t write_ptr,  uint32_t write_len, int32_t hook_no);
+
+extern int64_t hook_param_set      (uint32_t read_ptr,  uint32_t read_len,
+                                    uint32_t kread_ptr, uint32_t kread_len,
+                                    uint32_t hread_ptr, uint32_t hread_len);
+
+extern int64_t hook_param          (uint32_t write_ptr,  uint32_t write_len,
+                                    uint32_t read_ptr,   uint32_t read_len);
+
+extern int64_t hook_skip           (uint32_t write_ptr,  uint32_t write_len, uint32_t flags);
+extern int64_t hook_pos            (void);
+
+
 
 /**
  * Retrive the currently recommended minimum fee for a transaction to succeed.
@@ -361,7 +373,6 @@ extern int64_t  float_sign          (int64_t float1 );
 extern int64_t  float_sign_set      (int64_t float1,     uint32_t negative );
 extern int64_t  float_int           (int64_t float1,     uint32_t decimal_places, uint32_t abs);
 extern int64_t  trace_float         (uint32_t mread_ptr, uint32_t mread_len, int64_t float1);
-
 
 
 #define SUCCESS  0                  // return codes > 0 are reserved for hook apis to return "success"
