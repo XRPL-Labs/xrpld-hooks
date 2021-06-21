@@ -512,26 +512,26 @@ hook::setHookState(
 }
 
 hook::HookResult
-    hook::apply(
-        ripple::uint256 const& hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
-        ripple::uint256 const& hookHash,     /* hash of the actual hook byte code, used for metadata */
-        ripple::uint256 const& hookNamespace,
-        ripple::Blob const& wasm,
+hook::apply(
+    ripple::uint256 const& hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
+    ripple::uint256 const& hookHash,     /* hash of the actual hook byte code, used for metadata */
+    ripple::uint256 const& hookNamespace,
+    ripple::Blob const& wasm,
+    std::map<
+        std::vector<uint8_t>,          /* param name  */
+        std::vector<uint8_t>           /* param value */
+        > const& hookParams,
+    std::map<
+        ripple::uint256,          /* hook hash */
         std::map<
-            vector<uint8_t>,          /* param name  */
-            vector<uint8_t>           /* param value */
-            > const& hookParams,
-        std::map<
-            ripple::uint256,          /* hook hash */
-            std::map<
-                vector<uint8_t>,
-                vector<uint8_t>
-            >> const& hookParamOverrides,
-        Blob hook, ApplyContext& applyCtx,
-        AccountID const& account,     /* the account the hook is INSTALLED ON not necessarily the otxn account */
-        bool callback = false,
-        uint32_t wasmParam,
-        int32_t hookChainPosition)
+            std::vector<uint8_t>,
+            std::vector<uint8_t>
+        >> const& hookParamOverrides,
+    ApplyContext& applyCtx,
+    ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
+    bool callback = false,
+    uint32_t wasmParam,
+    int32_t hookChainPosition)
 {
 
 
@@ -564,7 +564,8 @@ hook::HookResult
             .exitCode = -1,
             .callback = callback,
             .wasmParam = wasmParam,
-            .hookChainPosition = hookChainPosition
+            .hookChainPosition = hookChainPosition,
+            .foreignStateSetDisabled = false
         },
         .emitFailure =
                 callback && wasmParam & 1
@@ -883,7 +884,7 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // execution to here means it's actually a foreign set
-    if (hookCtx.result.hookGrantsDisabled)
+    if (hookCtx.result.foreignStateSetDisabled)
         return PREVIOUS_FAILURE_PREVENTS_RETRY;
 
     // first check if we've already modified this state
@@ -944,7 +945,8 @@ DEFINE_HOOK_FUNCTION(
 
     if (!found_auth)
     {
-        hookCtx.result.hookGrantsDisabled = true;
+        // hook only gets one attempt 
+        hookCtx.result.foreignStateSetDisabled = true;
         return NOT_AUTHORIZED;
     }
 
@@ -4084,22 +4086,22 @@ DEFINE_HOOK_FUNCTION(
     if (read_len > 32)
         return TOO_BIG;
 
-    std::vector paramName { read_ptr + memory, read_ptr + read_len + memory }; 
+    std::vector<uint8_t> paramName { read_ptr + memory, read_ptr + read_len + memory }; 
 
     // first check for overrides set by prior hooks in the chain
     auto const& overrides = hookCtx.result.hookParamOverrides;
     if (overrides.find(hookCtx.result.hookHash) != overrides.end())
     {
-        auto const& params = overrides[hookCtx.result.hookHash];
+        auto const& params = overrides.at(hookCtx.result.hookHash);
         if (params.find(paramName) != params.end())
         {
-            auto const& param = params[paramName];
+            auto const& param = params.at(paramName);
             if (param.size() == 0)
                 return DOESNT_EXIST;    // allow overrides to "delete" parameters
 
             WRITE_WASM_MEMORY_AND_RETURN(
                 write_ptr, write_len,
-                params[paramName].data(), params[paramName].size(),
+                param.data(), param.size(),
                 memory, memory_length);
         }
     }
@@ -4108,13 +4110,13 @@ DEFINE_HOOK_FUNCTION(
     auto const& params = hookCtx.result.hookParams;
     if (params.find(paramName) != params.end())
     {
-        auto const& param = params[paramName];
+        auto const& param = params.at(paramName);
         if (param.size() == 0)
             return DOESNT_EXIST;
 
         WRITE_WASM_MEMORY_AND_RETURN(
             write_ptr, write_len,
-            params[paramName].data(), params[paramName].size(),
+            param.data(), param.size(),
             memory, memory_length);
     }
 
@@ -4144,20 +4146,20 @@ DEFINE_HOOK_FUNCTION(
     if (hread_len != 32)
         return INVALID_ARGUMENT;
 
-    if (read_len > maxHookParameterSize())
+    if (read_len > hook::maxHookParameterSize())
         return TOO_BIG;
 
-    std::vector paramName   { kread_ptr + memory, kread_ptr + kread_len + memory };
-    std::vector paramValue  { read_ptr + memory, read_ptr + read_len + memory };
+    std::vector<uint8_t> paramName   { kread_ptr + memory, kread_ptr + kread_len + memory };
+    std::vector<uint8_t> paramValue  { read_ptr + memory, read_ptr + read_len + memory };
     
-    ripple::uint256 hash = ripple::uint256::fromVoid(memory + hiread_ptr);
+    ripple::uint256 hash = ripple::uint256::fromVoid(memory + hread_ptr);
 
-    if (hookCtx.result.overrideCount >= hook::max_params)
+    if (hookCtx.result.overrideCount >= hook_api::max_params)
         return TOO_MANY_PARAMS;
 
     hookCtx.result.overrideCount++;
 
-    auto& overrides = hookCtx.result.paramOverrides;
+    auto& overrides = hookCtx.result.hookParamOverrides;
     if (overrides.find(hash) == overrides.end())
     {
         overrides[hash] =
@@ -4167,7 +4169,7 @@ DEFINE_HOOK_FUNCTION(
                 std::move(paramName),
                 std::move(paramValue)
             }
-        }
+        };
     }
     else
         overrides[hash][std::move(paramName)] = std::move(paramValue);
@@ -4188,7 +4190,7 @@ DEFINE_HOOK_FUNCTION(
     if (read_len != 32)
         return INVALID_ARGUMENT;
 
-    auto const& skips = hookCtx.result.hookSkips;
+    auto& skips = hookCtx.result.hookSkips;
     ripple::uint256 hash = ripple::uint256::fromVoid(memory + read_ptr);
 
     if (flags == 1)
@@ -4211,10 +4213,6 @@ DEFINE_HOOK_FUNCTION(
         return INTERNAL_ERROR;
 
     ripple::STArray const& hooks = hookSLE->getFieldArray(sfHooks);
-    if (hook_no >= hooks.size())
-        return DOESNT_EXIST;
-
-    int hook_no = 0;
     bool found = false;
     for (auto const& hook : hooks)
     {
@@ -4227,7 +4225,6 @@ DEFINE_HOOK_FUNCTION(
                 break;
             }
         }
-        hook_no++;
     }
 
     if (!found)
@@ -4243,6 +4240,6 @@ DEFINE_HOOK_FUNCNARG(
     int64_t,
     hook_pos)
 {
-    return hookCtx.hookChainPosition;
+    return hookCtx.result.hookChainPosition;
 }
 

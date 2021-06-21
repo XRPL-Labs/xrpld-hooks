@@ -673,7 +673,7 @@ gatherHookParameters(
         std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
         ripple::STObject const* hookObj,
         std::map<std::vector<uint8_t>, std::vector<uint8_t>>& parameters,
-        beast::Journal& j_)
+        beast::Journal const& j_)
 {
     if (!hookDef->isFieldPresent(sfHookParameters))
     {
@@ -707,12 +707,13 @@ gatherHookParameters(
 
 bool /* error = true */
 executeHookChain(
-        std::shared_ptr<ripple::STLedgerEntry> const& hookSLE,
+        std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
         std::vector<hook::HookResult>& results,
         int& executedHookCount,
-        ripple::AccountID& account,
+        ripple::AccountID const& account,
         ripple::ApplyContext& ctx,
-        beast::Journal& j_)
+        beast::Journal const& j_,
+        TER& result)
 {
     std::set<uint256> hookSkips;
     std::map<
@@ -784,31 +785,28 @@ executeHookChain(
 
         executedHookCount++;
 
-        hook::HookResult& result = results.back();
+        hook::HookResult& hookResult = results.back();
 
-        if (result.exitType != hook_api::ExitType::ACCEPT)
+        if (hookResult.exitType != hook_api::ExitType::ACCEPT)
         {
             if (results.back().exitType == hook_api::ExitType::WASM_ERROR)
                 result = temMALFORMED;
-            rollback = true;
-            break;
+            return true;
         }
 
         // gather skips
-        for (uint256 const& hash : result.hookSkips)
+        for (uint256 const& hash : hookResult.hookSkips)
             if (hookSkips.find(hash) == hookSkips.end())
                 hookSkips.emplace(hash);
 
         // gather overrides
-        auto const& resultOverrides = result.hookParamOverrides;
-        for (uint256 const& hash : resultOverrides)
+        auto const& resultOverrides = hookResult.hookParamOverrides;
+        for (auto const& [hash, params] : resultOverrides)
         {
             if (hookParamOverrides.find(hash) == hookParamOverrides.end())
                 hookParamOverrides[hash] = {};
 
             auto& overrides = hookParamOverrides[hash];
-
-            auto const& params = resultOverrides[hash];
             for (auto const& [k, v] : params)
                 overrides[k] = v;
         }
@@ -864,7 +862,7 @@ Transactor::operator()()
 
         // First check if the Sending account has any hooks that can be fired
         if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
-            rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_);
+            rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_, result);
 
         // Next check if the Receiving account has as a hook that can be fired...
         bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
@@ -874,7 +872,8 @@ Transactor::operator()()
             auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
             auto const& hooksReceiving = ledger.read(keylet::hook(destAccountID));
             if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
-                rollback = executeHookChain(hooksReceiving, recvResults, executedHookCount, destAccountID, ctx_, j_);
+                rollback =
+                    executeHookChain(hooksReceiving, recvResults, executedHookCount, destAccountID, ctx_, j_, result);
         }
 
         if (rollback && result != temMALFORMED)
@@ -934,7 +933,10 @@ Transactor::operator()()
         
                     std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
                     if (gatherHookParameters(hookDef, hookObj, parameters, j_))
-                        return true;
+                    {
+                        rollback = true;
+                        break;
+                    }
 
                     found = true;
 
@@ -967,6 +969,9 @@ Transactor::operator()()
                     JLOG(j_.warn())
                         << "HookError[]: Hookhash not found on callback account";
                 }
+
+                if (rollback)
+                    break;
             }
         }
         while(0);
@@ -980,7 +985,7 @@ Transactor::operator()()
 
     uint64_t posthook_cycles = rdtsc();
     JLOG(j_.trace())
-        << "HookStats[]: " << executed_hook_count << " hooks executed. Execution took "
+        << "HookStats[]: " << executedHookCount << " hooks executed. Execution took "
         << (posthook_cycles - prehook_cycles) << " cycles.";
 
     // fall through allows normal apply

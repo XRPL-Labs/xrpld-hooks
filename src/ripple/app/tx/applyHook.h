@@ -317,16 +317,22 @@ namespace hook {
     struct HookResult;
 
     HookResult apply(
-            ripple::uint256,
-            ripple::uint256,
-            ripple::uint256,
-            ripple::Blob,
+            ripple::uint256 const&,
+            ripple::uint256 const&,
+            ripple::uint256 const&,
+            ripple::Blob const&,
             std::map<
                 std::vector<uint8_t>,          /* param name  */
                 std::vector<uint8_t>           /* param value */
-            > const&,
+            > const& parameters,
+            std::map<
+                ripple::uint256,
+                std::map<
+                    std::vector<uint8_t>,          /* param name  */
+                    std::vector<uint8_t>           /* param value */
+                >> const& parameterOverrides,
             ripple::ApplyContext&,
-            const ripple::AccountID&,
+            ripple::AccountID const&,
             bool callback,
             uint32_t wasmParam = 0,
             int32_t hookChainPosition = -1);
@@ -336,6 +342,7 @@ namespace hook {
     int maxHookStateDataSize(void);
     int maxHookWasmSize(void);
     int maxHookParameterSize(void);
+
 
     struct HookResult
     {
@@ -377,6 +384,7 @@ namespace hook {
         uint32_t wasmParam = 0;
         uint32_t overrideCount = 0;
         int32_t hookChainPosition = -1;
+        bool foreignStateSetDisabled = false;
     };
 
     class HookModule;
