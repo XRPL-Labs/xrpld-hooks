@@ -42,6 +42,13 @@ enum SetHookFlags : uint8_t {
     FLAG_NSDELETE = 2U
 };
 
+struct SetHookCtx
+{
+    beast::Journal j;
+    STTx const& tx;
+    Application& app;
+};
+
 class SetHook : public Transactor
 {
 
@@ -61,8 +68,16 @@ public:
 
     TER
     doApply() override;
+
     void
     preCompute() override;
+
+    TER
+    preclaim(PreflightResult const& preflightResult, Application& app, OpenView const& view);
+
+    // RH TODO: compute fee in transactor on chain execution
+    FeeUnit64
+    calculateBaseFee(ReadView const& view, STTx const& tx);
 
 private:
 
@@ -71,7 +86,7 @@ private:
 
     TER
     destroyNamespace(
-        Application& app,
+        SetHookCtx& ctx,
         ApplyView& view,
         const AccountID& account,
         const Keylet & dirKeylet        // the keylet of the namespace directory

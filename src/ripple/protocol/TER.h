@@ -197,7 +197,8 @@ enum TERcodes : TERUnderlyingType {
                      // burden network.
     terLAST,         // DEPRECATED.
     terNO_RIPPLE,    // Rippling not allowed
-    terQUEUED        // Transaction is being held in TxQ until fee drops
+    terQUEUED,       // Transaction is being held in TxQ until fee drops
+    terNO_HOOK       // Transaction requires a non-existent hook definition (referenced by sfHookHash)
 };
 
 //------------------------------------------------------------------------------

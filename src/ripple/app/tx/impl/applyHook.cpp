@@ -341,6 +341,30 @@ bool hook::isEmittedTxn(ripple::STTx const& tx)
 {
     return tx.isFieldPresent(ripple::sfEmitDetails);
 }
+
+
+#define I32MAX ((int32_t)((1UL<<31U)-1))
+int32_t hook::computeExecutionFee(uint64_t instructionCount)
+{
+    // RH TODO: fee multiplier, validator votable
+    if (instructionCount > I32MAX)
+        return I32MAX;
+    return instructionCount;
+}
+
+int32_t hook::computeCreationFee(uint64_t byteCount)
+{
+    // RH TODO: fee multiplier, validator votable
+    if (byteCount > I32MAX)
+        return I32MAX;
+    return byteCount;
+}
+
+uint8_t hook::maxHookChainLength(void)
+{
+    return 4;
+}
+
 // many datatypes can be encoded into an int64_t
 inline int64_t data_as_int64(
         void const* ptr_raw,
