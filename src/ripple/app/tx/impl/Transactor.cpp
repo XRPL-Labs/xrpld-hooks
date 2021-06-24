@@ -33,6 +33,7 @@
 #include <ripple/protocol/Protocol.h>
 #include <ripple/protocol/STAccount.h>
 #include <ripple/protocol/UintTypes.h>
+#include <limits>
 
 namespace ripple {
 
@@ -125,6 +126,46 @@ Transactor::Transactor(ApplyContext& ctx) : ctx_(ctx), j_(ctx.journal)
 {
 }
 
+inline
+std::optional<AccountID>
+getDestinationAccount(STTx const& tx)
+{
+    if (tx.isFieldPresent(sfOwner))
+        return tx.getAccountID(sfOwner);
+    
+    if (tx.isFieldPresent(sfDestination))
+        return tx.getAccountID(sfDestination);
+
+    return std::nullopt;
+}
+
+FeeUnit64
+Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet)
+{
+
+    std::shared_ptr<SLE const> hookSLE = view.read(hookKeylet);
+    if (!hookSLE)
+        return FeeUnit64{0};
+
+    FeeUnit64 fee{0};
+
+    auto const& hooks = hookSLE->getFieldArray(sfHooks);
+    for (auto const& hook : hooks)
+    {
+        ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
+
+        if (hookObj->getCount() == 0) // skip blanks
+            continue;
+
+        fee += FeeUnit64{
+            (uint32_t)(hookObj->getFieldAmount(sfFee).xrp().drops())
+        };
+    }
+
+    return fee;
+    
+}
+
 FeeUnit64
 Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
 {
@@ -140,7 +181,42 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
     std::size_t const signerCount =
         tx.isFieldPresent(sfSigners) ? tx.getFieldArray(sfSigners).size() : 0;
 
-    return baseFee + (signerCount * baseFee);
+    FeeUnit64 hookExecutionFee{0};
+    if (view.rules().enabled(featureHooks))
+    {
+        // RH UPTO: reserve callback fee on emit, and unreserve and burn on callback
+        // if this is a "cleanup" txn we regard it as already paid up
+        if (tx.getFieldU16(sfTransactionType) == ttEMIT_FAILURE)
+            return FeeUnit64{0};    
+
+        // if the txn is an emitted txn then we add the callback fee
+        // if the txn is NOT an emitted txn then we process the sending account's hook chain 
+        if (tx.isFieldPresent(sfEmitDetails))
+        {
+            STObject const& emitDetails = 
+                const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
+
+            uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
+
+            std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(callbackHookHash));
+            if (hookDef)
+                hookExecutionFee += FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())};
+        }
+        else
+            hookExecutionFee +=
+                calculateHookChainFee(view, tx, keylet::hook(tx.getAccountID(sfAccount)));
+    
+        std::optional<AccountID>
+            destAccountID = getDestinationAccount(tx);
+
+        // if there is a receiving account then we also compute the fee for its hook chain
+        if (destAccountID)
+            hookExecutionFee +=
+                calculateHookChainFee(view, tx, keylet::hook(*destAccountID));
+    }
+
+    return baseFee + (signerCount * baseFee) + hookExecutionFee; // RH NOTE: hookExecutionFee = 0 
+                                                                 //          unless featureHooks enabled
 }
 
 XRPAmount
@@ -865,15 +941,15 @@ Transactor::operator()()
             rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_, result);
 
         // Next check if the Receiving account has as a hook that can be fired...
-        bool is_owner = false; // Note: Escrows use sfOwner instead of sfDestination
-        if (!rollback && 
-                (ctx_.tx.isFieldPresent(sfDestination) || (is_owner = ctx_.tx.isFieldPresent(sfOwner))))
+        std::optional<AccountID>
+            destAccountID = getDestinationAccount(ctx_.tx);
+
+        if (!rollback && destAccountID)
         {
-            auto const& destAccountID = ctx_.tx.getAccountID(is_owner ? sfOwner : sfDestination);
-            auto const& hooksReceiving = ledger.read(keylet::hook(destAccountID));
+            auto const& hooksReceiving = ledger.read(keylet::hook(*destAccountID));
             if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
                 rollback =
-                    executeHookChain(hooksReceiving, recvResults, executedHookCount, destAccountID, ctx_, j_, result);
+                    executeHookChain(hooksReceiving, recvResults, executedHookCount, *destAccountID, ctx_, j_, result);
         }
 
         if (rollback && result != temMALFORMED)

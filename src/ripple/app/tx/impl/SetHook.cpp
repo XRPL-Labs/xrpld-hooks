@@ -182,7 +182,7 @@ check_guard(
     std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
     std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
 
-    // block depth level -> { largest guard, rolling instruction count } //RH UPTO
+    // block depth level -> { largest guard, rolling instruction count } 
     std::map<int, std::pair<uint32_t, uint64_t>> instruction_count;
 
                         // largest guard  // instr ccount

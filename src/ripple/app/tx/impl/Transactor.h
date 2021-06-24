@@ -144,9 +144,13 @@ public:
     static NotTEC
     checkSign(PreclaimContext const& ctx);
 
+
     // Returns the fee in fee units, not scaled for load.
     static FeeUnit64
     calculateBaseFee(ReadView const& view, STTx const& tx);
+    
+    static FeeUnit64
+    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
 
     static bool
     affectsSubsequentTransactionAuth(STTx const& tx)
