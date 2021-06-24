@@ -77,7 +77,7 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     {\
         JLOG(ctx.j.trace())\
            << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook truncated or otherwise invalid\n";\
-        return false;\
+        return {false, 0};\
     }\
 }
 
@@ -163,8 +163,8 @@ const std::set<std::string> import_whitelist
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
-// returns 0 if guard check failed, and > 0 indicating worst case instruction count
-uint64_t
+// returns {valid, worst case instruction count}
+std::pair<bool, uint64_t>
 check_guard(
         SetHookCtx& ctx,
         ripple::Blob& hook, int codesec,
@@ -218,7 +218,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Hook calls a function outside of the whitelisted imports "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return 0;
+                return {false, 0};
             }
 
             if (callee_idx == guard_func_idx)
@@ -233,7 +233,7 @@ check_guard(
                             << "HookSet[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return 0;
+                        return {false, 0};
                     }
 
                     uint64_t a = stack.top();
@@ -250,7 +250,7 @@ check_guard(
                         JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return 0;
+                        return {false, 0};
                     }
 
                     // update the instruction count for this block depth to the largest possible guard
@@ -281,7 +281,7 @@ check_guard(
             JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
                 << "codesec: " << codesec << " hook byte offset: " << i;
-            return 0;
+            return {false, 0};
             /*
             if (DEBUG_GUARD_CHECK)
                 printf("%d - call_indirect instruction at %d\n", mode, i);
@@ -307,7 +307,7 @@ check_guard(
                 JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "_g() did not occur at start of function or loop statement "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return 0;
+                return {false, 0};
             }
 
             // execution to here means we are in 'search mode' for loop instructions
@@ -451,7 +451,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Memory.grow instruction not allowed at "
                     << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                return 0;
+                return {false, 0};
             }
             continue;
         }
@@ -521,7 +521,7 @@ check_guard(
                     << "HookSet[" << HS_ACC() << "]: GuardCheck "
                     << "Unexpected 0x0B instruction, malformed"
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return 0;
+                return {false, 0};
             }
 
             // perform the instruction count * guard accounting
@@ -542,18 +542,18 @@ check_guard(
             << "HookSet[" << HS_ACC() << "]: GuardCheck "
             << "Maximum possible instructions exceed 1048575, please make your hook smaller "
             << "or check your guards!";
-        return 0;
+        return {false, 0};
     }
 
     // if we reach the end of the code looking for another trigger the guards are installed correctly
     if (mode == 1)
-        return instruction_count[0].second;
+        return {true, instruction_count[0].second};
 
     JLOG(ctx.j.trace())
         << "HookSet[" << HS_ACC() << "]: GuardCheck "
         << "Guard did not occur before end of loop / function. "
         << "Codesec: " << codesec;
-    return 0;
+    return {false, 0};
 
 }
 
@@ -620,13 +620,13 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
             << "]: Malformed transaction: SetHook must provide only one of sfCreateCode or sfHookHash.";
-        return {false, 0, 0};
+        return {false, 0};
     }
 
     // validate hook params structure
     if (hookSetObj.isFieldPresent(sfHookParameters) &&
         !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
-        return {false, 0, 0};
+        return {false, 0};
 
     // validate hook grants structure
     if (hookSetObj.isFieldPresent(sfHookGrants))
@@ -638,7 +638,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHookGrants empty.";
-            return {false, 0, 0};
+            return {false, 0};
         }
 
         if (hookGrants.size() > 8)
@@ -646,7 +646,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHookGrants contains more than 8 entries.";
-            return {false, 0, 0};
+            return {false, 0};
         }
 
         for (auto const& hookGrant : hookGrants)
@@ -657,7 +657,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
-                return {false, 0, 0};
+                return {false, 0};
             }
         }
     }
@@ -671,10 +671,10 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: HookApiVersion can only be provided when creating a new hook.";
-            return {false, 0, 0};
+            return {false, 0};
         }
 
-        return {true, 0, 0};
+        return {true, 0};
     }
 
     // execution to here means this is an sfCreateCode (hook creation) entry
@@ -685,7 +685,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
             << "]: Malformed transaction: SetHook sfHookDefinition must contain sfHookNamespace.";
-        return {false, 0, 0};
+        return {false, 0};
     }
 
     // validate api version, if provided
@@ -694,7 +694,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
             << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
-        return {false, 0, 0};
+        return {false, 0};
     }
     else
     {
@@ -705,7 +705,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHookDefinition->sfHookApiVersion invalid. (Try 0).";
-            return {false, 0, 0};
+            return {false, 0};
         }
     }
 
@@ -715,7 +715,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
             << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
-        return {false, 0, 0};
+        return {false, 0};
     }
 
 
@@ -726,7 +726,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC()
             << "]: Malformed transaction: SetHook sfHookDefinition must contain non-blank sfCreateCode.";
-        return {false, 0, 0};
+        return {false, 0};
     }
 
     byteCount = hook.size();
@@ -737,7 +737,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC() << "]: "
             << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
-        return {false, 0, 0};
+        return {false, 0};
     }
 
     // check header, magic number
@@ -750,7 +750,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 << "HookSet[" << HS_ACC() << "]: "
                 << "Malformed transaction: Hook was not valid webassembly binary. "
                 << "Missing magic number or version.";
-            return {false, 0, 0};
+            return {false, 0};
         }
     }
 
@@ -766,7 +766,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             // it's an infinite loop edge case
             JLOG(ctx.j.trace())
                 << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook is invalid WASM binary.";
-            return {false, 0, 0};
+            return {false, 0};
         }
 
         j = i;
@@ -792,7 +792,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import any functions... "
                     << "required at least guard(uint32_t, uint32_t) and accept, reject or rollback";
-                return {false, 0, 0};
+                return {false, 0};
             }
 
             // process each import one by one
@@ -806,7 +806,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import module";
-                    return {false, 0, 0};
+                    return {false, 0};
                 }
 
                 if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
@@ -814,7 +814,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify import module other than 'env'";
-                    return {false, 0, 0};
+                    return {false, 0};
                 }
 
                 i += mod_length; CHECK_SHORT_HOOK();
@@ -826,7 +826,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import name";
-                    return {false, 0, 0};
+                    return {false, 0};
                 }
 
                 std::string import_name { (const char*)(hook.data() + i), (size_t)name_length };
@@ -858,7 +858,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to import a function that does not "
                         << "appear in the hook_api function set: `" << import_name << "`";
-                    return {false, 0, 0};
+                    return {false, 0};
                 }
                 func_upto++;
             }
@@ -868,7 +868,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import _g (guard) function";
-                return {false, 0, 0};
+                return {false, 0};
             }
 
             last_import_number = func_upto - 1;
@@ -890,7 +890,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not export any functions... "
                     << "required hook(int64_t), callback(int64_t).";
-                return {false, 0, 0};
+                return {false, 0};
             }
 
             bool found_hook_export = false;
@@ -920,7 +920,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "Hook did not export: " <<
                     ( !found_hook_export ? "hook(int64_t); " : "" ) <<
                     ( !found_cbak_export ? "cbak(int64_t);"  : "" );
-                return {false, 0, 0};
+                return {false, 0};
             }
         }
 
@@ -962,7 +962,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                             << "Codesec: " << j << " "
                             << "Local: " << k << " "
                             << "Offset: " << i;
-                        return {false, 0, 0};
+                        return {false, 0};
                     }
                     i++; CHECK_SHORT_HOOK();
                 }
@@ -972,11 +972,11 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 
                 // execution to here means we are up to the actual expr for the codesec/function
 
-                uint64_t instruction_count =
+                auto [valid, instruction_count] =
                     check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
 
-                if (instruction_count == 0)
-                    return {false, 0, 0};
+                if (!valid)
+                    return {false, 0};
 
                 // the worst case execution is the fee, this includes the worst case between cbak and hook
                 if (instruction_count > maxInstrCount)
@@ -1007,7 +1007,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC() << "]: "
             << "Tried to set a hook with invalid code. SSVM error: " << ssvm_error;
-        return {false, 0, 0};
+        return {false, 0};
     }
 
     return {true, maxInstrCount};
@@ -1027,15 +1027,16 @@ SetHook::calculateBaseFee(ReadView const& view, STTx const& tx)
         if (!hookSetObj->isFieldPresent(sfCreateCode))
             continue;
 
-        extraFee += hook::computeCreateFee(
-                hookSetObj->getFieldVL(sfCreateCode).size());
+        extraFee += FeeUnit64{
+            hook::computeCreationFee(
+                hookSetObj->getFieldVL(sfCreateCode).size())};
     }
 
     return Transactor::calculateBaseFee(view, tx) + extraFee;
 }
 
 TER
-SetHook::preclaim(PreflightResult const& preflightResult, Application& app, OpenView const& view)
+SetHook::preclaim(ripple::PreclaimContext const& ctx)
 {
 
     auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
@@ -1048,9 +1049,9 @@ SetHook::preclaim(PreflightResult const& preflightResult, Application& app, Open
         if (!hookSetObj->isFieldPresent(sfHookHash))
             continue;
 
-        auto const& hash = hookSetObj.getFieldH256(sfHookHash);
+        auto const& hash = hookSetObj->getFieldH256(sfHookHash);
         {
-            if (!view->exists(keylet::hookDefinition(hash)))
+            if (!ctx.view.exists(keylet::hookDefinition(hash)))
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()

@@ -323,16 +323,16 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
 
 // RH TODO: this is used by sethook to determine the value stored in ltHOOK
 // replace this with votable value
-int hook::maxHookStateDataSize(void) {
+uint32_t hook::maxHookStateDataSize(void) {
     return 128;
 }
 
-int hook::maxHookWasmSize(void)
+uint32_t hook::maxHookWasmSize(void)
 {
     return 0xFFFFU;
 }
 
-int hook::maxHookParameterSize(void)
+uint32_t hook::maxHookParameterSize(void)
 {
     return 128;
 }
@@ -343,24 +343,24 @@ bool hook::isEmittedTxn(ripple::STTx const& tx)
 }
 
 
-#define I32MAX ((int32_t)((1UL<<31U)-1))
-int32_t hook::computeExecutionFee(uint64_t instructionCount)
+#define U32MAX ((uint32_t)(-1))
+uint32_t hook::computeExecutionFee(uint64_t instructionCount)
 {
     // RH TODO: fee multiplier, validator votable
-    if (instructionCount > I32MAX)
-        return I32MAX;
+    if (instructionCount > U32MAX)
+        return U32MAX;
     return instructionCount;
 }
 
-int32_t hook::computeCreationFee(uint64_t byteCount)
+uint32_t hook::computeCreationFee(uint64_t byteCount)
 {
     // RH TODO: fee multiplier, validator votable
-    if (byteCount > I32MAX)
-        return I32MAX;
+    if (byteCount > U32MAX)
+        return U32MAX;
     return byteCount;
 }
 
-uint8_t hook::maxHookChainLength(void)
+uint32_t hook::maxHookChainLength(void)
 {
     return 4;
 }

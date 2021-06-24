@@ -339,13 +339,13 @@ namespace hook {
 
     struct HookContext;
 
-    int maxHookStateDataSize(void);
-    int maxHookWasmSize(void);
-    int maxHookParameterSize(void);
-    int maxHookChainLength(void);
+    uint32_t maxHookStateDataSize(void);
+    uint32_t maxHookWasmSize(void);
+    uint32_t maxHookParameterSize(void);
+    uint32_t maxHookChainLength(void);
 
-    int32_t computeExecutionFee(uint64_t instructionCount);
-    int32_t computeCreationFee(uint64_t byteCount);
+    uint32_t computeExecutionFee(uint64_t instructionCount);
+    uint32_t computeCreationFee(uint64_t byteCount);
 
     struct HookResult
     {

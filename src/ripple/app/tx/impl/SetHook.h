@@ -72,11 +72,11 @@ public:
     void
     preCompute() override;
 
-    TER
-    preclaim(PreflightResult const& preflightResult, Application& app, OpenView const& view);
+    static TER
+    preclaim(PreclaimContext const&);
 
     // RH TODO: compute fee in transactor on chain execution
-    FeeUnit64
+    static FeeUnit64
     calculateBaseFee(ReadView const& view, STTx const& tx);
 
 private:
