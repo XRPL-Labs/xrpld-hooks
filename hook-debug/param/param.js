@@ -16,6 +16,7 @@ api.on('error', (errorCode, errorMessage) => {console.log(errorCode + ': ' + err
 api.on('connected', () => {console.log('connected');});
 api.on('disconnected', (code) => {console.log('disconnected, code:', code);});
 api.connect().then(() => {
+    b = fs.readFileSync('param.wasm');
     j = {
         Account: address,
         TransactionType: "SetHook",
@@ -23,7 +24,7 @@ api.connect().then(() => {
         [
             {
                 Hook: {
-                    CreateCode: fs.readFileSync('param.wasm').toString('hex').toUpperCase(),
+                    CreateCode: b.toString('hex').toUpperCase(),
                     HookOn: '0000000000000000',
                     HookNamespace: addr.codec.sha256('param').toString('hex').toUpperCase(),
                     HookApiVersion: 0,
@@ -39,7 +40,8 @@ api.connect().then(() => {
                     ]
                 }
             }
-        ]
+        ],
+        Fee: (b.length + 12) + ""
     }
     api.prepareTransaction(j).then( (x)=> 
     {
