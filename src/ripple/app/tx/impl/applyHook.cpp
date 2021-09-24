@@ -3416,20 +3416,21 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
+    if ((cread_ptr || cread_len) && NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if ((iread_ptr || iread_len) && NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
     if (!is_xrp && !is_short && (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0))
         return INVALID_ARGUMENT;
 
     if (!is_xrp && !is_short)
     {
-        if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length) ||
-            NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
-            return OUT_OF_BOUNDS;
-
         if (cread_len != 20 || iread_len != 20)
             return INVALID_ARGUMENT;
 
         bytes_needed += 40;
-
     }
 
     if (bytes_needed > write_len)
