@@ -3376,7 +3376,10 @@ DEFINE_HOOK_FUNCTION(
         ripple::IOUAmount amt1 {man1, exp1};
         ripple::IOUAmount amt2 {man2, exp2};
         amt1 += amt2;
-        return make_float(amt1);
+        int64_t retval = make_float(amt1);
+        // ensure a subtraction with an underflowing result is rounded to 0
+        return retval != EXPONENT_UNDERSIZED ? retval : 0; 
+
     }
     catch (std::overflow_error& e)
     {
