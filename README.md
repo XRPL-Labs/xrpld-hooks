@@ -22,9 +22,16 @@ Open a new terminal window on your system and run.
 ```bash
 docker exec -it xrpld-hooks tail -f log
 ```
- This will show you the trace log of xrpld as it runs, which will be important for knowing if your transactions fail or succeed and what actions the hooks take.
- Since there is rather a lot of log output you might find it useful to run this with  `grep -a <your account>` after you obtain an account you are interested in.
- E.g. `docker exec -it xrpld-hooks tail -f log | grep -a rEy6oGFEeKNiMUTTEzTDnMVfe7SvcBsHZK`
+
+This will show you the trace log of xrpld as it runs, which will be important for knowing if your transactions fail or succeed and what actions the hooks take.
+Since there is rather a lot of log output you might find it useful to run this with  `grep -a <your account>` after you obtain an account you are interested in.
+E.g. `docker exec -it xrpld-hooks tail -f log | grep -a rEy6oGFEeKNiMUTTEzTDnMVfe7SvcBsHZK`
+ 
+Alternatively, if you just want the Hooks Testnet debug log output, you can skip running the docker container at all, and setup a WebSocket conection to the live Hooks Testnet debug stream:
+
+ ```
+   wss://hooks-testnet-debugstream.xrpl-labs.com/{some-r-address}
+ ```
 
 4. If you need to kill and destroy the container and restart it (if you are still attached to the container, type `exit` there to quit the container terminal):
 ```bash
