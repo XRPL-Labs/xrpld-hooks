@@ -1,0 +1,11 @@
+<map id="ripple::detail::ReadViewFwdRange&lt; ValueType &gt;::iterator" name="ripple::detail::ReadViewFwdRange&lt; ValueType &gt;::iterator">
+<area shape="rect" id="node1" title=" " alt="" coords="552,259,737,315"/>
+<area shape="rect" id="node2" href="$classripple_1_1ReadView.html" title="A view into a ledger." alt="" coords="288,117,419,144"/>
+<area shape="rect" id="node4" href="$classripple_1_1detail_1_1ReadViewFwdRange.html" title=" " alt="" coords="557,179,733,235"/>
+<area shape="rect" id="node6" href="$classripple_1_1detail_1_1ReadViewFwdRange.html" title=" " alt="" coords="557,50,733,91"/>
+<area shape="rect" id="node3" href="$structripple_1_1ReadView_1_1sles__type.html" title=" " alt="" coords="787,133,987,160"/>
+<area shape="rect" id="node5" href="$structripple_1_1ReadView_1_1txs__type.html" title=" " alt="" coords="789,15,984,41"/>
+<area shape="rect" id="node7" href="/__w/xrpld-hooks/xrpld-hooks/build/docs/cppreference-doxygen-web.tag.xml$cpp/memory/unique_ptr.html" title=" " alt="" coords="252,327,455,369"/>
+<area shape="rect" id="node8" href="$classripple_1_1detail_1_1ReadViewFwdIter.html" title=" " alt="" coords="5,327,181,369"/>
+<area shape="rect" id="node9" href="/__w/xrpld-hooks/xrpld-hooks/build/docs/cppreference-doxygen-web.tag.xml$cpp/utility/optional.html" title=" " alt="" coords="276,262,431,303"/>
+</map>
