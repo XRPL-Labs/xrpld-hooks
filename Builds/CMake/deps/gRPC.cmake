@@ -74,7 +74,7 @@ else ()
       if (NOT _location)
         message (FATAL_ERROR "using pkg-config for grpc, can't find c-ares")
       endif ()
-      add_library (c-ares::cares ${_static} IMPORTED GLOBAL)
+      add_library (c-ares::cares INTERFACE ${_static} IMPORTED GLOBAL)
       set_target_properties (c-ares::cares PROPERTIES
         IMPORTED_LOCATION ${_location}
         INTERFACE_INCLUDE_DIRECTORIES "${${_prefix}_INCLUDE_DIRS}"

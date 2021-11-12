@@ -17,6 +17,8 @@
 */
 //==============================================================================
 
+#define BOOST_ASIO_USE_TS_EXECUTOR_AS_DEFAULT 1
+
 #ifndef RIPPLE_CORE_CONFIG_H_INCLUDED
 #define RIPPLE_CORE_CONFIG_H_INCLUDED
 

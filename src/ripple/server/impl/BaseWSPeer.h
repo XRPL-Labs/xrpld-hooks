@@ -198,13 +198,28 @@ BaseWSPeer<Handler, Impl>::run()
     impl().ws_.control_callback(control_callback_);
     start_timer();
     close_on_timer_ = true;
-    impl().ws_.async_accept_ex(
+/*    impl().ws_.async_accept_ex(
         request_,
         [](auto& res) {
             res.set(
                 boost::beast::http::field::server,
                 BuildInfo::getFullVersionString());
         },
+        bind_executor(
+            strand_,
+            std::bind(
+                &BaseWSPeer::on_ws_handshake,
+                impl().shared_from_this(),
+                std::placeholders::_1)));
+*/
+    impl().ws_.set_option(
+        boost::beast::websocket::stream_base::decorator([](auto& res) {
+            res.set(
+                boost::beast::http::field::server,
+                BuildInfo::getFullVersionString());
+        }));
+    impl().ws_.async_accept(
+        request_,
         bind_executor(
             strand_,
             std::bind(

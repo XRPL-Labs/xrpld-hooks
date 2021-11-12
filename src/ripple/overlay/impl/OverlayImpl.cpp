@@ -360,7 +360,7 @@ OverlayImpl::makeRedirectResponse(
     msg.version(request.version());
     msg.result(boost::beast::http::status::service_unavailable);
     msg.insert("Server", BuildInfo::getFullVersionString());
-    msg.insert("Remote-Address", remote_address);
+    msg.insert("Remote-Address", remote_address.to_string());
     msg.insert("Content-Type", "application/json");
     msg.insert(boost::beast::http::field::connection, "close");
     msg.body() = Json::objectValue;

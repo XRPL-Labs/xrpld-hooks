@@ -20,6 +20,8 @@
 #ifndef RIPPLE_APP_DATA_DBINIT_H_INCLUDED
 #define RIPPLE_APP_DATA_DBINIT_H_INCLUDED
 
+#include <stdint.h>
+#include <limits>
 #include <array>
 
 namespace ripple {
@@ -36,7 +38,7 @@ inline constexpr char const* CommonDBPragmaTemp{"PRAGMA temp_store=%s;"};
 // includes full history nodes. This is because such a large amount of
 // data will be more difficult to recover if a rare failure occurs,
 // which are more likely with some of the other available tuning settings.
-inline constexpr std::uint32_t SQLITE_TUNING_CUTOFF = 10'000'000;
+inline constexpr uint32_t SQLITE_TUNING_CUTOFF = 10'000'000;
 
 // Ledger database holds ledgers and ledger confirmations
 inline constexpr auto LgrDBName{"ledger.db"};
