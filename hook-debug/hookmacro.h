@@ -246,6 +246,7 @@ int out_len = 0;\
 }
 
 #define ttPAYMENT 0
+#define ttCHECK_CREATE 16
 #define tfCANONICAL 0x80000000UL
 
 #define atACCOUNT 1U
