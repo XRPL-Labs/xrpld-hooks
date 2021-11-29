@@ -499,14 +499,29 @@ int out_len = 0;\
     for (int i = 0; GUARDM(len, n), i < len; ++i)                   \
         lhsbuf[lhsbuf_spos + i] = rhsbuf[rhsbuf_spos + i];
 
+
+/**
+ * Length will be data_len + 2 if the data length is less than or equal 192.
+ * Length will be data_len + 3 if the data length is greater than 192.
+*/
 #define ENCODE_STI_VL_COMMON(buf_out, data, data_len, field, n) \
     {                                                           \
         uint8_t *ptr = (uint8_t *)&data;                        \
         uint8_t uf = field;                                     \
         buf_out[0] = 0x70U + (uf & 0x0FU);                      \
-        buf_out[1] = data_len;                                  \
-        COPY_BUFM(buf_out, 2, ptr, 0, data_len, n);             \
-        buf_out += (2 + data_len);                              \
+        if (data_len <= 192)                                    \
+        {                                                       \
+            buf_out[1] = data_len;                              \
+            COPY_BUFM(buf_out, 2, ptr, 0, data_len, n);         \
+            buf_out += (2 + data_len);                          \
+        }                                                       \
+        else                                                    \
+        {                                                       \
+            buf_out[1] = ((data_len - 193) / 256) + 193;        \
+            buf_out[2] = data_len - buf_out[1];                 \
+            COPY_BUFM(buf_out, 3, ptr, 0, data_len, n);         \
+            buf_out += (3 + data_len);                          \
+        }                                                       \
     }
 
 #define _07_XX_ENCODE_STI_VL_COMMON(buf_out, data, data_len, field, n) \
