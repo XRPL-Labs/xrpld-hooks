@@ -35,7 +35,9 @@ namespace BuildInfo {
 // clang-format off
 char const* const versionString = "1.6.0-hooks"
 // clang-format on
-
+#ifdef GIT_COMMIT_HASH
+    "-" GIT_COMMIT_HASH
+#endif
 #if defined(DEBUG) || defined(SANITIZER)
     "+"
 #ifdef DEBUG
