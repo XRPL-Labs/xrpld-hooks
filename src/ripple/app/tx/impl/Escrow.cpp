@@ -226,9 +226,23 @@ EscrowCreate::doApply()
             return tecNO_TARGET;
     }
 
+
+    bool emitted = 
+        ctx_.view().rules().enabled(featureHooks) &&
+        ctx_.tx.isFieldPresent(ripple::sfEmitDetails);
+
+    Keylet escrowKeylet = 
+        emitted ?
+            keylet::escrow(account, 
+                    const_cast<ripple::STTx&>(ctx_.tx).
+                    getField(sfEmitDetails).downcast<STObject>().getFieldH256(sfEmitNonce))
+                :
+            keylet::escrow(account, (*sle)[sfSequence] - 1);
+
+
     // Create escrow in ledger
     auto const slep =
-        std::make_shared<SLE>(keylet::escrow(account, (*sle)[sfSequence] - 1));
+        std::make_shared<SLE>(escrowKeylet);
     (*slep)[sfAmount] = ctx_.tx[sfAmount];
     (*slep)[sfAccount] = account;
     (*slep)[~sfCondition] = ctx_.tx[~sfCondition];

@@ -1146,7 +1146,30 @@ CreateOffer::applyGuts(Sandbox& sb, Sandbox& sbCancel)
     // FIXME understand why we use SequenceNext instead of current transaction
     //       sequence to determine the transaction. Why is the offer sequence
     //       number insufficient?
-    auto const uSequence = ctx_.tx.getSequence();
+
+    bool emitted =
+        ctx_.view().rules().enabled(featureHooks) &&
+        ctx_.tx.isFieldPresent(ripple::sfEmitDetails);
+
+    auto uSequence = ctx_.tx.getSequence();
+
+    if (emitted)
+    {
+        // RH NOTE: If a hook emits the txn we have no basis for the offer sequence number
+        // so construct one based on: the ledger seq, and the emission nonce. Note this still
+        // may collide but probably won't.
+        // If it does we iterate until it does not
+
+        // RH TODO: allow offerSequence to be used instead, but first investigate if this breaks anything
+
+        uSequence = (1U << 31U) + (view().seq());
+        uint256 const& nonce = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).
+            downcast<STObject>().getFieldH256(sfEmitNonce);
+        uSequence ^= *(reinterpret_cast<const uint32_t*>((const void*)nonce.data()));
+
+        while (sb.peek(keylet::offer(account_, uSequence)))
+            uSequence++;
+    }
 
     // This is the original rate of the offer, and is the rate at which
     // it will be placed, even if crossing offers change the amounts that

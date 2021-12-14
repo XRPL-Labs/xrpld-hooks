@@ -187,7 +187,9 @@ CreateCheck::doApply()
     
     uint32_t seq = ctx_.tx.getSequence();
 
-    bool emitted = ctx_.tx.isFieldPresent(ripple::sfEmitDetails);
+    bool emitted = 
+        ctx_.view().rules().enabled(featureHooks) &&
+        ctx_.tx.isFieldPresent(ripple::sfEmitDetails);
     Keylet checkKeylet = 
         emitted ?
             keylet::check(account_, 

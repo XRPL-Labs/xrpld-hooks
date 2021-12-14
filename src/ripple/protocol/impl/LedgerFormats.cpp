@@ -230,7 +230,7 @@ LedgerFormats::LedgerFormats()
             {sfAccount, soeREQUIRED},
             {sfDestination, soeREQUIRED},
             {sfSendMax, soeREQUIRED},
-            {sfSequence, soeREQUIRED},
+            {sfSequence, soeOPTIONAL},
             {sfOwnerNode, soeREQUIRED},
             {sfDestinationNode, soeREQUIRED},
             {sfExpiration, soeOPTIONAL},
