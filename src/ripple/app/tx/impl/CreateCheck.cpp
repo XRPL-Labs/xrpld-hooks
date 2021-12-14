@@ -184,12 +184,25 @@ CreateCheck::doApply()
     }
 
     AccountID const dstAccountId{ctx_.tx[sfDestination]};
-    std::uint32_t const seq{ctx_.tx.getSequence()};
-    auto sleCheck = std::make_shared<SLE>(keylet::check(account_, seq));
+    
+    uint32_t seq = ctx_.tx.getSequence();
+
+    bool emitted = ctx_.tx.isFieldPresent(ripple::sfEmitDetails);
+    Keylet checkKeylet = 
+        emitted ?
+            keylet::check(account_, 
+                    const_cast<ripple::STTx&>(ctx_.tx).
+                    getField(sfEmitDetails).downcast<STObject>().getFieldH256(sfEmitNonce))
+                :
+            keylet::check(account_, ctx_.tx.getSequence());
+
+    auto sleCheck = std::make_shared<SLE>(checkKeylet);
+
+    if (!emitted)
+        sleCheck->setFieldU32(sfSequence, seq);
 
     sleCheck->setAccountID(sfAccount, account_);
     sleCheck->setAccountID(sfDestination, dstAccountId);
-    sleCheck->setFieldU32(sfSequence, seq);
     sleCheck->setFieldAmount(sfSendMax, ctx_.tx[sfSendMax]);
     if (auto const srcTag = ctx_.tx[~sfSourceTag])
         sleCheck->setFieldU32(sfSourceTag, *srcTag);

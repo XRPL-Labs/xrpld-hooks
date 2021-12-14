@@ -184,6 +184,9 @@ signers(AccountID const& account) noexcept;
 Keylet
 check(AccountID const& id, std::uint32_t seq) noexcept;
 
+Keylet
+check(AccountID const& id, uint256 const& emitnonce) noexcept;
+
 inline Keylet
 check(uint256 const& key) noexcept
 {

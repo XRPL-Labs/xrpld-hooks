@@ -296,6 +296,12 @@ check(AccountID const& id, std::uint32_t seq) noexcept
 }
 
 Keylet
+check(AccountID const& id, uint256 const& emitnonce) noexcept
+{
+    return {ltCHECK, indexHash(LedgerNameSpace::CHECK, id, emitnonce)};
+}
+
+Keylet
 depositPreauth(AccountID const& owner, AccountID const& preauthorized) noexcept
 {
     return {
