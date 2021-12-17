@@ -273,6 +273,16 @@ int out_len = 0;\
 #define amRIPPLEESCROW 17U
 #define amDELIVEREDAMOUNT 18U
 
+/****** Field and Type codes ******/
+#define ARRAY 0xF0U
+#define OBJECT 0xE0U
+#define MEMOS 0X9
+#define MEMO 0XA
+#define END 1
+#define MEMO_TYPE 0xC
+#define MEMO_DATA 0xD
+#define MEMO_FORMAT 0xE
+
 /**
  * RH NOTE -- PAY ATTENTION
  *
@@ -481,6 +491,73 @@ int out_len = 0;\
 
 #define _07_03_ENCODE_SIGNING_PUBKEY_NULL(buf_out )\
     ENCODE_SIGNING_PUBKEY_NULL(buf_out );
+
+#define ENCODE_FIELDS_SIZE 1U
+#define ENCODE_FIELDS(buf_out, type, field) \
+    {                                       \
+        uint8_t uf = field;                 \
+        buf_out[0] = type + (uf & 0x0FU);   \
+        buf_out += ENCODE_FIELDS_SIZE;      \
+    }
+
+#define COPY_BUFM(lhsbuf, lhsbuf_spos, rhsbuf, rhsbuf_spos, len, n) \
+    for (int i = 0; GUARDM(len, n), i < len; ++i)                   \
+        lhsbuf[lhsbuf_spos + i] = rhsbuf[rhsbuf_spos + i];
+
+
+/**
+ * Length will be data_len + 2 if the data length is less than or equal 192.
+ * Length will be data_len + 3 if the data length is greater than 192.
+*/
+#define ENCODE_STI_VL_COMMON(buf_out, data, data_len, field, n) \
+    {                                                           \
+        uint8_t *ptr = (uint8_t *)&data;                        \
+        uint8_t uf = field;                                     \
+        buf_out[0] = 0x70U + (uf & 0x0FU);                      \
+        if (data_len <= 192)                                    \
+        {                                                       \
+            buf_out[1] = data_len;                              \
+            COPY_BUFM(buf_out, 2, ptr, 0, data_len, n);         \
+            buf_out += (2 + data_len);                          \
+        }                                                       \
+        else                                                    \
+        {                                                       \
+            buf_out[1] = ((data_len - 193) / 256) + 193;        \
+            buf_out[2] = data_len - buf_out[1];                 \
+            COPY_BUFM(buf_out, 3, ptr, 0, data_len, n);         \
+            buf_out += (3 + data_len);                          \
+        }                                                       \
+    }
+
+#define _07_XX_ENCODE_STI_VL_COMMON(buf_out, data, data_len, field, n) \
+    ENCODE_STI_VL_COMMON(buf_out, data, data_len, field, n)
+
+#define _0F_09_ENCODE_MEMOS_SINGLE(buf_out, type_ptr, type_len, format_ptr, format_len, data_ptr, data_len)                \
+    {                                                                                                                      \
+        ENCODE_FIELDS(buf_out, ARRAY, MEMOS); /*Arr Start*/                           /* uint32  | size   1 */             \
+        ENCODE_FIELDS(buf_out, OBJECT, MEMO); /*Obj start*/                           /* uint32  | size   1 */             \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, type_ptr, type_len, MEMO_TYPE, 7);       /* STI_VL  | size   type_len + 2*/   \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, data_ptr, data_len, MEMO_DATA, 8);       /* STI_VL  | size   data_len + 2*/   \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, format_ptr, format_len, MEMO_FORMAT, 9); /* STI_VL  | size   format_len + 2*/ \
+        ENCODE_FIELDS(buf_out, OBJECT, END); /*Obj end*/                              /* uint32  | size   1 */             \
+        ENCODE_FIELDS(buf_out, ARRAY, END); /*Arr End*/                               /* uint32  | size   1 */             \
+    }
+
+#define _0F_09_ENCODE_MEMOS_DUO(buf_out, type1_ptr, type1_len, format1_ptr, format1_len, data1_ptr, data1_len, type2_ptr, type2_len, format2_ptr, format2_len, data2_ptr, data2_len) \
+    {                                                                                                                                                                                \
+        ENCODE_FIELDS(buf_out, ARRAY, MEMOS); /*Arr Start*/                             /* uint32  | size   1 */                                                                     \
+        ENCODE_FIELDS(buf_out, OBJECT, MEMO); /*Obj start*/                             /* uint32  | size   1 */                                                                     \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, type1_ptr, type1_len, MEMO_TYPE, 1);       /* STI_VL  | size   type_len + 2*/                                                           \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, data1_ptr, data1_len, MEMO_DATA, 2);       /* STI_VL  | size   data_len + 2*/                                                           \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, format1_ptr, format1_len, MEMO_FORMAT, 3); /* STI_VL  | size   format_len + 2 */                                                        \
+        ENCODE_FIELDS(buf_out, OBJECT, END); /*Obj end*/                                /* uint32  | size   1 */                                                                     \
+        ENCODE_FIELDS(buf_out, OBJECT, MEMO); /*Obj start*/                             /* uint32  | size   1 */                                                                     \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, type2_ptr, type2_len, MEMO_TYPE, 4);       /* STI_VL  | size   type_len + 2*/                                                           \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, data2_ptr, data2_len, MEMO_DATA, 5);       /* STI_VL  | size   data_len + 2*/                                                           \
+        _07_XX_ENCODE_STI_VL_COMMON(buf_out, format2_ptr, format2_len, MEMO_FORMAT, 6); /* STI_VL  | size   format_len + 2*/                                                         \
+        ENCODE_FIELDS(buf_out, OBJECT, END); /*Obj end*/                                /* uint32  | size   1 */                                                                     \
+        ENCODE_FIELDS(buf_out, ARRAY, END); /*Arr End*/                                 /* uint32  | size   1 */                                                                     \
+    }
 
 
 #define PREPARE_PAYMENT_SIMPLE_SIZE 237
