@@ -553,9 +553,11 @@ Config::loadFromString(std::string const& fileContents)
     if (getSingleSection(secConfig, SECTION_RELAY_VALIDATIONS, strTemp, j_))
     {
         if (boost::iequals(strTemp, "all"))
-            RELAY_UNTRUSTED_VALIDATIONS = true;
+            RELAY_UNTRUSTED_VALIDATIONS = 1;
         else if (boost::iequals(strTemp, "trusted"))
-            RELAY_UNTRUSTED_VALIDATIONS = false;
+            RELAY_UNTRUSTED_VALIDATIONS = 0;
+        else if (boost::iequals(strTemp, "drop_untrusted"))
+            RELAY_UNTRUSTED_VALIDATIONS = -1;
         else
             Throw<std::runtime_error>(
                 "Invalid value specified in [" SECTION_RELAY_VALIDATIONS
@@ -565,9 +567,11 @@ Config::loadFromString(std::string const& fileContents)
     if (getSingleSection(secConfig, SECTION_RELAY_PROPOSALS, strTemp, j_))
     {
         if (boost::iequals(strTemp, "all"))
-            RELAY_UNTRUSTED_PROPOSALS = true;
+            RELAY_UNTRUSTED_PROPOSALS = 1;
         else if (boost::iequals(strTemp, "trusted"))
-            RELAY_UNTRUSTED_PROPOSALS = false;
+            RELAY_UNTRUSTED_PROPOSALS = 0;
+        else if (boost::iequals(strTemp, "drop_untrusted"))
+            RELAY_UNTRUSTED_PROPOSALS = -1;
         else
             Throw<std::runtime_error>(
                 "Invalid value specified in [" SECTION_RELAY_PROPOSALS
@@ -615,6 +619,11 @@ Config::loadFromString(std::string const& fileContents)
             FETCH_DEPTH = 10;
     }
 
+    // By default, validators don't have pathfinding enabled, unless it is
+    // explicitly requested by the server's admin.
+    if (exists(SECTION_VALIDATION_SEED) || exists(SECTION_VALIDATOR_TOKEN))
+        PATH_SEARCH_MAX = 0;
+
     if (getSingleSection(secConfig, SECTION_PATH_SEARCH_OLD, strTemp, j_))
         PATH_SEARCH_OLD = beast::lexicalCastThrow<int>(strTemp);
     if (getSingleSection(secConfig, SECTION_PATH_SEARCH, strTemp, j_))
@@ -627,8 +636,44 @@ Config::loadFromString(std::string const& fileContents)
     if (getSingleSection(secConfig, SECTION_DEBUG_LOGFILE, strTemp, j_))
         DEBUG_LOGFILE = strTemp;
 
+    if (getSingleSection(secConfig, SECTION_SWEEP_INTERVAL, strTemp, j_))
+    {
+        SWEEP_INTERVAL = beast::lexicalCastThrow<std::size_t>(strTemp);
+
+        if (SWEEP_INTERVAL < 10 || SWEEP_INTERVAL > 600)
+            Throw<std::runtime_error>("Invalid " SECTION_SWEEP_INTERVAL
+                                      ": must be between 10 and 600 inclusive");
+    }
+
     if (getSingleSection(secConfig, SECTION_WORKERS, strTemp, j_))
-        WORKERS = beast::lexicalCastThrow<std::size_t>(strTemp);
+    {
+        WORKERS = beast::lexicalCastThrow<int>(strTemp);
+
+        if (WORKERS < 1 || WORKERS > 1024)
+            Throw<std::runtime_error>(
+                "Invalid " SECTION_WORKERS
+                ": must be between 1 and 1024 inclusive.");
+    }
+
+    if (getSingleSection(secConfig, SECTION_IO_WORKERS, strTemp, j_))
+    {
+        IO_WORKERS = beast::lexicalCastThrow<int>(strTemp);
+
+        if (IO_WORKERS < 1 || IO_WORKERS > 1024)
+            Throw<std::runtime_error>(
+                "Invalid " SECTION_IO_WORKERS
+                ": must be between 1 and 1024 inclusive.");
+    }
+
+    if (getSingleSection(secConfig, SECTION_PREFETCH_WORKERS, strTemp, j_))
+    {
+        PREFETCH_WORKERS = beast::lexicalCastThrow<int>(strTemp);
+
+        if (PREFETCH_WORKERS < 1 || PREFETCH_WORKERS > 1024)
+            Throw<std::runtime_error>(
+                "Invalid " SECTION_PREFETCH_WORKERS
+                ": must be between 1 and 1024 inclusive.");
+    }
 
     if (getSingleSection(secConfig, SECTION_COMPRESSION, strTemp, j_))
         COMPRESSION = beast::lexicalCastThrow<bool>(strTemp);

@@ -25,6 +25,7 @@
 namespace ripple {
 
 JobQueue::JobQueue(
+    int threadCount,
     beast::insight::Collector::ptr const& collector,
     beast::Journal journal,
     Logs& logs,
@@ -33,11 +34,13 @@ JobQueue::JobQueue(
     , m_lastJob(0)
     , m_invalidJobData(JobTypes::instance().getInvalid(), collector, logs)
     , m_processCount(0)
-    , m_workers(*this, &perfLog, "JobQueue", 0)
+    , m_workers(*this, &perfLog, "JobQueue", threadCount)
     , m_cancelCallback(std::bind(&JobQueue::isStopping, this))
     , perfLog_(perfLog)
     , m_collector(collector)
 {
+    JLOG(m_journal.info()) << "Using " << threadCount << "  threads";
+
     hook = m_collector->make_hook(std::bind(&JobQueue::collect, this));
     job_count = m_collector->make_gauge("job_count");
 
@@ -91,7 +94,9 @@ JobQueue::addRefCountedJob(
 
     // FIXME: Workaround incorrect client shutdown ordering
     // do not add jobs to a queue with no threads
-    assert(type == jtCLIENT || m_workers.getNumberOfThreads() > 0);
+    assert(
+        (type >= jtCLIENT && type <= jtCLIENT_WEBSOCKET) ||
+        m_workers.getNumberOfThreads() > 0);
 
     {
         std::lock_guard lock(m_mutex);
@@ -139,29 +144,6 @@ JobQueue::getJobCountGE(JobType t) const
     return ret;
 }
 
-void
-JobQueue::setThreadCount(int c, bool const standaloneMode)
-{
-    if (standaloneMode)
-    {
-        c = 1;
-    }
-    else if (c == 0)
-    {
-        c = static_cast<int>(std::thread::hardware_concurrency());
-        c = 2 + std::min(c, 4);  // I/O will bottleneck
-        JLOG(m_journal.info()) << "Auto-tuning to " << c
-                               << " validation/transaction/proposal threads.";
-    }
-    else
-    {
-        JLOG(m_journal.info()) << "Configured " << c
-                               << " validation/transaction/proposal threads.";
-    }
-
-    m_workers.setNumberOfThreads(c);
-}
-
 std::unique_ptr<LoadEvent>
 JobQueue::makeLoadEvent(JobType t, std::string const& name)
 {
@@ -188,15 +170,9 @@ JobQueue::addLoadEvents(JobType t, int count, std::chrono::milliseconds elapsed)
 bool
 JobQueue::isOverloaded()
 {
-    int count = 0;
-
-    for (auto& x : m_jobData)
-    {
-        if (x.second.load().isOver())
-            ++count;
-    }
-
-    return count > 0;
+    return std::any_of(m_jobData.begin(), m_jobData.end(), [](auto& entry) {
+        return entry.second.load().isOver();
+    });
 }
 
 Json::Value

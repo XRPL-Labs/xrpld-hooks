@@ -72,6 +72,7 @@
 #include <mutex>
 #include <string>
 #include <tuple>
+#include <unordered_map>
 #include <utility>
 
 namespace ripple {
@@ -2305,7 +2306,7 @@ NetworkOPsImp::recvValidation(
 
     // We will always relay trusted validations; if configured, we will
     // also relay all untrusted validations.
-    return app_.config().RELAY_UNTRUSTED_VALIDATIONS || val->isTrusted();
+    return app_.config().RELAY_UNTRUSTED_VALIDATIONS == 1 || val->isTrusted();
 }
 
 Json::Value
@@ -2629,6 +2630,11 @@ NetworkOPsImp::getServerInfo(bool human, bool admin, bool counters)
             if (std::abs(closeOffset.count()) >= 60)
                 l[jss::close_time_offset] = closeOffset.count();
 
+#if RIPPLED_REPORTING
+            std::int64_t const dbAge =
+                std::max(m_ledgerMaster.getValidatedLedgerAge().count(), 0L);
+            l[jss::age] = Json::UInt(dbAge);
+#else
             constexpr std::chrono::seconds highAgeThreshold{1000000};
             if (m_ledgerMaster.haveValidated())
             {
@@ -2648,6 +2654,7 @@ NetworkOPsImp::getServerInfo(bool human, bool admin, bool counters)
                         Json::UInt(age < highAgeThreshold ? age.count() : 0);
                 }
             }
+#endif
         }
 
         if (valid)
@@ -2992,7 +2999,7 @@ NetworkOPsImp::reportFeeChange()
     if (f != mLastFeeSummary)
     {
         m_job_queue.addJob(
-            jtCLIENT, "reportFeeChange->pubServer", [this](Job&) {
+            jtCLIENT_FEE_CHANGE, "reportFeeChange->pubServer", [this](Job&) {
                 pubServer();
             });
     }
@@ -3002,7 +3009,7 @@ void
 NetworkOPsImp::reportConsensusStateChange(ConsensusPhase phase)
 {
     m_job_queue.addJob(
-        jtCLIENT,
+        jtCLIENT_CONSENSUS,
         "reportConsensusStateChange->pubConsensus",
         [this, phase](Job&) { pubConsensus(phase); });
 }
@@ -3395,7 +3402,7 @@ NetworkOPsImp::addAccountHistoryJob(SubAccountHistoryInfoWeak subInfo)
     }
 
     app_.getJobQueue().addJob(
-        jtCLIENT,
+        jtCLIENT_ACCT_HIST,
         "AccountHistoryTxStream",
         [this, dbType = databaseType, subInfo](Job&) {
             auto const& accountId = subInfo.index_->accountId_;
@@ -4079,7 +4086,7 @@ NetworkOPsImp::getBookPage(
     Json::Value& jvOffers =
         (jvResult[jss::offers] = Json::Value(Json::arrayValue));
 
-    std::map<AccountID, STAmount> umBalance;
+    std::unordered_map<AccountID, STAmount> umBalance;
     const uint256 uBookBase = getBookBase(book);
     const uint256 uBookEnd = getQualityNext(uBookBase);
     uint256 uTipIndex = uBookBase;

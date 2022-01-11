@@ -146,8 +146,10 @@ public:
     std::size_t NETWORK_QUORUM = 1;
 
     // Peer networking parameters
-    bool RELAY_UNTRUSTED_VALIDATIONS = true;
-    bool RELAY_UNTRUSTED_PROPOSALS = false;
+    // 1 = relay, 0 = do not relay (but process), -1 = drop completely (do NOT
+    // process)
+    int RELAY_UNTRUSTED_VALIDATIONS = 1;
+    int RELAY_UNTRUSTED_PROPOSALS = 0;
 
     // True to ask peers not to relay current IP.
     bool PEER_PRIVATE = false;
@@ -160,7 +162,18 @@ public:
     std::size_t PEERS_OUT_MAX = 0;
     std::size_t PEERS_IN_MAX = 0;
 
-    // Path searching
+    // Path searching: these were reasonable default values at some point but
+    //                 further research is needed to decide if they still are
+    //                 and whether all of them are needed.
+    //
+    //                 The performance and resource consumption of a server can
+    //                 be dramatically impacted by changing these configuration
+    //                 options; higher values result in exponentially higher
+    //                 resource usage.
+    //
+    //                 Servers operating as validators disable path finding by
+    //                 default by setting the `PATH_SEARCH_MAX` option to 0
+    //                 unless it is explicitly set in the configuration file.
     int PATH_SEARCH_OLD = 7;
     int PATH_SEARCH = 7;
     int PATH_SEARCH_FAST = 2;
@@ -201,8 +214,17 @@ public:
     // Amendment majority time
     std::chrono::seconds AMENDMENT_MAJORITY_TIME = defaultAmendmentMajorityTime;
 
-    // Thread pool configuration
-    std::size_t WORKERS = 0;
+    // Thread pool configuration (0 = choose for me)
+    int WORKERS = 0;           // jobqueue thread count. default: upto 6
+    int IO_WORKERS = 0;        // io svc thread count. default: 2
+    int PREFETCH_WORKERS = 0;  // prefetch thread count. default: 4
+
+    // Can only be set in code, specifically unit tests
+    bool FORCE_MULTI_THREAD = false;
+
+    // Normally the sweep timer is automatically deduced based on the node
+    // size, but we allow admins to explicitly set it in the config.
+    std::optional<int> SWEEP_INTERVAL;
 
     // Reduce-relay - these parameters are experimental.
     // Enable reduce-relay features
