@@ -514,13 +514,10 @@ hook::setHookState(
 
     if (!oldHookState) {
         // Add the hook to the account's directory if it wasn't there already
-        auto const page = dirAdd(
-            view,
+        auto const page = view.dirInsert(
             hookStateDirKeylet,
             hookStateKeylet.key,
-            false,
-            describeOwnerDir(acc),
-            j);
+            describeOwnerDir(acc));
 
         JLOG(j.trace()) << "HookInfo[" << HR_ACC() << "]: "
             << "Create/update hook state: "
@@ -1686,15 +1683,19 @@ DEFINE_HOOK_FUNCTION(
     {
 
         uint256 hash;
-        if (!hash.SetHexExact((const char*)(memory + read_ptr)))
+        if (!hash.parseHex((const char*)(memory + read_ptr)))
             return INVALID_ARGUMENT;
 
         ripple::error_code_i ec { ripple::error_code_i::rpcUNKNOWN };
-        std::shared_ptr<ripple::Transaction> hTx = applyCtx.app.getMasterTransaction().fetch(hash, ec);
-        if (!hTx)
+
+        auto hTx = applyCtx.app.getMasterTransaction().fetch(hash, ec);
+
+        if (!std::holds_alternative<
+                std::pair<std::shared_ptr<ripple::Transaction>, std::shared_ptr<ripple::TxMeta>>>>(hTx))
             return DOESNT_EXIST;
 
-        slot_value = hTx->getSTransaction();
+        slot_value = std::get<std::pair<std::shared_ptr<ripple::Transaction>, std::shared_ptr<ripple::TxMeta>>>(hTx)
+            .first->getSTransaction();
     }
     else
         return DOESNT_EXIST;

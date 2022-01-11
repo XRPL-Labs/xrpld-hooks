@@ -1210,8 +1210,7 @@ SetHook::destroyNamespace(
             dirKeylet.key,
             sleDirNode,
             uDirEntry,
-            dirEntry,
-            ctx.j)) {
+            dirEntry)) {
             JLOG(ctx.j.fatal())
                 << "HookSet[" << HS_ACC() << "]: DeleteState "
                 << "account directory missing " << account;
@@ -1252,8 +1251,7 @@ SetHook::destroyNamespace(
         }
 
 
-    } while (cdirNext(
-        view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry, ctx.j));
+    } while (cdirNext(view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry));
 
     return tesSUCCESS;
 }
@@ -1290,13 +1288,10 @@ SetHook::destroyNamespace(
     if (!newDirSLE)\
     {\
         newDirSLE = std::make_shared<SLE>(*newDirKeylet);\
-        auto const page = dirAdd(\
-            view(),\
+        auto const page = view().dirInsert(\
             ownerDirKeylet,\
             newDirKeylet->key,\
-            false,\
-            describeOwnerDir(account_),\
-            ctx.j);\
+            describeOwnerDir(account_));\
         JLOG(ctx.j.trace()) << "Create state dir for account " << toBase58(account_)\
                          << ": " << (page ? "success" : "failure");\
         if (!page)\

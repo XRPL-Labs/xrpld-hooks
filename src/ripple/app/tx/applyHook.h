@@ -1,3 +1,5 @@
+#ifndef APPLY_HOOK_INCLUDED
+#define APPLY_HOOK_INCLUDED
 #include <ripple/basics/Blob.h>
 #include <ripple/protocol/TER.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
@@ -552,4 +554,4 @@ namespace hook {
 
 }
 
-
+#endif

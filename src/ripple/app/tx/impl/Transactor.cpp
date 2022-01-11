@@ -392,18 +392,18 @@ Transactor::checkSeqProxy(
     SeqProxy const a_seq = SeqProxy::sequence((*sle)[sfSequence]);
 
     // pass all emitted tx provided their seq is 0
-    if (ctx.view.rules().enabled(featureHooks) &&
-        hook::isEmittedTxn(ctx.tx))
+    if (view.rules().enabled(featureHooks) &&
+        hook::isEmittedTxn(tx))
     {
         // this is more strictly enforced in the emit() hook api
         // here this is only acting as a sanity check in case of bugs
-        if (!ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+        if (!tx.isFieldPresent(sfFirstLedgerSequence))
             return tefINTERNAL;
         return tesSUCCESS;
     }
 
     // reserved for emitted tx only at this time
-    if (ctx.tx.isFieldPresent(sfFirstLedgerSequence))
+    if (tx.isFieldPresent(sfFirstLedgerSequence))
         return tefINTERNAL;
 
     if (t_seqProx.isSeq())
@@ -495,7 +495,7 @@ Transactor::consumeSeqProxy(SLE::pointer const& sleAccount)
     // RH TODO: determine what interactions between hooks and tickets might cause issues
     // do not update sequence of sfAccountTxnID for emitted tx
     if (ctx_.emitted()) 
-        return;    
+        return tesSUCCESS;
 
     SeqProxy const seqProx = ctx_.tx.getSeqProxy();
     if (seqProx.isSeq())

@@ -1440,8 +1440,7 @@ TxQ::accept(Application& app, OpenView& view)
                 emittedDirKeylet.key,
                 sleDirNode,
                 uDirEntry,
-                dirEntry,
-                j_))
+                dirEntry))
             break;
 
         do
@@ -1549,7 +1548,7 @@ TxQ::accept(Application& app, OpenView& view)
                 JLOG(j_.fatal()) << "EmittedTxn Processing: Failure: " << e.what() << "\n";
             }
 
-        } while (cdirNext(view, emittedDirKeylet.key, sleDirNode, uDirEntry, dirEntry, j_));
+        } while (cdirNext(view, emittedDirKeylet.key, sleDirNode, uDirEntry, dirEntry));
 
     } while(0);
 

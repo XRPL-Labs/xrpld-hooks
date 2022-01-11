@@ -6,6 +6,8 @@ endif ()
 
 project (rippled)
 
+set(Boost_NO_BOOST_CMAKE ON)
+
 # make GIT_COMMIT_HASH define available to all sources
 find_package(Git)
 if(Git_FOUND)
