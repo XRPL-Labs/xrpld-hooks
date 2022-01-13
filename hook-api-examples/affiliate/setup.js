@@ -1,6 +1,6 @@
 if (process.argv.length < 5)
 {
-    console.log("Usage: node pay <source family seed> <amount xrp> <destination account>")
+    console.log("Usage: node setup <source family seed> <destination account>")
     process.exit(1)
 }
 
@@ -14,8 +14,7 @@ const pair = keypairs.deriveKeypair(secret)
 
 
 const address = keypairs.deriveAddress(pair.publicKey)
-const amount = BigInt(process.argv[3]) * 1000000n
-const dest = process.argv[4];
+const dest = process.argv[3];
 
 const bin = require('ripple-binary-codec')
 
