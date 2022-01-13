@@ -15,6 +15,7 @@
 #include <vector>
 #include <utility>
 #include "support/span.h"
+#include "ripple/protocol/tokens.h"
 
 using namespace ripple;
 
@@ -1690,12 +1691,11 @@ DEFINE_HOOK_FUNCTION(
 
         auto hTx = applyCtx.app.getMasterTransaction().fetch(hash, ec);
 
-        if (!std::holds_alternative<
-                std::pair<std::shared_ptr<ripple::Transaction>, std::shared_ptr<ripple::TxMeta>>>>(hTx))
+        if (auto const* p =
+            std::get_if<std::pair<std::shared_ptr<ripple::Transaction>, std::shared_ptr<ripple::TxMeta>>>(&hTx))
+            slot_value = p->first->getSTransaction();
+        else
             return DOESNT_EXIST;
-
-        slot_value = std::get<std::pair<std::shared_ptr<ripple::Transaction>, std::shared_ptr<ripple::TxMeta>>>(hTx)
-            .first->getSTransaction();
     }
     else
         return DOESNT_EXIST;
@@ -2940,7 +2940,7 @@ DEFINE_HOOK_FUNCTION(
     if (read_len != 20)
         return INVALID_ARGUMENT;
 
-    std::string raddr = base58EncodeToken(TokenType::AccountID, memory + read_ptr, read_len);
+    std::string raddr = encodeBase58Token(TokenType::AccountID, memory + read_ptr, read_len);
 
     if (write_len < raddr.size())
         return TOO_SMALL;

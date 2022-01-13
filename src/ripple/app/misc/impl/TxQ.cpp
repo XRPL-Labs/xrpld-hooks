@@ -71,11 +71,11 @@ getLastLedgerSequence(STTx const& tx)
     return tx.getFieldU32(sfLastLedgerSequence);
 }
 
-static boost::optional<LedgerIndex>
+static std::optional<LedgerIndex>
 getFirstLedgerSequence(STTx const& tx)
 {
     if (!tx.isFieldPresent(sfFirstLedgerSequence))
-        return boost::none;
+        return std::nullopt;
     return tx.getFieldU32(sfFirstLedgerSequence);
 }
 
@@ -284,17 +284,13 @@ TxQ::MaybeTx::MaybeTx(
     , feeLevel(feeLevel_)
     , txID(txID_)
     , account(txn_->getAccountID(sfAccount))
+    , firstValid(getFirstLedgerSequence(*txn_))
     , lastValid(getLastLedgerSequence(*txn_))
     , seqProxy(txn_->getSeqProxy())
     , retriesRemaining(retriesAllowed)
     , flags(flags_)
     , pfresult(pfresult_)
 {
-    firstValid = getFirstLedgerSequence(*txn);
-    lastValid  = getLastLedgerSequence(*txn);
-
-    if (txn->isFieldPresent(sfAccountTxnID))
-        priorTxID = txn->getFieldH256(sfAccountTxnID);
 }
 
 std::pair<TER, bool>

@@ -53,6 +53,8 @@ class SetHook : public Transactor
 {
 
 public:
+    static constexpr ConsequencesFactoryType ConsequencesFactory{Blocker};
+
     explicit SetHook(ApplyContext& ctx) : Transactor(ctx)
     {
     }
