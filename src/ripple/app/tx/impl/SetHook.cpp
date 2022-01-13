@@ -38,12 +38,7 @@
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/OpenLedger.h>
 #include <functional>
-#include "common/value.h"
-#include "vm/configure.h"
-#include "vm/vm.h"
-#include "common/errcode.h"
-#include "runtime/hostfunc.h"
-#include "runtime/importobj.h"
+#include <wasmedge.h>
 
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
 namespace ripple {

@@ -14,8 +14,8 @@
 #include <any>
 #include <vector>
 #include <utility>
-#include "support/span.h"
-#include "ripple/protocol/tokens.h"
+#include <wasmedge.h>
+#include <ripple/protocol/tokens.h>
 
 using namespace ripple;
 

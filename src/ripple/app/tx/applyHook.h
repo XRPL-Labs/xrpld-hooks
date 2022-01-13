@@ -12,12 +12,8 @@
 #include <memory>
 #include <vector>
 #include <ripple/protocol/digest.h>
-#include "common/value.h"
-#include "vm/configure.h"
-#include "vm/vm.h"
-#include "common/errcode.h"
-#include "runtime/hostfunc.h"
-#include "runtime/importobj.h"
+#include <wasmedge.h>
+#include <ripple/app/tx/impl/applyHookMacro.h>
 
 namespace hook {
     struct HookContext;
@@ -125,73 +121,6 @@ namespace hook_api {
     const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
 
-    // RH TODO: consider replacing macros with templates, if SSVM compatible templates even exist
-
-    #define LPAREN (
-    #define RPAREN )
-    #define EXPAND(...) __VA_ARGS__
-    #define CAT(a, ...) PRIMITIVE_CAT(a, __VA_ARGS__)
-    #define PRIMITIVE_CAT(a, ...) a ## __VA_ARGS__
-    #define SPLIT_1(D) EXPAND(CAT(SPLIT_, D))
-    #define SPLIT_uint32_t
-    #define SPLIT_int32_t
-    #define SPLIT_uint64_t
-    #define SPLIT_int64_t
-    #define SPLIT_2(a, b) SPLIT_1(a), SPLIT_1(b)
-    #define SPLIT_3(a, ...) SPLIT_1(a), SPLIT_2(__VA_ARGS__)
-    #define SPLIT_4(a, ...) SPLIT_1(a), SPLIT_3(__VA_ARGS__)
-    #define SPLIT_5(a, ...) SPLIT_1(a), SPLIT_4(__VA_ARGS__)
-    #define SPLIT_6(a, ...) SPLIT_1(a), SPLIT_5(__VA_ARGS__)
-    #define SPLIT_7(a, ...) SPLIT_1(a), SPLIT_6(__VA_ARGS__)
-    #define SPLIT_8(a, ...) SPLIT_1(a), SPLIT_7(__VA_ARGS__)
-    #define SPLIT_9(a, ...) SPLIT_1(a), SPLIT_8(__VA_ARGS__)
-    #define SPLIT_10(a, ...) SPLIT_1(a), SPLIT_9(__VA_ARGS__)
-    #define EMPTY()
-    #define DEFER(id) id EMPTY()
-    #define OBSTRUCT(...) __VA_ARGS__ DEFER(EMPTY)()
-    #define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
-    #define VA_NARGS(__drop, ...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
-    #define STRIP_TYPES(...) DEFER(CAT(SPLIT_,VA_NARGS(NULL, __VA_ARGS__))CAT(LPAREN OBSTRUCT(__VA_ARGS__) RPAREN))
-
-    // The above macros allow types to be stripped off a pramater list, used below for proxying call through class
-
-    #define DECLARE_HOOK_FUNCTION(R, F, ...)\
-        R F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx, __VA_ARGS__);\
-        class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
-        {\
-            public:\
-            hook::HookContext& hookCtx;\
-            WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
-            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx, __VA_ARGS__)\
-            {\
-                R return_code = hook_api::F(hookCtx, *memoryCtx, STRIP_TYPES(__VA_ARGS__));\
-                if (return_code == RC_ROLLBACK || return_code == RC_ACCEPT)\
-                    return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
-                return return_code;\
-            }\
-        };
-
-    #define DECLARE_HOOK_FUNCNARG(R, F)\
-        R F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx);\
-        class WasmFunction_##F : public SSVM::Runtime::HostFunction<WasmFunction_##F>\
-        {\
-            public:\
-            hook::HookContext& hookCtx;\
-            WasmFunction_##F(hook::HookContext& ctx) : hookCtx(ctx) {};\
-            SSVM::Expect<R> body(SSVM::Runtime::Instance::MemoryInstance* memoryCtx)\
-            {\
-                R return_code = hook_api::F(hookCtx, *memoryCtx);\
-                if (return_code == RC_ROLLBACK || return_code == RC_ACCEPT)\
-                    return SSVM::Unexpect(SSVM::ErrCode::Terminated);\
-                return return_code;\
-            }\
-        };
-
-    #define DEFINE_HOOK_FUNCTION(R, F, ...)\
-        R hook_api::F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx, __VA_ARGS__)
-
-    #define DEFINE_HOOK_FUNCNARG(R, F)\
-        R hook_api::F(hook::HookContext& hookCtx, SSVM::Runtime::Instance::MemoryInstance& memoryCtx)
 
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
@@ -443,10 +372,26 @@ namespace hook {
     // finalize the changes the hook made to the ledger
     void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext&, uint8_t );
 
-    #define ADD_HOOK_FUNCTION(F, ctx)\
-        addHostFunc(#F, std::make_unique<hook_api::WasmFunction_##F>(ctx))
 
-    class HookModule : public SSVM::Runtime::ImportObject
+    // create these once at boot and keep them
+    WasmEdge_String exportName = WasmEdge_StringCreateByCString("env");
+    WasmEdge_String tableName = WasmEdge_StringCreateByCString("table");
+    WasmEdge_TableTypeContext* tableType = 
+        WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Min = 10, .Max = 20});
+    WasmEdge_MemoryTypeContext* memType =
+        WasmEdge_MemoryTypeCreate({.HasMax = true, .Min = 1, .Max = 1});
+    WasmEdge_String memName = WasmEdge_StringCreateByCString("memory");
+
+    // RH TODO: call destruct for these on rippled shutdown
+
+    #define ADD_HOOK_FUNCTION(F, ctx)\
+    {\
+        WasmEdge_FunctionInstanceContext* hf = WasmEdge_FunctionInstanceCreate(\
+                WasmFunctionType##F, WasmFunction##F, (void*)(&ctx), 0);\
+        WasmEdge_ImportObjectAddFunction(importObj, WasmFunctionName##F, hf);\
+    }
+
+    class HookModule
     {
    //RH TODO UPTO put the hook-api functions here!
    //then wrap/proxy them with the appropriate DECLARE_HOOK classes
@@ -454,10 +399,11 @@ namespace hook {
     public:
         HookContext hookCtx;
 
-        HookModule(HookContext& ctx) : SSVM::Runtime::ImportObject("env"), hookCtx(ctx)
+        HookModule(HookContext& ctx) : hookCtx(ctx)
         {
             ctx.module = this;
 
+            WasmEdge_ImportObjectContext* importObj = WasmEdge_ImportObjectCreate(exportName);
             ADD_HOOK_FUNCTION(_g, ctx);
             ADD_HOOK_FUNCTION(accept, ctx);
             ADD_HOOK_FUNCTION(rollback, ctx);
@@ -543,11 +489,10 @@ namespace hook {
             ADD_HOOK_FUNCTION(trace_num, ctx);
             ADD_HOOK_FUNCTION(trace_float, ctx);
 
-            SSVM::AST::Limit TabLimit(10, 20);
-            addHostTable("table", std::make_unique<SSVM::Runtime::Instance::TableInstance>(
-                    SSVM::ElemType::FuncRef, TabLimit));
-            SSVM::AST::Limit MemLimit(1, 1);
-            addHostMemory("memory", std::make_unique<SSVM::Runtime::Instance::MemoryInstance>(MemLimit));
+            WasmEdge_TableInstanceContext* hostTable = WasmEdge_TableInstanceCreate(tableType);
+            WasmEdge_ImportObjectAddTable(importObj, tableName, hostTable);
+            WasmEdge_MemoryInstanceContext* hostMem  = WasmEdge_MemoryInstanceCreate(memType);
+            WasmEdge_ImportObjectAddMemory(importObj, memName, hostMem);
         }
         virtual ~HookModule() = default;
     };
