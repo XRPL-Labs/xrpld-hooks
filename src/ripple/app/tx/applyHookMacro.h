@@ -31,16 +31,16 @@
 #define DELIM_2 ;
 #define DELIM(S) DELIM_##S
 
-#define FOR_VAR_1(T, D) SEP(T, D)
-#define FOR_VAR_2(T, S, a, b)    FOR_VAR_1(T, a) DELIM(S) FOR_VAR_1(T, b)
-#define FOR_VAR_3(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_2(T, S, __VA_ARGS__)
-#define FOR_VAR_4(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_3(T, S, __VA_ARGS__)
-#define FOR_VAR_5(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_4(T, S, __VA_ARGS__)
-#define FOR_VAR_6(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_5(T, S, __VA_ARGS__)
-#define FOR_VAR_7(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_6(T, S, __VA_ARGS__)
-#define FOR_VAR_8(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_7(T, S, __VA_ARGS__)
-#define FOR_VAR_9(T, S, a, ...)  FOR_VAR_1(T, a) DELIM(S) FOR_VAR_8(T, S, __VA_ARGS__)
-#define FOR_VAR_10(T, S, a, ...) FOR_VAR_1(T, a) DELIM(S) FOR_VAR_9(T, S, __VA_ARGS__)
+#define FOR_VAR_1(T, S, D) SEP(T, D)
+#define FOR_VAR_2(T, S, a, b)    FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_1(T, S, b)
+#define FOR_VAR_3(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_2(T, S, __VA_ARGS__)
+#define FOR_VAR_4(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_3(T, S, __VA_ARGS__)
+#define FOR_VAR_5(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_4(T, S, __VA_ARGS__)
+#define FOR_VAR_6(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_5(T, S, __VA_ARGS__)
+#define FOR_VAR_7(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_6(T, S, __VA_ARGS__)
+#define FOR_VAR_8(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_7(T, S, __VA_ARGS__)
+#define FOR_VAR_9(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_8(T, S, __VA_ARGS__)
+#define FOR_VAR_10(T, S, a, ...) FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_9(T, S, __VA_ARGS__)
 #define FOR_VARS(T, S, ...)\
     DEFER(CAT(FOR_VAR_,VA_NARGS(NULL, __VA_ARGS__))CAT(LPAREN T COMMA S COMMA OBSTRUCT(__VA_ARGS__) RPAREN))
 
@@ -75,6 +75,7 @@
     CAT2(TYP_,T)
 
 #define DECLARE_HOOK_FUNCTION(R, F, ...)\
+    R F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx, __VA_ARGS__);\
     WasmEdge_Result WasmFunction##F(\
         void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
         const WasmEdge_Value *in, WasmEdge_Value *out)\
@@ -88,16 +89,16 @@
         out[0] = RET_ASSIGN(R, return_code);\
         return WasmEdge_Result_Success;\
     };\
-    WasmEdge_FunctionTypeContext* WasmFunctionType##F = NULL;\
-    {\
-        enum WasmEdge_ValType r =  { WASM_VAL_TYPE(R, dummy) };\
-        enum WasmEdge_ValType p =  { FOR_VARS(WASM_VAL_TYPE, 0, __VA_ARGS__) };\
-        WasmFunctionType##F = WasmEdge_FunctionTypeCreate(p, VA_NARGS(NULL, __VA_ARGS__), r, 1);\
-    };\
+    WasmEdge_ValType WasmFunctionParams##F[] = { FOR_VARS(WASM_VAL_TYPE, 0, __VA_ARGS__) };\
+    WasmEdge_ValType WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
+    WasmEdge_FunctionTypeContext* WasmFunctionType##F = WasmEdge_FunctionTypeCreate(\
+            WasmFunctionParams##F, VA_NARGS(NULL, __VA_ARGS__),\
+            WasmFunctionResult##F, 1);\
     WasmEdge_String WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);
 
 
 #define DECLARE_HOOK_FUNCNARG(R, F)\
+    R F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx);\
     WasmEdge_Result WasmFunction_##F(\
         void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
         const WasmEdge_Value *in, WasmEdge_Value *out)\
@@ -106,15 +107,12 @@
         R return_code = hook_api::F(*hookCtx, *memCtx);\
         if (return_code == RC_ROLLBACK || return_code == RC_ACCEPT)\
             return WasmEdge_Result_Terminate;\
-        Out[0] = CAT2(RET_,R(return_code));\
+        out[0] = CAT2(RET_,R(return_code));\
         return WasmEdge_Result_Success;\
     };\
-    WasmEdge_FunctionTypeContext* WasmFunctionType##F = NULL;\
-    {\
-        enum WasmEdge_ValType r =  { WASM_VAL_TYPE(R, dummy) };\
-        enum WasmEdge_ValType p =  { };\
-        WasmFunctionType##F = WasmEdge_FunctionTypeCreate(p, 0, r, 1);\
-    }\
+    WasmEdge_ValType WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
+    WasmEdge_FunctionTypeContext* WasmFunctionType##F = \
+        WasmEdge_FunctionTypeCreate({}, 0, WasmFunctionResult##F, 1);\
     WasmEdge_String WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);
 
 #define DEFINE_HOOK_FUNCTION(R, F, ...)\
@@ -123,3 +121,107 @@
 #define DEFINE_HOOK_FUNCNARG(R, F)\
         R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx)
 
+
+
+
+
+#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
+    (std::ceil( (double)state_count/(double)5.0 ))
+
+#define HOOK_SETUP()\
+    [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
+    [[maybe_unused]] auto& view = applyCtx.view();\
+    [[maybe_unused]] auto j = applyCtx.app.journal("View");\
+    [[maybe_unused]] unsigned char* memory = WasmEdge_MemoryInstanceGetPointer(memoryCtx, 0, 0);\
+    [[maybe_unused]] const uint64_t memory_length = WasmEdge_MemoryInstanceGetPageSize(memoryCtx);
+
+#define WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len,\
+        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+{\
+    int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
+    if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
+    {\
+        JLOG(j.warn())\
+            << "HookError[" << HC_ACC() << "]: "\
+            << __func__ << " tried to retreive blob of " << host_src_len\
+            << " bytes past end of wasm memory";\
+        return OUT_OF_BOUNDS;\
+    }\
+    WasmEdge_MemoryInstanceGetPointer(memoryCtx, host_src_ptr, guest_dst_ptr, bytes_to_write);\
+    bytes_written += bytes_to_write;\
+}
+
+#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
+        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
+{\
+    int64_t bytes_written = 0;\
+    WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len, host_src_ptr,\
+            host_src_len, host_memory_ptr, guest_memory_length);\
+    return bytes_written;\
+}
+
+#define RETURN_HOOK_TRACE(read_ptr, read_len, t)\
+{\
+    int rl = read_len;\
+    if (rl > 1024)\
+        rl = 1024;\
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
+    {\
+        return OUT_OF_BOUNDS;\
+    }\
+    else if (read_ptr == 0 && read_len == 0)\
+    {\
+        JLOG(j.trace()) \
+            << "HookTrace[" << HC_ACC() << "]: " << t;\
+    }\
+    else if (is_UTF16LE(memory + read_ptr, rl))\
+    {\
+        uint8_t output[1024];\
+        int len = rl / 2;\
+        for (int i = 0; i < len && i < 512; ++i)\
+            output[i] = memory[read_ptr + i * 2];\
+        JLOG(j.trace()) \
+            << "HookTrace[" << HC_ACC() << "]: "\
+            << std::string_view((const char*)output, (size_t)(len)) << " "\
+            << t;\
+    }\
+    else\
+    {\
+        JLOG(j.trace()) \
+            << "HookTrace[" << HC_ACC() << "]: "\
+            << std::string_view((const char*)(memory + read_ptr), (size_t)rl) << " "\
+            << t;\
+    }\
+    return 0;\
+}
+// ptr = pointer inside the wasm memory space
+#define NOT_IN_BOUNDS(ptr, len, memory_length)\
+    (ptr > memory_length || \
+     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
+
+#define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
+{\
+    if (read_len > 256) read_len = 256;\
+    if (read_ptr) {\
+        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
+            JLOG(j.warn())\
+                << "HookError[" << HC_ACC() << "]: "\
+                << "Tried to accept/rollback but specified memory outside of the wasm instance " <<\
+                "limit when specifying a reason string";\
+            return OUT_OF_BOUNDS;\
+        }\
+        /* assembly script and some other languages use utf16 for strings */\
+        if (is_UTF16LE(read_ptr + memory, read_len))\
+        {\
+            uint8_t output[128];\
+            int len = read_len / 2; /* is_UTF16LE will only return true if read_len is even */\
+            for (int i = 0; i < len; ++i)\
+                output[i] = memory[read_ptr + i * 2];\
+            hookCtx.result.exitReason = std::string((const char*)(output), (size_t)len);\
+        } else\
+            hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);\
+    }\
+    hookCtx.result.exitType = exit_type;\
+    hookCtx.result.exitCode = error_code;\
+    return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
+}

@@ -19,110 +19,7 @@
 
 using namespace ripple;
 
-#define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
-#define HC_ACC() hookCtx.result.account << "-" << hookCtx.result.otxnAccount
 
-#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
-    (std::ceil( (double)state_count/(double)5.0 ))
-
-#define HOOK_SETUP()\
-    [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
-    [[maybe_unused]] auto& view = applyCtx.view();\
-    [[maybe_unused]] auto j = applyCtx.app.journal("View");\
-    [[maybe_unused]] unsigned char* memory = memoryCtx.getPointer<uint8_t*>(0);\
-    [[maybe_unused]] const uint64_t memory_length = memoryCtx.getDataPageSize() * memoryCtx.kPageSize;
-
-#define WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len,\
-        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
-{\
-    int64_t bytes_to_write = std::min(static_cast<int64_t>(host_src_len), static_cast<int64_t>(guest_dst_len));\
-    if (guest_dst_ptr + bytes_to_write > guest_memory_length)\
-    {\
-        JLOG(j.warn())\
-            << "HookError[" << HC_ACC() << "]: "\
-            << __func__ << " tried to retreive blob of " << host_src_len\
-            << " bytes past end of wasm memory";\
-        return OUT_OF_BOUNDS;\
-    }\
-    memoryCtx.setBytes(SSVM::Span<const uint8_t>((const uint8_t*)host_src_ptr, host_src_len), \
-            guest_dst_ptr, 0, bytes_to_write);\
-    bytes_written += bytes_to_write;\
-}
-
-#define WRITE_WASM_MEMORY_AND_RETURN(guest_dst_ptr, guest_dst_len,\
-        host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
-{\
-    int64_t bytes_written = 0;\
-    WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len, host_src_ptr,\
-            host_src_len, host_memory_ptr, guest_memory_length);\
-    return bytes_written;\
-}
-
-#define RETURN_HOOK_TRACE(read_ptr, read_len, t)\
-{\
-    int rl = read_len;\
-    if (rl > 1024)\
-        rl = 1024;\
-    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
-    {\
-        return OUT_OF_BOUNDS;\
-    }\
-    else if (read_ptr == 0 && read_len == 0)\
-    {\
-        JLOG(j.trace()) \
-            << "HookTrace[" << HC_ACC() << "]: " << t;\
-    }\
-    else if (is_UTF16LE(memory + read_ptr, rl))\
-    {\
-        uint8_t output[1024];\
-        int len = rl / 2;\
-        for (int i = 0; i < len && i < 512; ++i)\
-            output[i] = memory[read_ptr + i * 2];\
-        JLOG(j.trace()) \
-            << "HookTrace[" << HC_ACC() << "]: "\
-            << std::string_view((const char*)output, (size_t)(len)) << " "\
-            << t;\
-    }\
-    else\
-    {\
-        JLOG(j.trace()) \
-            << "HookTrace[" << HC_ACC() << "]: "\
-            << std::string_view((const char*)(memory + read_ptr), (size_t)rl) << " "\
-            << t;\
-    }\
-    return 0;\
-}
-// ptr = pointer inside the wasm memory space
-#define NOT_IN_BOUNDS(ptr, len, memory_length)\
-    (ptr > memory_length || \
-     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
-
-#define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
-{\
-    if (read_len > 256) read_len = 256;\
-    if (read_ptr) {\
-        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length)) {\
-            JLOG(j.warn())\
-                << "HookError[" << HC_ACC() << "]: "\
-                << "Tried to accept/rollback but specified memory outside of the wasm instance " <<\
-                "limit when specifying a reason string";\
-            return OUT_OF_BOUNDS;\
-        }\
-        /* assembly script and some other languages use utf16 for strings */\
-        if (is_UTF16LE(read_ptr + memory, read_len))\
-        {\
-            uint8_t output[128];\
-            int len = read_len / 2; /* is_UTF16LE will only return true if read_len is even */\
-            for (int i = 0; i < len; ++i)\
-                output[i] = memory[read_ptr + i * 2];\
-            hookCtx.result.exitReason = std::string((const char*)(output), (size_t)len);\
-        } else\
-            hookCtx.result.exitReason = std::string((const char*)(memory + read_ptr), (size_t)read_len);\
-    }\
-    hookCtx.result.exitType = exit_type;\
-    hookCtx.result.exitCode = error_code;\
-    return (exit_type == hook_api::ExitType::ACCEPT ? RC_ACCEPT : RC_ROLLBACK);\
-}
 namespace hook_float
 {
     using namespace hook_api;
@@ -551,11 +448,10 @@ hook::apply(
         >> const& hookParamOverrides,
     ApplyContext& applyCtx,
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
-    bool callback = false,
+    bool callback,
     uint32_t wasmParam,
     int32_t hookChainPosition)
 {
-
 
     HookContext hookCtx =
     {
@@ -594,39 +490,16 @@ hook::apply(
                 ? std::optional<ripple::STObject>(
                     (*(applyCtx.view().peek(
                         keylet::emitted(applyCtx.tx.getFieldH256(sfTransactionHash)))
-                    )).downcast<STObject>()
-                )
+                    )).downcast<STObject>())
                 : std::optional<ripple::STObject>()
     };
 
 
     auto const& j = applyCtx.app.journal("View");
 
-    SSVM::VM::Configure cfg;
-    SSVM::VM::VM vm(cfg);
-    HookModule env(hookCtx);
-    vm.registerModule(env);
+    HookExecutor executor { hookCtx } ;
 
-    std::vector<SSVM::ValVariant> params, results;
-    params.push_back(wasmParam);
-
-    JLOG(j.trace())
-        << "HookInfo[" << HC_ACC() << "]: creating wasm instance";
-    if (auto result =
-            vm.runWasmFile(
-                SSVM::Span<const uint8_t>(wasm.data(), wasm.size()), (callback ? "cbak" : "hook"), params))
-        hookCtx.result.instructionCount = vm.getStatistics().getInstrCount();
-    else
-    {
-        uint32_t ssvm_error = static_cast<uint32_t>(result.error());
-        if (ssvm_error > 1)
-        {
-            JLOG(j.warn())
-                << "HookError[" << HC_ACC() << "]: SSVM error " << ssvm_error;
-            hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
-            return hookCtx.result;
-        }
-    }
+    executor.executeWasm(wasm.data(), wasm.dize(), callback, wasmParam);
 
     JLOG(j.trace()) <<
         "HookInfo[" << HC_ACC() << "]: " <<

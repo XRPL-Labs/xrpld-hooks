@@ -13,7 +13,7 @@
 #include <vector>
 #include <ripple/protocol/digest.h>
 #include <wasmedge.h>
-#include <ripple/app/tx/impl/applyHookMacro.h>
+#include <ripple/app/tx/applyHookMacro.h>
 
 namespace hook {
     struct HookContext;
@@ -194,7 +194,7 @@ namespace hook_api {
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param_set,     uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len,
                                                         uint32_t hread_ptr, uint32_t hread_len);
-    
+
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len);
 
@@ -247,26 +247,26 @@ namespace hook {
 
     struct HookResult;
 
-    HookResult apply(
-            ripple::uint256 const&,
-            ripple::uint256 const&,
-            ripple::uint256 const&,
-            ripple::Blob const&,
+    hook::apply(
+        ripple::uint256 const& hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
+        ripple::uint256 const& hookHash,     /* hash of the actual hook byte code, used for metadata */
+        ripple::uint256 const& hookNamespace,
+        ripple::Blob const& wasm,
+        std::map<
+            std::vector<uint8_t>,          /* param name  */
+            std::vector<uint8_t>           /* param value */
+            > const& hookParams,
+        std::map<
+            ripple::uint256,          /* hook hash */
             std::map<
-                std::vector<uint8_t>,          /* param name  */
-                std::vector<uint8_t>           /* param value */
-            > const& parameters,
-            std::map<
-                ripple::uint256,
-                std::map<
-                    std::vector<uint8_t>,          /* param name  */
-                    std::vector<uint8_t>           /* param value */
-                >> const& parameterOverrides,
-            ripple::ApplyContext&,
-            ripple::AccountID const&,
-            bool callback,
-            uint32_t wasmParam = 0,
-            int32_t hookChainPosition = -1);
+                std::vector<uint8_t>,
+                std::vector<uint8_t>
+            >> const& hookParamOverrides,
+        ripple::ApplyContext& applyCtx,
+        ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
+        bool callback = false,
+        uint32_t wasmParam = 0,
+        int32_t hookChainPosition = -1);
 
     struct HookContext;
 
@@ -376,11 +376,14 @@ namespace hook {
     // create these once at boot and keep them
     WasmEdge_String exportName = WasmEdge_StringCreateByCString("env");
     WasmEdge_String tableName = WasmEdge_StringCreateByCString("table");
-    WasmEdge_TableTypeContext* tableType = 
+    WasmEdge_TableTypeContext* tableType =
         WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Min = 10, .Max = 20});
     WasmEdge_MemoryTypeContext* memType =
         WasmEdge_MemoryTypeCreate({.HasMax = true, .Min = 1, .Max = 1});
     WasmEdge_String memName = WasmEdge_StringCreateByCString("memory");
+
+    WasmEdge_String cbakFunctionName = WasmEdge_StringCreateByCString("cbak");
+    WasmEdge_String hookFunctionName = WasmEdge_StringCreateByCString("hook");
 
     // RH TODO: call destruct for these on rippled shutdown
 
@@ -391,19 +394,102 @@ namespace hook {
         WasmEdge_ImportObjectAddFunction(importObj, WasmFunctionName##F, hf);\
     }
 
-    class HookModule
-    {
-   //RH TODO UPTO put the hook-api functions here!
-   //then wrap/proxy them with the appropriate DECLARE_HOOK classes
-   //and add those below. HookModule::otxn_id() ...
-    public:
-        HookContext hookCtx;
+    #define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
+    #define HC_ACC() hookCtx.result.account << "-" << hookCtx.result.otxnAccount
 
-        HookModule(HookContext& ctx) : hookCtx(ctx)
+
+    /** 
+     * HookExecutor is effectively a two-part function:
+     * The first part sets up the Hook Api inside the wasm import, ready for use
+     * (this is done during object construction.)
+     * The second part is actually executing webassembly instructions
+     * this is done during execteWasm function.
+     * The instance is single use.
+     */
+    class HookExecutor
+    {
+
+        private:
+            bool spent = false; // a HookExecutor can only be used once
+
+        public:
+            HookContext hookCtx;
+            WasmEdge_ImportObjectContext* importObj;
+
+
+        /**
+         * Execute web assembly byte code against the constructed Hook Context
+         * Once execution has occured the exector is spent and cannot be used again and should be destructed
+         * Information about the execution is populated into hookCtx
+         */
+        void executeWasm(void* wasm, size_t len, bool callback, WasmEdge_Value wasmParam, beast::Journal const& j)
+        {
+
+            // HookExecutor can only execute once
+            assert(!spent);
+
+            spent = true;
+
+            JLOG(j.trace())
+                << "HookInfo[" << HC_ACC() << "]: creating wasm instance";
+
+            WasmEdge_ConfigureContext* confCtx  = WasmEdge_ConfigureCreate();
+            WasmEdge_ConfigureStatisticsSetInstructionCounting(confCtx, true);
+            WasmEdge_VMContext vmCtx = WasmEdge_VMCreate(confCtx, NULL);
+
+
+            WasmEdge_Result res = WasmEdge_VMRegisterModuleFromImport(vmCtx, this->importObj);
+            if (!WasmEdge_ResultOK(res))
+            {
+                hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
+                JLOG(j.trace())
+                    << "HookError[" << HC_ACC() << "]: Import phase failed "
+                    << WasmEdge_ResultGetMessage(res);
+            }
+            else
+            {
+
+                WasmEdge_Value params[1] = {wasmParam};
+                WasmEdge_Value results[1];
+
+                res =
+                    WasmEdge_VMRunWasmFromBuffer(vmCtx, wasm, len,
+                        callback ? cbakFunctionName : hookFunctionName,
+                        params, 1, returns, 1);
+
+                if (!WasmEdge_ResultOK(res))
+                {
+                    JLOG(j.warn())
+                        << "HookError[" << HC_ACC() << "]: WASM VM error "
+                        <<  WasmEdge_ResultGetMessage(res);
+                    hookCtx.result.exitType = hook_api::ExitType::WASM_ERROR;
+                }
+                else
+                {
+
+                    auto* statsCtx= WasmEdge_VMGetStatisticsContext(vmCtx);
+                    hookCtx.result.instructionCount = WasmEdge_StatisticsGetInstrCount(statsCtx);
+
+                    JLOG(j.trace())
+                        << "HookInfo[" << HC_ACC() << "]: "
+                        << (hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : "ACCEPT")
+                        << " RS: '" <<  hookCtx.result.exitReason.c_str()
+                        << "' RC: " << hookCtx.result.exitCode;
+
+                    //WasmEdge_ValueGetI64(returns[0]));
+                }
+            }
+
+            WasmEdge_ConfigureDelete(confCtx);
+            WasmEdge_VMDelete(vmCtx);
+        }
+
+        HookModule(HookContext& ctx)
+            : hookCtx(ctx)
+            , importObj(WasmEdge_ImportObjectCreate(exportName))
         {
             ctx.module = this;
 
-            WasmEdge_ImportObjectContext* importObj = WasmEdge_ImportObjectCreate(exportName);
             ADD_HOOK_FUNCTION(_g, ctx);
             ADD_HOOK_FUNCTION(accept, ctx);
             ADD_HOOK_FUNCTION(rollback, ctx);
@@ -446,8 +532,6 @@ namespace hook {
             ADD_HOOK_FUNCTION(float_sign, ctx);
             ADD_HOOK_FUNCTION(float_sign_set, ctx);
             ADD_HOOK_FUNCTION(float_int, ctx);
-
-
 
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
@@ -494,7 +578,11 @@ namespace hook {
             WasmEdge_MemoryInstanceContext* hostMem  = WasmEdge_MemoryInstanceCreate(memType);
             WasmEdge_ImportObjectAddMemory(importObj, memName, hostMem);
         }
-        virtual ~HookModule() = default;
+
+        ~HookModule()
+        {
+            WasmEdge_ImportObjectDelete(importObj);
+        };
     };
 
 }
