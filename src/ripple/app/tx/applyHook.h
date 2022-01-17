@@ -454,7 +454,7 @@ namespace hook
          * Once execution has occured the exector is spent and cannot be used again and should be destructed
          * Information about the execution is populated into hookCtx
          */
-        void executeWasm(const void* wasm, size_t len, bool callback, uint64_t wasmParam, beast::Journal const& j)
+        void executeWasm(const void* wasm, size_t len, bool callback, uint32_t wasmParam, beast::Journal const& j)
         {
 
             // HookExecutor can only execute once
@@ -480,7 +480,7 @@ namespace hook
             else
             {
 
-                WasmEdge_Value params[1] = { WasmEdge_ValueGenI64((int64_t)wasmParam) };
+                WasmEdge_Value params[1] = { WasmEdge_ValueGenI32((int64_t)wasmParam) };
                 WasmEdge_Value returns[1];
 
                 res =

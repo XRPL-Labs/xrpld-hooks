@@ -78,7 +78,7 @@ InnerObjectFormats::InnerObjectFormats()
         });
 
     add(sfHookDefinition.jsonName.c_str(),
-        sfHook.getCode(),
+        sfHookDefinition.getCode(),
         {
             {sfCreateCode,      soeREQUIRED},
             {sfHookNamespace,   soeREQUIRED},
