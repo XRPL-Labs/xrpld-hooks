@@ -38,7 +38,7 @@
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/OpenLedger.h>
 #include <functional>
-#include <wasmedge.h>
+#include <wasmedge/wasmedge.h>
 
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
 namespace ripple {
@@ -990,18 +990,14 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         << "HookSet[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
         << "size = " <<  hook.size();
 
-    // check if wasm can be run
-    SSVM::VM::Configure cfg;
-    SSVM::VM::VM vm(cfg);
-    if (auto res = vm.loadWasm(SSVM::Span<const uint8_t>(hook.data(), hook.size())))
+    std::optional<std::string> result = 
+        hook::HookExecutor::validateWasm(hook.data(), (size_t)hook.size());
+
+    if (result)
     {
-        // do nothing
-    } else
-    {
-        uint32_t ssvm_error = static_cast<uint32_t>(res.error());
         JLOG(ctx.j.trace())
             << "HookSet[" << HS_ACC() << "]: "
-            << "Tried to set a hook with invalid code. SSVM error: " << ssvm_error;
+            << "Tried to set a hook with invalid code. VM error: " << *result;
         return {false, 0};
     }
 

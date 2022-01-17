@@ -1,5 +1,5 @@
 #ifndef APPLY_HOOK_INCLUDED
-#define APPLY_HOOK_INCLUDED
+#define APPLY_HOOK_INCLUDED 1
 #include <ripple/basics/Blob.h>
 #include <ripple/protocol/TER.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
@@ -12,16 +12,19 @@
 #include <memory>
 #include <vector>
 #include <ripple/protocol/digest.h>
-#include <wasmedge.h>
+#include <wasmedge/wasmedge.h>
 #include <ripple/app/tx/applyHookMacro.h>
 
-namespace hook {
+
+namespace hook
+{
     struct HookContext;
     struct HookResult;
     bool isEmittedTxn(ripple::STTx const& tx);
 }
 
-namespace hook_api {
+namespace hook_api
+{
 
 #define TER_TO_HOOK_RETURN_CODE(x)\
     (((TERtoInt(x)) << 16)*-1)
@@ -31,42 +34,46 @@ namespace hook_api {
 #define DBG_PRINTF if (0) printf
 #define DBG_FPRINTF if (0) fprintf
 
-    namespace keylet_code {
-    enum keylet_code : uint32_t {
-        HOOK = 1,
-        HOOK_STATE = 2,
-        ACCOUNT = 3,
-        AMENDMENTS = 4,
-        CHILD = 5,
-        SKIP = 6,
-        FEES = 7,
-        NEGATIVE_UNL = 8,
-        LINE = 9,
-        OFFER = 10,
-        QUALITY = 11,
-        EMITTED_DIR = 12,
-        TICKET = 13,
-        SIGNERS = 14,
-        CHECK = 15,
-        DEPOSIT_PREAUTH = 16,
-        UNCHECKED = 17,
-        OWNER_DIR = 18,
-        PAGE = 19,
-        ESCROW = 20,
-        PAYCHAN = 21,
-        EMITTED = 22
-    };
+    namespace keylet_code
+    {
+        enum keylet_code : uint32_t
+        {
+            HOOK = 1,
+            HOOK_STATE = 2,
+            ACCOUNT = 3,
+            AMENDMENTS = 4,
+            CHILD = 5,
+            SKIP = 6,
+            FEES = 7,
+            NEGATIVE_UNL = 8,
+            LINE = 9,
+            OFFER = 10,
+            QUALITY = 11,
+            EMITTED_DIR = 12,
+            TICKET = 13,
+            SIGNERS = 14,
+            CHECK = 15,
+            DEPOSIT_PREAUTH = 16,
+            UNCHECKED = 17,
+            OWNER_DIR = 18,
+            PAGE = 19,
+            ESCROW = 20,
+            PAYCHAN = 21,
+            EMITTED = 22
+        };
     }
 
     namespace compare_mode {
-    enum compare_mode : uint32_t {
-        EQUAL = 1,
-        LESS = 2,
-        GREATER = 4
-    };
+        enum compare_mode : uint32_t
+        {
+            EQUAL = 1,
+            LESS = 2,
+            GREATER = 4
+        };
     }
 
-    enum hook_return_code : int64_t {
+    enum hook_return_code : int64_t
+    {
         SUCCESS = 0,                    // return codes > 0 are reserved for hook apis to return "success"
         OUT_OF_BOUNDS = -1,             // could not read or write to a pointer to provided by hook
         INTERNAL_ERROR = -2,            // eg directory is corrupt
@@ -106,7 +113,8 @@ namespace hook_api {
         TOO_MANY_PARAMS = -36
     };
 
-    enum ExitType : uint8_t {
+    enum ExitType : uint8_t
+    {
         UNSET = 0,
         WASM_ERROR = 1,
         ROLLBACK = 2,
@@ -241,13 +249,15 @@ namespace hook_api {
 
 } /* end namespace hook_api */
 
-namespace hook {
+namespace hook
+{
 
     bool canHook(ripple::TxType txType, uint64_t hookOn);
 
     struct HookResult;
 
-    hook::apply(
+    HookResult
+    apply(
         ripple::uint256 const& hookSetTxnID, /* this is the txid of the sethook, used for caching (one day) */
         ripple::uint256 const& hookHash,     /* hash of the actual hook byte code, used for metadata */
         ripple::uint256 const& hookNamespace,
@@ -266,7 +276,8 @@ namespace hook {
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
         bool callback = false,
         uint32_t wasmParam = 0,
-        int32_t hookChainPosition = -1);
+        int32_t hookChainPosition = -1
+    );
 
     struct HookContext;
 
@@ -321,7 +332,7 @@ namespace hook {
         bool foreignStateSetDisabled = false;
     };
 
-    class HookModule;
+    class HookExecutor;
 
     struct SlotEntry
     {
@@ -350,7 +361,7 @@ namespace hook {
         std::optional<ripple::STObject> emitFailure;    // if this is a callback from a failed
                                                         // emitted txn then this optional becomes
                                                         // populated with the SLE
-        const HookModule* module = 0;
+        const HookExecutor* module = 0;
     };
 
 
@@ -373,30 +384,29 @@ namespace hook {
     void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext&, uint8_t );
 
 
-    // create these once at boot and keep them
-    WasmEdge_String exportName = WasmEdge_StringCreateByCString("env");
-    WasmEdge_String tableName = WasmEdge_StringCreateByCString("table");
-    WasmEdge_TableTypeContext* tableType =
-        WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Min = 10, .Max = 20});
-    WasmEdge_MemoryTypeContext* memType =
-        WasmEdge_MemoryTypeCreate({.HasMax = true, .Min = 1, .Max = 1});
-    WasmEdge_String memName = WasmEdge_StringCreateByCString("memory");
-
-    WasmEdge_String cbakFunctionName = WasmEdge_StringCreateByCString("cbak");
-    WasmEdge_String hookFunctionName = WasmEdge_StringCreateByCString("hook");
-
     // RH TODO: call destruct for these on rippled shutdown
 
     #define ADD_HOOK_FUNCTION(F, ctx)\
     {\
         WasmEdge_FunctionInstanceContext* hf = WasmEdge_FunctionInstanceCreate(\
-                WasmFunctionType##F, WasmFunction##F, (void*)(&ctx), 0);\
-        WasmEdge_ImportObjectAddFunction(importObj, WasmFunctionName##F, hf);\
+                hook_api::WasmFunctionType##F,\
+                hook_api::WasmFunction##F,\
+                (void*)(&ctx), 0);\
+        WasmEdge_ImportObjectAddFunction(importObj, hook_api::WasmFunctionName##F, hf);\
     }
 
     #define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
     #define HC_ACC() hookCtx.result.account << "-" << hookCtx.result.otxnAccount
 
+    // create these once at boot and keep them
+    static WasmEdge_String exportName = WasmEdge_StringCreateByCString("env");
+    static WasmEdge_String tableName = WasmEdge_StringCreateByCString("table");
+    static auto* tableType =
+        WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Min = 10, .Max = 20});
+    static auto* memType = WasmEdge_MemoryTypeCreate({.HasMax = true, .Min = 1, .Max = 1});
+    static WasmEdge_String memName = WasmEdge_StringCreateByCString("memory");
+    static WasmEdge_String cbakFunctionName = WasmEdge_StringCreateByCString("cbak");
+    static WasmEdge_String hookFunctionName = WasmEdge_StringCreateByCString("hook");
 
     /** 
      * HookExecutor is effectively a two-part function:
@@ -412,17 +422,39 @@ namespace hook {
         private:
             bool spent = false; // a HookExecutor can only be used once
 
+
         public:
             HookContext hookCtx;
             WasmEdge_ImportObjectContext* importObj;
 
+        /**
+         * Validate that a web assembly blob can be loaded by wasmedge 
+         */
+        static std::optional<std::string> validateWasm(const void* wasm, size_t len)
+        {
+            std::optional<std::string> ret;
+            WasmEdge_ConfigureContext* confCtx  = WasmEdge_ConfigureCreate();
+            WasmEdge_VMContext* vmCtx = WasmEdge_VMCreate(confCtx, NULL);
+            WasmEdge_Result res = WasmEdge_VMLoadWasmFromBuffer(vmCtx, reinterpret_cast<const uint8_t*>(wasm), len);
+            if (!WasmEdge_ResultOK(res))
+                *ret = std::string {WasmEdge_ResultGetMessage(res)};
+            else
+            {
+                res = WasmEdge_VMValidate(vmCtx);
+                if (!WasmEdge_ResultOK(res))
+                    *ret = std::string {WasmEdge_ResultGetMessage(res)};
+            }
+            WasmEdge_VMDelete(vmCtx);
+            WasmEdge_ConfigureDelete(confCtx);
+            return ret;
+        }
 
         /**
          * Execute web assembly byte code against the constructed Hook Context
          * Once execution has occured the exector is spent and cannot be used again and should be destructed
          * Information about the execution is populated into hookCtx
          */
-        void executeWasm(void* wasm, size_t len, bool callback, WasmEdge_Value wasmParam, beast::Journal const& j)
+        void executeWasm(const void* wasm, size_t len, bool callback, uint64_t wasmParam, beast::Journal const& j)
         {
 
             // HookExecutor can only execute once
@@ -435,8 +467,7 @@ namespace hook {
 
             WasmEdge_ConfigureContext* confCtx  = WasmEdge_ConfigureCreate();
             WasmEdge_ConfigureStatisticsSetInstructionCounting(confCtx, true);
-            WasmEdge_VMContext vmCtx = WasmEdge_VMCreate(confCtx, NULL);
-
+            WasmEdge_VMContext* vmCtx = WasmEdge_VMCreate(confCtx, NULL);
 
             WasmEdge_Result res = WasmEdge_VMRegisterModuleFromImport(vmCtx, this->importObj);
             if (!WasmEdge_ResultOK(res))
@@ -449,11 +480,11 @@ namespace hook {
             else
             {
 
-                WasmEdge_Value params[1] = {wasmParam};
-                WasmEdge_Value results[1];
+                WasmEdge_Value params[1] = { WasmEdge_ValueGenI64((int64_t)wasmParam) };
+                WasmEdge_Value returns[1];
 
                 res =
-                    WasmEdge_VMRunWasmFromBuffer(vmCtx, wasm, len,
+                    WasmEdge_VMRunWasmFromBuffer(vmCtx, reinterpret_cast<const uint8_t*>(wasm), len,
                         callback ? cbakFunctionName : hookFunctionName,
                         params, 1, returns, 1);
 
@@ -484,7 +515,7 @@ namespace hook {
             WasmEdge_VMDelete(vmCtx);
         }
 
-        HookModule(HookContext& ctx)
+        HookExecutor(HookContext& ctx)
             : hookCtx(ctx)
             , importObj(WasmEdge_ImportObjectCreate(exportName))
         {
@@ -579,7 +610,7 @@ namespace hook {
             WasmEdge_ImportObjectAddMemory(importObj, memName, hostMem);
         }
 
-        ~HookModule()
+        ~HookExecutor()
         {
             WasmEdge_ImportObjectDelete(importObj);
         };

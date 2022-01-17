@@ -14,7 +14,7 @@
 #include <any>
 #include <vector>
 #include <utility>
-#include <wasmedge.h>
+#include <wasmedge/wasmedge.h>
 #include <ripple/protocol/tokens.h>
 
 using namespace ripple;
@@ -499,7 +499,7 @@ hook::apply(
 
     HookExecutor executor { hookCtx } ;
 
-    executor.executeWasm(wasm.data(), wasm.dize(), callback, wasmParam);
+    executor.executeWasm(wasm.data(), (size_t)wasm.size(), callback, wasmParam, j);
 
     JLOG(j.trace()) <<
         "HookInfo[" << HC_ACC() << "]: " <<

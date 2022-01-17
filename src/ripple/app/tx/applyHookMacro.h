@@ -76,7 +76,26 @@
 
 #define DECLARE_HOOK_FUNCTION(R, F, ...)\
     R F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx, __VA_ARGS__);\
-    WasmEdge_Result WasmFunction##F(\
+    extern WasmEdge_Result WasmFunction##F(\
+        void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
+        const WasmEdge_Value *in, WasmEdge_Value *out);\
+    extern WasmEdge_ValType WasmFunctionParams##F[];\
+    extern WasmEdge_ValType WasmFunctionResult##F[];\
+    extern WasmEdge_FunctionTypeContext* WasmFunctionType##F;\
+    extern WasmEdge_String WasmFunctionName##F;
+
+
+#define DECLARE_HOOK_FUNCNARG(R, F)\
+    R F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx);\
+    extern WasmEdge_Result WasmFunction##F(\
+        void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
+        const WasmEdge_Value *in, WasmEdge_Value *out);\
+    extern WasmEdge_ValType WasmFunctionResult##F[];\
+    extern WasmEdge_FunctionTypeContext* WasmFunctionType##F;\
+    extern WasmEdge_String WasmFunctionName##F;
+
+#define DEFINE_HOOK_FUNCTION(R, F, ...)\
+    WasmEdge_Result hook_api::WasmFunction##F(\
         void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
         const WasmEdge_Value *in, WasmEdge_Value *out)\
     {\
@@ -89,17 +108,16 @@
         out[0] = RET_ASSIGN(R, return_code);\
         return WasmEdge_Result_Success;\
     };\
-    WasmEdge_ValType WasmFunctionParams##F[] = { FOR_VARS(WASM_VAL_TYPE, 0, __VA_ARGS__) };\
-    WasmEdge_ValType WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
-    WasmEdge_FunctionTypeContext* WasmFunctionType##F = WasmEdge_FunctionTypeCreate(\
+    WasmEdge_ValType hook_api::WasmFunctionParams##F[] = { FOR_VARS(WASM_VAL_TYPE, 0, __VA_ARGS__) };\
+    WasmEdge_ValType hook_api::WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
+    WasmEdge_FunctionTypeContext* hook_api::WasmFunctionType##F = WasmEdge_FunctionTypeCreate(\
             WasmFunctionParams##F, VA_NARGS(NULL, __VA_ARGS__),\
             WasmFunctionResult##F, 1);\
-    WasmEdge_String WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);
+    WasmEdge_String hook_api::WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);\
+    R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx, __VA_ARGS__)
 
-
-#define DECLARE_HOOK_FUNCNARG(R, F)\
-    R F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx);\
-    WasmEdge_Result WasmFunction_##F(\
+#define DEFINE_HOOK_FUNCNARG(R, F)\
+    WasmEdge_Result hook_api::WasmFunction##F(\
         void *data_ptr, WasmEdge_MemoryInstanceContext *memCtx,\
         const WasmEdge_Value *in, WasmEdge_Value *out)\
     {\
@@ -110,17 +128,11 @@
         out[0] = CAT2(RET_,R(return_code));\
         return WasmEdge_Result_Success;\
     };\
-    WasmEdge_ValType WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
-    WasmEdge_FunctionTypeContext* WasmFunctionType##F = \
+    WasmEdge_ValType hook_api::WasmFunctionResult##F[1] = { WASM_VAL_TYPE(R, dummy) };\
+    WasmEdge_FunctionTypeContext* hook_api::WasmFunctionType##F = \
         WasmEdge_FunctionTypeCreate({}, 0, WasmFunctionResult##F, 1);\
-    WasmEdge_String WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);
-
-#define DEFINE_HOOK_FUNCTION(R, F, ...)\
-        R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx, __VA_ARGS__)
-
-#define DEFINE_HOOK_FUNCNARG(R, F)\
-        R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx)
-
+    WasmEdge_String hook_api::WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);\
+    R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx)
 
 
 
@@ -132,8 +144,8 @@
     [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
     [[maybe_unused]] auto& view = applyCtx.view();\
     [[maybe_unused]] auto j = applyCtx.app.journal("View");\
-    [[maybe_unused]] unsigned char* memory = WasmEdge_MemoryInstanceGetPointer(memoryCtx, 0, 0);\
-    [[maybe_unused]] const uint64_t memory_length = WasmEdge_MemoryInstanceGetPageSize(memoryCtx);
+    [[maybe_unused]] unsigned char* memory = WasmEdge_MemoryInstanceGetPointer(&memoryCtx, 0, 0);\
+    [[maybe_unused]] const uint64_t memory_length = WasmEdge_MemoryInstanceGetPageSize(&memoryCtx);
 
 #define WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len,\
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\
@@ -147,7 +159,8 @@
             << " bytes past end of wasm memory";\
         return OUT_OF_BOUNDS;\
     }\
-    WasmEdge_MemoryInstanceGetPointer(memoryCtx, host_src_ptr, guest_dst_ptr, bytes_to_write);\
+    WasmEdge_MemoryInstanceSetData(&memoryCtx, \
+            reinterpret_cast<const uint8_t*>(host_src_ptr), guest_dst_ptr, bytes_to_write);\
     bytes_written += bytes_to_write;\
 }
 

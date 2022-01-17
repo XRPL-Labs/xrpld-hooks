@@ -11,7 +11,7 @@ if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion bu
   ExternalProject_Add (wasmedge_src
     PREFIX ${nih_cache_path}
     GIT_REPOSITORY https://github.com/WasmEdge/WasmEdge.git
-    GIT_TAG 0.8.2
+    GIT_TAG 0.9.0
       CMAKE_ARGS
     -DCMAKE_CXX_COMPILER=${CMAKE_CXX_COMPILER}
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}

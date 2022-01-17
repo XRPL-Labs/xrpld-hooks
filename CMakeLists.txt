@@ -52,7 +52,6 @@ include(RippledInterface)
 
 ###
 
-include(deps/libssvm)
 include(deps/Boost)
 include(deps/OpenSSL)
 include(deps/Secp256k1)
