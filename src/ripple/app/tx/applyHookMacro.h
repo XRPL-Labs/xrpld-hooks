@@ -145,7 +145,8 @@
     [[maybe_unused]] auto& view = applyCtx.view();\
     [[maybe_unused]] auto j = applyCtx.app.journal("View");\
     [[maybe_unused]] unsigned char* memory = WasmEdge_MemoryInstanceGetPointer(&memoryCtx, 0, 0);\
-    [[maybe_unused]] const uint64_t memory_length = WasmEdge_MemoryInstanceGetPageSize(&memoryCtx);
+    [[maybe_unused]] const uint64_t memory_length = WasmEdge_MemoryInstanceGetPageSize(&memoryCtx) * \
+        WasmEdge_kPageSize;
 
 #define WRITE_WASM_MEMORY(bytes_written, guest_dst_ptr, guest_dst_len,\
         host_src_ptr, host_src_len, host_memory_ptr, guest_memory_length)\

@@ -12,9 +12,8 @@
 #include <memory>
 #include <vector>
 #include <ripple/protocol/digest.h>
-#include <wasmedge/wasmedge.h>
 #include <ripple/app/tx/applyHookMacro.h>
-
+#include <wasmedge/wasmedge.h>
 
 namespace hook
 {
@@ -408,7 +407,10 @@ namespace hook
     static WasmEdge_String cbakFunctionName = WasmEdge_StringCreateByCString("cbak");
     static WasmEdge_String hookFunctionName = WasmEdge_StringCreateByCString("hook");
 
-    /** 
+    // see: lib/system/allocator.cpp
+    #define WasmEdge_kPageSize 65536ULL
+
+    /**
      * HookExecutor is effectively a two-part function:
      * The first part sets up the Hook Api inside the wasm import, ready for use
      * (this is done during object construction.)
@@ -428,7 +430,7 @@ namespace hook
             WasmEdge_ImportObjectContext* importObj;
 
         /**
-         * Validate that a web assembly blob can be loaded by wasmedge 
+         * Validate that a web assembly blob can be loaded by wasmedge
          */
         static std::optional<std::string> validateWasm(const void* wasm, size_t len)
         {
@@ -483,6 +485,21 @@ namespace hook
                 WasmEdge_Value params[1] = { WasmEdge_ValueGenI32((int64_t)wasmParam) };
                 WasmEdge_Value returns[1];
 
+                /*
+                printf("executing hook wasm:\n");
+                for (int j = 0; j < len; j++)
+                {
+                    if (j % 16 == 0)
+                        printf("0x%08X:\t", j);
+
+                    printf("%02X%s", (reinterpret_cast<const uint8_t*>(wasm))[j],
+                        (j % 16 == 15 ? "\n" :
+                        (j % 4 == 3 ? "  " :
+                        (j % 2 == 1 ? " " : ""))));
+                }
+                printf("\n----\n");
+                */
+
                 res =
                     WasmEdge_VMRunWasmFromBuffer(vmCtx, reinterpret_cast<const uint8_t*>(wasm), len,
                         callback ? cbakFunctionName : hookFunctionName,
@@ -500,14 +517,6 @@ namespace hook
 
                     auto* statsCtx= WasmEdge_VMGetStatisticsContext(vmCtx);
                     hookCtx.result.instructionCount = WasmEdge_StatisticsGetInstrCount(statsCtx);
-
-                    JLOG(j.trace())
-                        << "HookInfo[" << HC_ACC() << "]: "
-                        << (hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : "ACCEPT")
-                        << " RS: '" <<  hookCtx.result.exitReason.c_str()
-                        << "' RC: " << hookCtx.result.exitCode;
-
-                    //WasmEdge_ValueGetI64(returns[0]));
                 }
             }
 
@@ -520,6 +529,8 @@ namespace hook
             , importObj(WasmEdge_ImportObjectCreate(exportName))
         {
             ctx.module = this;
+
+            WasmEdge_LogSetDebugLevel();
 
             ADD_HOOK_FUNCTION(_g, ctx);
             ADD_HOOK_FUNCTION(accept, ctx);
