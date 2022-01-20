@@ -42,11 +42,6 @@
 #include <sys/syscall.h>
 //--------
 
-#define PRINTFTHREAD(x)\
-{\
-    printf("%s - %d\n", x, syscall(__NR_gettid));\
-}
-
 namespace ripple {
 
 /** Performs early sanity checks on the txid */
@@ -174,43 +169,29 @@ FeeUnit64
 Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet)
 {
 
-    PRINTFTHREAD("PATH X1");
     std::shared_ptr<SLE const> hookSLE = view.read(hookKeylet);
-    PRINTFTHREAD("PATH X2");
     if (!hookSLE)
         return FeeUnit64{0};
 
-    PRINTFTHREAD("PATH X3");
     FeeUnit64 fee{0};
-    PRINTFTHREAD("PATH X4");
 
     auto const& hooks = hookSLE->getFieldArray(sfHooks);
-    PRINTFTHREAD("PATH X5");
     for (auto const& hook : hooks)
     {
-        PRINTFTHREAD("PATH X6");
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
-        
-        PRINTFTHREAD("PATH X7");
 
         if (hookObj->getCount() == 0) // skip blanks
             continue;
         
-        PRINTFTHREAD("PATH X8");
-
         uint256 const& hash = hookObj->getFieldH256(sfHookHash);
             
-        PRINTFTHREAD("PATH X9");
-
         std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(hash));
             
         fee += FeeUnit64{
             (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
         };
-        PRINTFTHREAD("PATH X10");
     }
 
-    PRINTFTHREAD("PATH X11");
     return fee;
     
 }
@@ -233,54 +214,37 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
     FeeUnit64 hookExecutionFee{0};
     if (view.rules().enabled(featureHooks))
     {
-        PRINTFTHREAD("PATH Z1");
         // RH UPTO: reserve callback fee on emit, and unreserve and burn on callback
         // if this is a "cleanup" txn we regard it as already paid up
         if (tx.getFieldU16(sfTransactionType) == ttEMIT_FAILURE)
             return FeeUnit64{0};    
 
-        PRINTFTHREAD("PATH Z2");
         // if the txn is an emitted txn then we add the callback fee
         // if the txn is NOT an emitted txn then we process the sending account's hook chain 
         if (tx.isFieldPresent(sfEmitDetails))
         {
         
-            PRINTFTHREAD("PATH Z3");
             STObject const& emitDetails = 
                 const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
             
-            PRINTFTHREAD("PATH Z4");
-
             uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
-            
-            PRINTFTHREAD("PATH Z5");
 
             std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(callbackHookHash));
             
-            PRINTFTHREAD("PATH Z6");
-            
             if (hookDef)
                 hookExecutionFee += FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())};
-
-            PRINTFTHREAD("PATH Z7");
         }
         else
             hookExecutionFee +=
                 calculateHookChainFee(view, tx, keylet::hook(tx.getAccountID(sfAccount)));
-    
-        PRINTFTHREAD("PATH Z8");
 
         std::optional<AccountID>
             destAccountID = getDestinationAccount(tx);
         
-        PRINTFTHREAD("PATH Z9");
-
         // if there is a receiving account then we also compute the fee for its hook chain
         if (destAccountID)
             hookExecutionFee +=
                 calculateHookChainFee(view, tx, keylet::hook(*destAccountID));
-        
-        PRINTFTHREAD("PATH Z10");
     }
 
     return baseFee + (signerCount * baseFee) + hookExecutionFee; // RH NOTE: hookExecutionFee = 0 
