@@ -40,7 +40,9 @@
 #include <functional>
 #include <wasmedge/wasmedge.h>
 
+#define DEBUG_GUARD_CHECK 0
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
+
 namespace ripple {
 
 // RH TODO deal with overflow on leb128
@@ -75,86 +77,6 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
         return {false, 0};\
     }\
 }
-
-// RH TODO find a better home for this or a better solution?
-const std::set<std::string> import_whitelist
-{
-    "accept",
-    "emit",
-    "etxn_burden",
-    "etxn_details",
-    "etxn_fee_base",
-    "etxn_generation",
-    "etxn_reserve",
-    "float_compare",
-    "float_divide",
-    "float_exponent",
-    "float_exponent_set",
-    "float_invert",
-    "float_mantissa",
-    "float_mantissa_set",
-    "float_mulratio",
-    "float_multiply",
-    "float_int",
-    "float_negate",
-    "float_one",
-    "float_set",
-    "float_sign",
-    "float_sign_set",
-    "float_sto",
-    "float_sto_set",
-    "float_sum",
-    "fee_base",
-    "_g",
-    "hook_account",
-    "hook_hash",
-    "ledger_seq",
-    "ledger_last_hash",
-    "nonce",
-    "otxn_burden",
-    "otxn_field",
-    "otxn_slot",
-    "otxn_generation",
-    "otxn_id",
-    "otxn_type",
-    "rollback",
-    "slot",
-    "slot_clear",
-    "slot_count",
-    "slot_id",
-    "slot_set",
-    "slot_size",
-    "slot_subarray",
-    "slot_subfield",
-    "slot_type",
-    "slot_float",
-    "state",
-    "state_foreign",
-    "state_set",
-    "state_foreign_set",
-    "trace",
-    "trace_num",
-    "trace_float",
-    "trace_slot",
-    "util_accid",
-    "util_raddr",
-    "util_sha512h",
-    "util_verify",
-    "sto_subarray",
-    "sto_subfield",
-    "sto_validate",
-    "sto_emplace",
-    "sto_erase",
-    "util_keylet",
-    "hook_pos",
-    "hook_param",
-    "hook_param_set",
-    "hook_skip"
-};
-
-
-#define DEBUG_GUARD_CHECK 0
-
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
@@ -654,6 +576,14 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
                 return {false, 0};
             }
+            else if (!hookGrantObj->isFieldPresent(sfAuthorize) && !hookGrantObj->isFieldPresent(sfHookHash))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookGrant object did not contain either sfAuthorize "
+                    << "or sfHookHash.";
+                return {false, 0};
+            }
         }
     }
 
@@ -847,7 +777,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (import_name == "_g")
                 {
                     guard_import_number = func_upto;
-                } else if (import_whitelist.find(import_name) == import_whitelist.end())
+                } else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
@@ -1348,7 +1278,8 @@ SetHook::setHook()
     };
 
     const int  blobMax = hook::maxHookWasmSize();
-    const int  paramMax = hook::maxHookParameterSize();
+    const int  paramKeyMax = hook::maxHookParameterKeySize();
+    const int  paramValueMax = hook::maxHookParameterValueSize();
     auto const accountKeylet = keylet::account(account_);
     auto const ownerDirKeylet = keylet::ownerDir(account_);
     auto const hookKeylet = keylet::hook(account_);
@@ -1746,7 +1677,7 @@ SetHook::setHook()
 
                     ripple::Blob paramName = hookParameterObj->getFieldVL(sfHookParameterName);
                     fprintf(stderr, "PATH R\n");
-                    if (paramName.size() > paramMax)
+                    if (paramName.size() > paramKeyMax)
                     {
                         fprintf(stderr, "PATH S\n");
                         JLOG(ctx.j.trace())
@@ -1762,7 +1693,7 @@ SetHook::setHook()
                         // parameter update or set operation
                         ripple::Blob newValue = hookParameterObj->getFieldVL(sfHookParameterValue);
                         fprintf(stderr, "PATH V\n");
-                        if (newValue.size() > paramMax)
+                        if (newValue.size() > paramValueMax)
                         {
                             fprintf(stderr, "PATH W\n");
                             JLOG(ctx.j.trace())

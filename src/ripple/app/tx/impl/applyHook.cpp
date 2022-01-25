@@ -230,7 +230,11 @@ uint32_t hook::maxHookWasmSize(void)
     return 0xFFFFU;
 }
 
-uint32_t hook::maxHookParameterSize(void)
+uint32_t hook::maxHookParameterKeySize(void)
+{
+    return 32;
+}
+uint32_t hook::maxHookParameterValueSize(void)
 {
     return 128;
 }
@@ -4038,13 +4042,13 @@ DEFINE_HOOK_FUNCTION(
     if (kread_len < 1)
         return TOO_SMALL;
 
-    if (kread_len > 32)
+    if (kread_len > hook::maxHookParameterKeySize())
         return TOO_BIG;
 
-    if (hread_len != 32)
+    if (hread_len != hook::maxHookParameterKeySize())
         return INVALID_ARGUMENT;
 
-    if (read_len > hook::maxHookParameterSize())
+    if (read_len > hook::maxHookParameterValueSize())
         return TOO_BIG;
 
     std::vector<uint8_t> paramName   { kread_ptr + memory, kread_ptr + kread_len + memory };

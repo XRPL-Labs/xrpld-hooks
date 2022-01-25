@@ -132,6 +132,80 @@ namespace hook_api
 
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
 
+    static const std::set<std::string> import_whitelist
+    {
+        "accept",
+        "emit",
+        "etxn_burden",
+        "etxn_details",
+        "etxn_fee_base",
+        "etxn_generation",
+        "etxn_reserve",
+        "float_compare",
+        "float_divide",
+        "float_exponent",
+        "float_exponent_set",
+        "float_invert",
+        "float_mantissa",
+        "float_mantissa_set",
+        "float_mulratio",
+        "float_multiply",
+        "float_int",
+        "float_negate",
+        "float_one",
+        "float_set",
+        "float_sign",
+        "float_sign_set",
+        "float_sto",
+        "float_sto_set",
+        "float_sum",
+        "fee_base",
+        "_g",
+        "hook_account",
+        "hook_hash",
+        "ledger_seq",
+        "ledger_last_hash",
+        "nonce",
+        "otxn_burden",
+        "otxn_field",
+        "otxn_slot",
+        "otxn_generation",
+        "otxn_id",
+        "otxn_type",
+        "rollback",
+        "slot",
+        "slot_clear",
+        "slot_count",
+        "slot_id",
+        "slot_set",
+        "slot_size",
+        "slot_subarray",
+        "slot_subfield",
+        "slot_type",
+        "slot_float",
+        "state",
+        "state_foreign",
+        "state_set",
+        "state_foreign_set",
+        "trace",
+        "trace_num",
+        "trace_float",
+        "trace_slot",
+        "util_accid",
+        "util_raddr",
+        "util_sha512h",
+        "util_verify",
+        "sto_subarray",
+        "sto_subfield",
+        "sto_validate",
+        "sto_emplace",
+        "sto_erase",
+        "util_keylet",
+        "hook_pos",
+        "hook_param",
+        "hook_param_set",
+        "hook_skip"
+    };
 
     DECLARE_HOOK_FUNCTION(int32_t,  _g,                 uint32_t guard_id, uint32_t maxiter );
 
@@ -282,7 +356,9 @@ namespace hook
 
     uint32_t maxHookStateDataSize(void);
     uint32_t maxHookWasmSize(void);
-    uint32_t maxHookParameterSize(void);
+    uint32_t maxHookParameterKeySize(void);
+    uint32_t maxHookParameterValueSize(void);
+
     uint32_t maxHookChainLength(void);
 
     uint32_t computeExecutionFee(uint64_t instructionCount);
