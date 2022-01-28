@@ -31,4 +31,4 @@ node pay.js <CUSTOMER secret> <XRP amount> <SERVICE address> <AFFILIATE address>
 ```
 
 ## Credits
-The hook example designed and developed by @kromsten 👍 
+The hook example designed and developed by [@kromsten](https://github.com/kromsten) 👍 
