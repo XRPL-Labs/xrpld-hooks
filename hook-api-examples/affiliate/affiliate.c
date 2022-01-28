@@ -14,7 +14,7 @@ int64_t hook(int64_t reserved ) {
 
     TRACESTR("Affiliate: started");
 
-    etxn_reserve(1); // we are going to emit a transaction
+    etxn_reserve(2); // we are going to emit two transactions
 
 
     // get memos
@@ -186,19 +186,28 @@ int64_t hook(int64_t reserved ) {
 
 
             int64_t otxn_drops = AMOUNT_TO_DROPS(amount_buffer);
-            int64_t drops_to_send = (int64_t)((double)otxn_drops * 0.2f);
+            int64_t drops_to_send = (int64_t)((double)otxn_drops * 0.15f);
+            int64_t drops_to_send_cb = (int64_t)((double)otxn_drops * 0.05f);
 
 
+            // affiliate
             int64_t fee_base = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
             unsigned char tx[PREPARE_PAYMENT_SIMPLE_SIZE];
             
             PREPARE_PAYMENT_SIMPLE(tx, drops_to_send++, fee_base, acc_ptr, 0, 0);
-
             uint8_t emithash[32];
             emit(SBUF(emithash), SBUF(tx));
-            
 
-            accept(SBUF("Affiliate: Refunded 20\% to the specified address"), 0);
+
+            // cashback
+            fee_base = etxn_fee_base(PREPARE_PAYMENT_SIMPLE_SIZE);
+            unsigned char tx_cb[PREPARE_PAYMENT_SIMPLE_SIZE];
+
+            PREPARE_PAYMENT_SIMPLE(tx_cb, drops_to_send_cb++, fee_base, account_field, 0, 0);
+            uint8_t emithash_cb[32];
+            emit(SBUF(emithash_cb), SBUF(tx_cb));
+
+            accept(SBUF("Affiliate: Success"), 0);
 
         }
     }
