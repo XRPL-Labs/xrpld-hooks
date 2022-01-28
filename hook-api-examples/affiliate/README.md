@@ -1,19 +1,34 @@
-A Hook that sets up an affiliate campain for your account. Every payment that specifies an account you registered as your affiliate will result in the account getting 15% of the payment and the sender getting a 5% cashback.
+# Affiliate hook 
 
-#### Usage:
+A HOOK that sets up an affiliate campain for your account.
 
-##### Install the hook on your account:
+SERVICE - a service account, where customers pay for a service.
+AFFILIATE - an account of a registered partner of the SERVICE, which will get a referral commision. 
+CUSTOMER - a customer account.
+
+1. SERVICE installs the HOOK
+2. SERVICE register AFFILIATES
+
+Every payment (by CUSTOMER) that specifies a registered AFFILIATE will result in the AFFILIATE getting 15% of the payment and the CUSTOMER getting a 5% cashback.
+(5% and 15% are hardcoded in the contract affiliate.c)
+
+## Usage:
+
+### Install the hook on your account:
 ```
-node ulpoad.js <secret> 
+node upload.js <secret> 
 ```
 
-##### Add an account to your affiliate system:
+### Add an account to your affiliate system:
 
 ```
 node setup.js <secret> <account address>
 ```
 
-##### Payment example:
+### Payment example:
 ```
 node pay.js <secret> <xrp amount> <destination (hook)> <referral address>
 ```
+
+## Credits
+The hook example designed and developed by @kromsten 👍 
