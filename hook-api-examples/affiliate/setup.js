@@ -1,9 +1,8 @@
-if (process.argv.length < 5)
+if (process.argv.length < 4)
 {
     console.log("Usage: node setup <source family seed> <destination account>")
     process.exit(1)
 }
-
 
 const wssUrl = "wss://hooks-testnet.xrpl-labs.com"
 
@@ -12,12 +11,10 @@ const secret  = process.argv[2];
 
 const pair = keypairs.deriveKeypair(secret)
 
-
 const address = keypairs.deriveAddress(pair.publicKey)
 const dest = process.argv[3];
 
 const bin = require('ripple-binary-codec')
-
 
 
 function hexlify_memos(x)
@@ -54,7 +51,6 @@ function hexlify_memos(x)
 
 
 const RippleAPI = require('ripple-lib').RippleAPI;
-const fs = require('fs');
 const api = new RippleAPI({server: wssUrl});
 api.on('error', (errorCode, errorMessage) => {console.log(errorCode + ': ' + errorMessage);});
 api.on('connected', () => {console.log('connected');});

@@ -2,9 +2,10 @@ const wssUrl = "wss://hooks-testnet.xrpl-labs.com"
 
 const RippleAPI = require('ripple-lib').RippleAPI;
 const keypairs = require('ripple-keypairs');
+const addr = require('ripple-address-codec')
+
 const fs = require('fs');
 const api = new RippleAPI({server: wssUrl});
-
 const secret  = process.argv[2];
 const address = keypairs.deriveAddress(keypairs.deriveKeypair(secret).publicKey)
 
@@ -17,7 +18,7 @@ api.connect().then(() => {
         Account: address,
         TransactionType: "SetHook",
         CreateCode: binary,
-        HookOn: '0000000000000000'
+        HookOn: '0000000000000000',
     }
     api.prepareTransaction(j).then( (x)=> 
     {
