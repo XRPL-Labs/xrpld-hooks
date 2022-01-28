@@ -2,8 +2,8 @@
 
 A HOOK that sets up an affiliate campain for your account.
 
-SERVICE - a service account, where customers pay for a service.
-AFFILIATE - an account of a registered partner of the SERVICE, which will get a referral commision. 
+SERVICE - a service account, where customers pay for a service.  
+AFFILIATE - an account of a registered partner of the SERVICE, which will get a referral commision.  
 CUSTOMER - a customer account.
 
 1. SERVICE installs the HOOK
