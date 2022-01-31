@@ -52,7 +52,6 @@ class STVector256;
 enum SerializedTypeID {
     // special types
     STI_UNKNOWN = -2,
-    STI_DONE = -1,
     STI_NOTPRESENT = 0,
 
     // // types (common)
@@ -73,6 +72,10 @@ enum SerializedTypeID {
     STI_HASH160 = 17,
     STI_PATHSET = 18,
     STI_VECTOR256 = 19,
+    STI_UINT96 = 20,
+    STI_UINT192 = 21,
+    STI_UINT384 = 22,
+    STI_UINT512 = 23,
 
     // high level types
     // cannot be serialized inside other types
@@ -150,7 +153,8 @@ public:
         const char* fn,
         int meta = sMD_Default,
         IsSigning signing = IsSigning::yes);
-    explicit SField(private_access_tag_t, int fc);
+    explicit SField(private_access_tag_t, int fc) = delete;
+    explicit SField(private_access_tag_t, int fc, bool);
 
     static const SField&
     getField(int fieldCode);
@@ -187,25 +191,17 @@ public:
     }
 
     bool
-    isGeneric() const
-    {
-        return fieldCode == 0;
-    }
-    bool
     isInvalid() const
     {
         return fieldCode == -1;
     }
+
     bool
     isUseful() const
     {
         return fieldCode > 0;
     }
-    bool
-    isKnown() const
-    {
-        return fieldType != STI_UNKNOWN;
-    }
+
     bool
     isBinary() const
     {
@@ -238,11 +234,6 @@ public:
         return num;
     }
 
-    bool
-    isSigningField() const
-    {
-        return signingField == IsSigning::yes;
-    }
     bool
     shouldMeta(int c) const
     {
@@ -318,9 +309,14 @@ using SF_UINT8 = TypedField<STInteger<std::uint8_t>>;
 using SF_UINT16 = TypedField<STInteger<std::uint16_t>>;
 using SF_UINT32 = TypedField<STInteger<std::uint32_t>>;
 using SF_UINT64 = TypedField<STInteger<std::uint64_t>>;
+using SF_UINT96 = TypedField<STBitString<96>>;
 using SF_HASH128 = TypedField<STBitString<128>>;
 using SF_HASH160 = TypedField<STBitString<160>>;
+using SF_UINT192 = TypedField<STBitString<192>>;
 using SF_HASH256 = TypedField<STBitString<256>>;
+using SF_UINT384 = TypedField<STBitString<384>>;
+using SF_UINT512 = TypedField<STBitString<512>>;
+
 using SF_ACCOUNT = TypedField<STAccount>;
 using SF_AMOUNT = TypedField<STAmount>;
 using SF_VL = TypedField<STBlob>;
@@ -341,12 +337,13 @@ extern SF_UINT8 const sfMethod;
 extern SF_UINT8 const sfTransactionResult;
 extern SF_UINT8 const sfTickSize;
 extern SF_UINT8 const sfUNLModifyDisabling;
-extern SF_UINT8 const sfHookResult;     // code indicating what happened accept/rollback/error, NOT return code.
+extern SF_UINT8 const sfHookResult;
 
 // 16-bit integers
 extern SF_UINT16 const sfLedgerEntryType;
 extern SF_UINT16 const sfTransactionType;
 extern SF_UINT16 const sfSignerWeight;
+extern SF_UINT16 const sfTransferFee;
 
 // 16-bit integers (uncommon)
 extern SF_UINT16 const sfVersion;
@@ -398,7 +395,10 @@ extern SF_UINT32 const sfSettleDelay;
 extern SF_UINT32 const sfTicketCount;
 extern SF_UINT32 const sfTicketSequence;
 extern SF_UINT32 const sfHookStateCount;
-extern SF_UINT32 const sfEmitGeneration; 
+extern SF_UINT32 const sfEmitGeneration;
+extern SF_UINT32 const sfTokenTaxon;
+extern SF_UINT32 const sfMintedTokens;
+extern SF_UINT32 const sfBurnedTokens;
 
 // 64-bit integers
 extern SF_UINT64 const sfIndexNext;
@@ -412,11 +412,12 @@ extern SF_UINT64 const sfHighNode;
 extern SF_UINT64 const sfDestinationNode;
 extern SF_UINT64 const sfCookie;
 extern SF_UINT64 const sfServerVersion;
-extern SF_UINT64 const sfHookOn; 
+extern SF_UINT64 const sfHookOn;
 extern SF_UINT64 const sfHookInstructionCount;
-extern SF_UINT64 const sfEmitBurden; 
-extern SF_UINT64 const sfHookReturnCode;       // the code returned by hook dev (rollback or accept) NOT exe. result 
+extern SF_UINT64 const sfEmitBurden;
+extern SF_UINT64 const sfHookReturnCode;
 extern SF_UINT64 const sfReferenceCount;
+extern SF_UINT64 const sfOfferNode;
 
 // 128-bit
 extern SF_HASH128 const sfEmailHash;
@@ -437,6 +438,7 @@ extern SF_HASH256 const sfLedgerIndex;
 extern SF_HASH256 const sfWalletLocator;
 extern SF_HASH256 const sfRootIndex;
 extern SF_HASH256 const sfAccountTxnID;
+extern SF_HASH256 const sfTokenID;
 extern SF_HASH256 const sfEmitParentTxnID;
 extern SF_HASH256 const sfEmitNonce;
 extern SF_HASH256 const sfEmitHookHash;
@@ -451,6 +453,10 @@ extern SF_HASH256 const sfChannel;
 extern SF_HASH256 const sfConsensusHash;
 extern SF_HASH256 const sfCheckID;
 extern SF_HASH256 const sfValidatedHash;
+extern SF_HASH256 const sfPreviousPageMin;
+extern SF_HASH256 const sfNextPageMin;
+extern SF_HASH256 const sfBuyOffer;
+extern SF_HASH256 const sfSellOffer;
 extern SF_HASH256 const sfHookStateKey;
 extern SF_HASH256 const sfHookHash;
 extern SF_HASH256 const sfHookNamespace;
@@ -472,12 +478,14 @@ extern SF_AMOUNT const sfDeliverMin;
 extern SF_AMOUNT const sfMinimumOffer;
 extern SF_AMOUNT const sfRippleEscrow;
 extern SF_AMOUNT const sfDeliveredAmount;
+extern SF_AMOUNT const sfBrokerFee;
 
 // variable length (common)
 extern SF_VL const sfPublicKey;
 extern SF_VL const sfMessageKey;
 extern SF_VL const sfSigningPubKey;
 extern SF_VL const sfTxnSignature;
+extern SF_VL const sfURI;
 extern SF_VL const sfSignature;
 extern SF_VL const sfDomain;
 extern SF_VL const sfFundCode;
@@ -513,6 +521,7 @@ extern SF_ACCOUNT const sfEmitCallback;
 
 // account (uncommon)
 extern SF_ACCOUNT const sfHookAccount;
+extern SF_ACCOUNT const sfMinter;
 
 // path set
 extern SField const sfPaths;
@@ -521,6 +530,7 @@ extern SField const sfPaths;
 extern SF_VECTOR256 const sfIndexes;
 extern SF_VECTOR256 const sfHashes;
 extern SF_VECTOR256 const sfAmendments;
+extern SF_VECTOR256 const sfTokenOffers;
 
 // inner object
 // OBJECT/1 is reserved for end of object
@@ -534,6 +544,8 @@ extern SField const sfNewFields;
 extern SField const sfTemplateEntry;
 extern SField const sfMemo;
 extern SField const sfSignerEntry;
+extern SField const sfNonFungibleToken;
+
 extern SField const sfSigner;
 extern SField const sfMajority;
 extern SField const sfDisabledValidator;
@@ -556,11 +568,13 @@ extern SField const sfMemos;
 extern SField const sfMajorities;
 extern SField const sfDisabledValidators;
 extern SField const sfEmitDetails;
-extern SField const sfHookExecutions; // array of executions
-extern SField const sfHookExecution;  // actual execution result
+extern SField const sfHookExecutions;
+extern SField const sfHookExecution;
 extern SField const sfHookParameters;
 extern SField const sfHooks;
 extern SField const sfHookGrants;
+extern SField const sfNonFungibleTokens;
+
 //------------------------------------------------------------------------------
 
 }  // namespace ripple
