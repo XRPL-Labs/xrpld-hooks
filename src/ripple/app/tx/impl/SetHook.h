@@ -33,14 +33,10 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
+#include <ripple/app/tx/applyHook.h>
 
 namespace ripple {
 
-
-enum SetHookFlags : uint8_t {
-    FLAG_OVERRIDE = 1U,
-    FLAG_NSDELETE = 2U
-};
 
 struct SetHookCtx
 {

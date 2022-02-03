@@ -73,7 +73,8 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     if (i >= hook.size())\
     {\
         JLOG(ctx.j.trace())\
-           << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook truncated or otherwise invalid\n";\
+            << "HookSet(" << hook::log::SHORT_HOOK << ")[" << HS_ACC() << "]: "\
+            << "Malformed transaction: Hook truncated or otherwise invalid\n";\
         return {false, 0};\
     }\
 }
@@ -132,7 +133,7 @@ check_guard(
             if (callee_idx > last_import_idx)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                    << "HookSet(" << hook::log::CALL_ILLEGAL << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Hook calls a function outside of the whitelisted imports "
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return {false, 0};
@@ -147,7 +148,7 @@ check_guard(
                     if (stack.size() < 2)
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                            << "HookSet(" << hook::log::GUARD_PARAMETERS << ")[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                         return {false, 0};
@@ -164,7 +165,8 @@ check_guard(
                     {
                         // 0 has a special meaning, generally it's not a constant value
                         // < 0 is a constant but negative, either way this is a reject condition
-                        JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                        JLOG(ctx.j.trace()) << "HookSet(" << hook::log::GUARD_PARAMETERS << ")"
+                            << "[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                         return {false, 0};
@@ -177,7 +179,7 @@ check_guard(
                         if (DEBUG_GUARD_CHECK)
                         {
                             JLOG(ctx.j.trace())
-                                << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                                << "HookDebug[" << HS_ACC() << "]: GuardCheck "
                                 << "Depth " << block_depth << " guard: " << a;
                         }
                     }
@@ -195,7 +197,7 @@ check_guard(
 
         if (instr == 0x11) // call indirect [ we don't allow guard to be called this way ]
         {
-            JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
+            JLOG(ctx.j.trace()) << "HookSet(" << hook::log::CALL_INDIRECT << ")[" << HS_ACC() << "]: GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
                 << "codesec: " << codesec << " hook byte offset: " << i;
             return {false, 0};
@@ -221,7 +223,8 @@ check_guard(
         {
             if (mode == 0)
             {
-                JLOG(ctx.j.trace()) << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                JLOG(ctx.j.trace()) << "HookSet(" << hook::log::GUARD_MISSING << ")"
+                    << "[" << HS_ACC() << "]: GuardCheck "
                     << "_g() did not occur at start of function or loop statement "
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return {false, 0};
@@ -365,7 +368,7 @@ check_guard(
             if (instr == 0x40) // disallow memory.grow
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                    << "HookSet(" << hook::log::MEMORY_GROW << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Memory.grow instruction not allowed at "
                     << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                 return {false, 0};
@@ -435,7 +438,7 @@ check_guard(
             if (block_depth < 0)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: GuardCheck "
+                    << "HookSet(" << hook::log::BLOCK_ILLEGAL << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Unexpected 0x0B instruction, malformed"
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return {false, 0};
@@ -449,14 +452,14 @@ check_guard(
     }
 
     JLOG(ctx.j.trace())
-        << "HookSet[" << HS_ACC() << "]: GuardCheck "
+        << "HookSet(" << hook::log::INSTRUCTION_COUNT << ")[" << HS_ACC() << "]: GuardCheck "
         << "Total worse-case execution count: " << instruction_count[0].second;
 
     // RH TODO: don't hardcode this
     if (instruction_count[0].second > 0xFFFFF)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: GuardCheck "
+            << "HookSet(" << hook::log::INSTRUCTION_EXCESS << ")[" << HS_ACC() << "]: GuardCheck "
             << "Maximum possible instructions exceed 1048575, please make your hook smaller "
             << "or check your guards!";
         return {false, 0};
@@ -467,11 +470,54 @@ check_guard(
         return {true, instruction_count[0].second};
 
     JLOG(ctx.j.trace())
-        << "HookSet[" << HS_ACC() << "]: GuardCheck "
+        << "HookSet(" << hook::log::GUARD_MISSING << ")[" << HS_ACC() << "]: GuardCheck "
         << "Guard did not occur before end of loop / function. "
         << "Codesec: " << codesec;
     return {false, 0};
 
+}
+
+bool
+validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
+{
+
+    if (hookGrants.size() < 1)
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet(" << hook::log::GRANTS_EMPTY << ")[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookGrants empty.";
+        return false;
+    }
+
+    if (hookGrants.size() > 8)
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet(" << hook::log::GRANTS_EXCESS << ")[" << HS_ACC()
+            << "]: Malformed transaction: SetHook sfHookGrants contains more than 8 entries.";
+        return false;
+    }
+
+    for (auto const& hookGrant : hookGrants)
+    {
+        auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
+        if (!hookGrantObj || (hookGrantObj->getFName() != sfHookGrant))
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::GRANTS_ILLEGAL << ")[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
+            return false;
+        }
+        else if (!hookGrantObj->isFieldPresent(sfAuthorize) && !hookGrantObj->isFieldPresent(sfHookHash))
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::GRANTS_FIELD << ")[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookGrant object did not contain either sfAuthorize "
+                << "or sfHookHash.";
+            return false;
+        }
+    }
+
+    return true;
 }
 
 bool
@@ -484,7 +530,7 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
         if (!hookParamObj || (hookParamObj->getFName() != sfHookParameter))
         {
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
+                << "HookSet(" << hook::log::PARAMETERS_ILLEGAL << ")[" << HS_ACC()
                 << "]: Malformed transaction: "
                 << "SetHook sfHookParameters contains obj other than sfHookParameter.";
             return false;
@@ -498,7 +544,7 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
             if (name != sfHookParameterName && name != sfHookParameterValue)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
+                    << "HookSet(" << hook::log::PARAMETERS_FIELD << ")[" << HS_ACC()
                     << "]: Malformed transaction: "
                     << "SetHook sfHookParameter contains object other than sfHookParameterName/Value.";
                 return false;
@@ -511,7 +557,7 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
         if (!nameFound)
         {
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
+                << "HookSet(" << hook::log::PARAMETERS_NAME << ")[" << HS_ACC()
                 << "]: Malformed transaction: "
                 << "SetHook sfHookParameter must contain at least sfHookParameterName";
             return false;
@@ -521,140 +567,46 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
     return true;
 }
 
-// returns  < valid, instruction count >
-std::pair<bool, uint64_t>
-validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
+// infer which operation the user is attempting to execute from the present and absent fields
+HookSetOperation inferOperation(STObject const& hookSetObj)
 {
-    uint64_t maxInstrCount = 0;
-    uint64_t byteCount = 0;
-
+    uint64_t wasmByteCount = hookSetObj.isFieldPresent(sfCreateCode) ? 
+            hookSetObj.getFieldVL(sfCreateCode).size() : 0;
     bool hasHash = hookSetObj.isFieldPresent(sfHookHash);
     bool hasCode = hookSetObj.isFieldPresent(sfCreateCode);
 
-    // mutex options: either link an existing hook or create a new one
-    if (hasHash && hasCode)
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook must provide only one of sfCreateCode or sfHookHash.";
-        return {false, 0};
-    }
 
-    // validate hook params structure
-    if (hookSetObj.isFieldPresent(sfHookParameters) &&
-        !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
-        return {false, 0};
+    if (hasHash && hasCode)        // Both HookHash and CreateCode: invalid
+        return hsoINVALID;
+    else if (hasHash)        // Hookhash only: install
+        return hsoINSTALL;
+    else if (hasCode)        // CreateCode only: either delete or create
+        return wasmByteCount > 0 ? hsoCREATE : hsoDELETE;
+    else if (
+        !hasHash && !hasCode &&
+        !hookSetObj.isFieldPresent(sfHookGrants) &&
+        !hookSetObj.isFieldPresent(sfHookNamespace) &&
+        !hookSetObj.isFieldPresent(sfHookParameters) &&
+        !hookSetObj.isFieldPresent(sfHookOn) &&
+        !hookSetObj.isFieldPresent(sfHookApiVersion) &&
+        !hookSetObj.isFieldPresent(sfFlags))
+        return hsoNOOP;
+    
+    return hookSetObj.isFieldPresent(sfHookNamespace) ? hsoNSDELETE : hsoUPDATE;
 
-    // validate hook grants structure
-    if (hookSetObj.isFieldPresent(sfHookGrants))
-    {
-        auto const& hookGrants = hookSetObj.getFieldArray(sfHookGrants);
-
-        if (hookGrants.size() < 1)
-        {
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookGrants empty.";
-            return {false, 0};
-        }
-
-        if (hookGrants.size() > 8)
-        {
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookGrants contains more than 8 entries.";
-            return {false, 0};
-        }
-
-        for (auto const& hookGrant : hookGrants)
-        {
-            auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
-            if (!hookGrantObj || (hookGrantObj->getFName() != sfHookGrant))
-            {
-                JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
-                return {false, 0};
-            }
-            else if (!hookGrantObj->isFieldPresent(sfAuthorize) && !hookGrantObj->isFieldPresent(sfHookHash))
-            {
-                JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: SetHook sfHookGrant object did not contain either sfAuthorize "
-                    << "or sfHookHash.";
-                return {false, 0};
-            }
-        }
-    }
-
-    // link existing hook
-    if (hasHash)
-    {
-        // ensure no hookapiversion field was provided
-        if (hookSetObj.isFieldPresent(sfHookApiVersion))
-        {
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: HookApiVersion can only be provided when creating a new hook.";
-            return {false, 0};
-        }
-
-        return {true, 0};
-    }
-
-    // execution to here means this is an sfCreateCode (hook creation) entry
-
-    // ensure hooknamespace is present
-    if (!hookSetObj.isFieldPresent(sfHookNamespace))
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookDefinition must contain sfHookNamespace.";
-        return {false, 0};
-    }
-
-    // validate api version, if provided
-    if (!hookSetObj.isFieldPresent(sfHookApiVersion))
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
-        return {false, 0};
-    }
-    else
-    {
-        auto version = hookSetObj.getFieldU16(sfHookApiVersion);
-        if (version != 0)
-        {
-            // we currently only accept api version 0
-            JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookDefinition->sfHookApiVersion invalid. (Try 0).";
-            return {false, 0};
-        }
-    }
-
-    // validate sfHookOn
-    if (!hookSetObj.isFieldPresent(sfHookOn))
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
-        return {false, 0};
-    }
+}
 
 
-    // validate createcode
+std::pair<bool, uint64_t>
+validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
+{
+
+    if (!hookSetObj.isFieldPresent(sfCreateCode))
+        return { false, 0 };
+
+    uint64_t maxInstrCount = 0;
     Blob hook = hookSetObj.getFieldVL(sfCreateCode);
-    if (hook.empty())
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookDefinition must contain non-blank sfCreateCode.";
-        return {false, 0};
-    }
-
-    byteCount = hook.size();
+    uint64_t byteCount = hook.size();
 
     // RH TODO compute actual smallest possible hook and update this value
     if (byteCount < 10)
@@ -934,6 +886,205 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
     return {true, maxInstrCount};
 }
 
+// returns  < valid, instruction count >
+std::pair<bool, uint64_t>
+validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
+{
+
+    uint32_t flags = hookSetObj.isFieldPresent(sfFlags) ? hookSetObj.getFieldU32(sfFlags) : 0;
+
+
+    switch (inferOperation(hookSetObj))
+    {
+        case hsoNOOP:
+        {
+            return {true, 0};
+        }
+
+        case hsoNSDELETE:
+        {
+            // namespace delete operation
+            if (hookSetObj.isFieldPresent(sfHookGrants)         ||
+                hookSetObj.isFieldPresent(sfHookParameters)     ||
+                hookSetObj.isFieldPresent(sfHookOn)             ||
+                hookSetObj.isFieldPresent(sfHookApiVersion)     ||
+                !hookSetObj.isFieldPresent(sfFlags)             ||
+                !hookSetObj.isFieldPresent(sfHookNamespace))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::NSDELETE_FIELD << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook nsdelete operation should contain only "
+                    << "sfHookNamespace & sfFlags";
+                return {false, 0};
+            }
+
+            if (flags != hsfNSDELETE)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::NSDELETE_FLAGS << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook nsdelete operation should only specify hsfNSDELETE";
+                return {false, 0};
+            }
+
+            return {true, 0};
+        }
+
+        case hsoDELETE:
+        {
+            if (hookSetObj.isFieldPresent(sfHookGrants)     ||
+                hookSetObj.isFieldPresent(sfHookParameters) ||
+                hookSetObj.isFieldPresent(sfHookOn)         ||
+                hookSetObj.isFieldPresent(sfHookApiVersion) ||
+                hookSetObj.isFieldPresent(sfHookNamespace)  ||
+                !hookSetObj.isFieldPresent(sfFlags))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::DELETE_FIELD << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook delete operation should contain only sfCreateCode & sfFlags";
+                return {false, 0};
+            }
+
+            if (!(flags & hsfOVERRIDE))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::OVERRIDE_MISSING << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook delete operation was missing the hsfOVERRIDE flag";
+                return {false, 0};
+            }
+
+
+            if (flags & ~(hsfOVERRIDE | hsfNSDELETE))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::FLAGS_INVALID << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook delete operation specified invalid flags";
+                return {false, 0};
+            }
+
+            return {true, 0};
+        }
+
+        case hsoINSTALL:
+        {
+            // validate hook params structure, if any
+            if (hookSetObj.isFieldPresent(sfHookParameters) &&
+                !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
+                return {false, 0};
+
+            // validate hook grants structure, if any
+            if (hookSetObj.isFieldPresent(sfHookGrants) &&
+                !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
+                return {false, 0};
+            
+            // api version not allowed in update
+            if (hookSetObj.isFieldPresent(sfHookApiVersion))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::API_ILLEGAL << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook install operation sfHookApiVersion must not be included.";
+                return {false, 0};
+            }
+    
+            // namespace may be valid, if the user so chooses
+            // hookon may be present if the user so chooses
+            // flags may be present if the user so chooses
+
+            return {true, 0};
+        }
+
+        case hsoUPDATE:
+        {
+            // validate hook params structure
+            if (hookSetObj.isFieldPresent(sfHookParameters) &&
+                !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
+                return {false, 0};
+
+            // validate hook grants structure
+            if (hookSetObj.isFieldPresent(sfHookGrants) &&
+                !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
+                return {false, 0};
+            
+            // api version not allowed in update
+            if (hookSetObj.isFieldPresent(sfHookApiVersion))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::API_ILLEGAL << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook update operation sfHookApiVersion must not be included.";
+                return {false, 0};
+            }
+
+            // namespace may be valid, if the user so chooses
+            // hookon may be present if the user so chooses
+            // flags may be present if the user so chooses
+
+            return {true, 0};
+        }
+
+        case hsoCREATE:
+        {
+            // validate hook params structure
+            if (hookSetObj.isFieldPresent(sfHookParameters) &&
+                !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
+                return {false, 0};
+
+            // validate hook grants structure
+            if (hookSetObj.isFieldPresent(sfHookGrants) &&
+                !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
+                return {false, 0};
+
+
+            // ensure hooknamespace is present
+            if (!hookSetObj.isFieldPresent(sfHookNamespace))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::NAMESPACE_MISSING << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookDefinition must contain sfHookNamespace.";
+                return {false, 0};
+            }
+
+            // validate api version, if provided
+            if (!hookSetObj.isFieldPresent(sfHookApiVersion))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::API_MISSING << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
+                return {false, 0};
+            }
+                
+            auto version = hookSetObj.getFieldU16(sfHookApiVersion);
+            if (version != 0)
+            {
+                // we currently only accept api version 0
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::API_INVALID << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook sfHook->sfHookApiVersion invalid. (Try 0).";
+                return {false, 0};
+            }
+
+            // validate sfHookOn
+            if (!hookSetObj.isFieldPresent(sfHookOn))
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet(" << hook::log::HOOKON_MISSING << ")[" << HS_ACC()
+                    << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
+                return {false, 0};
+            }
+            
+            // finally validate web assembly byte code
+            return validateCreateCode(ctx, hookSetObj);            
+        }
+        
+        case hsoINVALID:
+        default:
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::HASH_OR_CODE << ")[" << HS_ACC()
+                << "]: Malformed transaction: SetHook must provide only one of sfCreateCode or sfHookHash.";
+            return {false, 0};
+        }
+    }
+}
+
 FeeUnit64
 SetHook::calculateBaseFee(ReadView const& view, STTx const& tx)
 {
@@ -1201,7 +1352,7 @@ SetHook::destroyNamespace(
     oldDirSLE->setFieldU64(sfReferenceCount, refCount);\
     view().update(oldDirSLE);\
     if (refCount <= 0)\
-        dirsToDestroy[oldDirKeylet->key] =  flags & FLAG_NSDELETE;\
+        dirsToDestroy[oldDirKeylet->key] =  flags & hsfNSDELETE;\
 }
 
 #define DIRECTORY_INC()\
@@ -1248,7 +1399,7 @@ SetHook::destroyNamespace(
     oldDefSLE->setFieldU64(sfReferenceCount, refCount-1);\
     view().update(oldDefSLE);\
     if (refCount <= 0)\
-        defsToDestroy[oldDefKeylet->key] = flags & FLAG_OVERRIDE;\
+        defsToDestroy[oldDefKeylet->key] = flags & hsfOVERRIDE;\
 }
 
 #define DEFINITION_INC()\
@@ -1361,7 +1512,6 @@ SetHook::setHook()
         bool        isDeleteOperation =
                         hasCreateCode && hookSetObj->getFieldVL(sfCreateCode).size() == 0;
 
-        printf("PATH X\n");
         bool        isUpdateOperation =
                         oldHook && hasHookHash &&
                         (hookSetObj->getFieldH256(sfHookHash) == oldHook->get().getFieldH256(sfHookHash));
@@ -1388,7 +1538,7 @@ SetHook::setHook()
         if (oldHook)
         {
             // certain actions require explicit flagging to prevent user error
-            if (!(flags & FLAG_OVERRIDE) && !isUpdateOperation)
+            if (!(flags & hsfOVERRIDE) && !isUpdateOperation)
             {
                 // deletes (and creates that override an existing hook) require a flag
                 JLOG(ctx.j.trace())
@@ -1783,7 +1933,7 @@ SetHook::setHook()
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
                     << "]: Malformed transaction: SetHook operation would delete a namespace of hook states"
-                    << " but to do this you must set the NSDELETE flag";
+                    << " but to do this you must set the hsfNSDELETE flag";
                 return tecREQUIRES_FLAG;
             }
 
@@ -1805,7 +1955,7 @@ SetHook::setHook()
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC()
                     << "]: Malformed transaction: SetHook operation would delete a hook"
-                    << " but to do this you must set the OVERRIDE flag";
+                    << " but to do this you must set the hsfOVERRIDE flag";
                 return tecREQUIRES_FLAG;
             }
             view().erase(sle);

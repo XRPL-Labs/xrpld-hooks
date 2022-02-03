@@ -2385,11 +2385,11 @@ public:
         std::shared_ptr<Transaction>&,
         bool,
         bool,
-        bool,
         NetworkOPs::FailHard)
     {
         ;
     }
+
 
     void
     testTransactionRPC()

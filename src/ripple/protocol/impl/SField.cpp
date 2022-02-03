@@ -59,15 +59,12 @@ static SField::private_access_tag_t access;
 #pragma push_macro("CONSTRUCT_TYPED_SFIELD")
 #undef CONSTRUCT_TYPED_SFIELD
 
-#define XSTR(x) STR(x)
-#define STR(x) #x
-
 #define CONSTRUCT_TYPED_SFIELD(sfName, txtName, stiSuffix, fieldValue, ...) \
     SF_##stiSuffix const sfName(                                            \
         access, STI_##stiSuffix, fieldValue, txtName, ##__VA_ARGS__);       \
     static_assert(                                                          \
         std::string_view(#sfName) == "sf" txtName,                          \
-        "Declaration of SField does not match its text name: " txtName)
+        "Declaration of SField does not match its text name")
 
 // clang-format off
 
@@ -100,11 +97,11 @@ CONSTRUCT_TYPED_SFIELD(sfSignerWeight,          "SignerWeight",         UINT16, 
 CONSTRUCT_TYPED_SFIELD(sfTransferFee,           "TransferFee",          UINT16,     4);
 
 // 16-bit integers (uncommon)
-CONSTRUCT_TYPED_SFIELD(sfVersion,               "Version",              UINT16,     16);
-CONSTRUCT_TYPED_SFIELD(sfHookStateChangeCount,  "HookStateChangeCount", UINT16,     17);
-CONSTRUCT_TYPED_SFIELD(sfHookEmitCount,         "HookEmitCount",        UINT16,     18);
-CONSTRUCT_TYPED_SFIELD(sfHookExecutionIndex,    "HookExecutionIndex",   UINT16,     19);
-CONSTRUCT_TYPED_SFIELD(sfHookApiVersion,        "HookApiVersion",       UINT16,     20);
+CONSTRUCT_TYPED_SFIELD(sfVersion,               "Version",              UINT16,    16);
+CONSTRUCT_TYPED_SFIELD(sfHookStateChangeCount,  "HookStateChangeCount", UINT16,    17);
+CONSTRUCT_TYPED_SFIELD(sfHookEmitCount,         "HookEmitCount",        UINT16,    18);
+CONSTRUCT_TYPED_SFIELD(sfHookExecutionIndex,    "HookExecutionIndex",   UINT16,    19);
+CONSTRUCT_TYPED_SFIELD(sfHookApiVersion,        "HookApiVersion",       UINT16,    20);
 
 // 32-bit integers (common)
 CONSTRUCT_TYPED_SFIELD(sfFlags,                 "Flags",                UINT32,     2);

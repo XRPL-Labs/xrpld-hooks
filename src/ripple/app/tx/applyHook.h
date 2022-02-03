@@ -15,11 +15,76 @@
 #include <ripple/app/tx/applyHookMacro.h>
 #include <wasmedge/wasmedge.h>
 
+enum HookSetFlags : uint8_t
+{
+    hsfOVERRIDE = (1U << 0U),       // override or delete hook
+    hsfNSDELETE = (1U << 1U),       // delete namespace
+};
+
+enum HookSetOperation : int8_t
+{
+    hsoINVALID  = -1,
+    hsoNOOP     = 0,
+    hsoCREATE   = 1,
+    hsoINSTALL  = 2,
+    hsoDELETE   = 3,
+    hsoNSDELETE = 4,
+    hsoUPDATE   = 5
+};
+
+
 namespace hook
 {
     struct HookContext;
     struct HookResult;
     bool isEmittedTxn(ripple::STTx const& tx);
+
+
+
+    namespace log
+    {
+        /*
+         * Hook log-codes are not necessarily errors. Each type of Hook log line contains a code in
+         * round parens like so:
+         *      HookSet(5)[rAcc...]: message
+         * The log-code gives an external tool an easy way to handle and report the status of a hook
+         * to end users and developers.
+         */
+        enum hook_log_code : uint16_t
+        {
+            /* HookSet log-codes */
+            SHORT_HOOK          =   0,  // web assembly byte code ended abruptly
+            CALL_ILLEGAL        =   1,  // wasm tries to call a non-whitelisted function
+            GUARD_PARAMETERS    =   2,  // guard called but did not use constant expressions for params
+            CALL_INDIRECT       =   3,  // wasm used call indirect instruction which is disallowed
+            GUARD_MISSING       =   4,  // guard call missing at top of loop
+            MEMORY_GROW         =   5,  // memory.grow instruction is present but disallowed
+            BLOCK_ILLEGAL       =   6,  // a block end instruction moves execution below depth 0 {{}}`}` <= like this
+            INSTRUCTION_COUNT   =   7,  // worst case execution instruction count as computed by HookSet
+            INSTRUCTION_EXCESS  =   8,  // worst case execution instruction count was too large
+            PARAMETERS_ILLEGAL  =   9,  // HookParameters contained something other than a HookParameter
+            PARAMETERS_FIELD    =  10,  // HookParameters contained a HookParameter with an invalid key in it
+            PARAMETERS_NAME     =  11,  // HookParameters contained a HookParameter which lacked ParameterName field
+            HASH_OR_CODE        =  12,  // HookSet object can contain only one of CreateCode and HookHash
+            GRANTS_EMPTY        =  13,  // HookSet object contained an empty grants array (you should remove it)
+            GRANTS_EXCESS       =  14,  // HookSet object cotnained a grants array with too many grants
+            GRANTS_ILLEGAL      =  15,  // Hookset object contained grants array which contained a non Grant object
+            GRANTS_FIELD        =  16,  // HookSet object contained a grant without Authorize or HookHash
+            API_ILLEGAL         =  17,  // HookSet object contained HookApiVersion for existing HookDefinition
+            NAMESPACE_MISSING   =  18,  // HookSet object lacked HookNamespace
+            API_MISSING         =  19,  // HookSet object did not contain HookApiVersion but should have
+            API_INVALID         =  20,  // HookSet object contained HookApiVersion for unrecognised hook API
+            HOOKON_MISSING      =  21,  // HookSet object did not contain HookOn but should have
+            DELETE_FIELD        =  22,  // 
+            OVERRIDE_MISSING    =  23,  // HookSet object was trying to update or delete a hook but lacked hsfOVERRIDE
+            FLAGS_INVALID       =  24,  // HookSet flags were invalid for specified operation
+            NSDELETE_FIELD      =  25,
+            NSDELETE_FLAGS      =  26
+            //RH UPTO
+
+        };
+    };
+    
 }
 
 namespace hook_api
