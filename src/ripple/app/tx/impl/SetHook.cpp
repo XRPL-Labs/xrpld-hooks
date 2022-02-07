@@ -1590,6 +1590,9 @@ SetHook::setHook()
         std::optional<uint64_t>                                         newHookOn;
         std::optional<uint64_t>                                         defHookOn;
 
+        // when hsoCREATE is invoked it populates this variable in case the hook definition already exists
+        // and the operation falls through into a hsoINSTALL operation instead
+        std::optional<ripple::uint256>                                  createHookHash;
         /**
          * This is the primary HookSet loop. We iterate the sfHooks array inside the txn
          * each entry of this array is available as hookSetObj.
@@ -1606,16 +1609,23 @@ SetHook::setHook()
         {
             oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
             oldDefSLE = view().peek(*oldDefKeylet);
-            defNamespace = oldDefSLE->getFieldH256(sfHookNamespace);
-            oldNamespace = oldHook->get().isFieldPresent(sfHookNamespace)
-                    ? oldHook->get().getFieldH256(sfHookNamespace)
-                    : *defNamespace;
+            if (oldDefSLE)
+                defNamespace = oldDefSLE->getFieldH256(sfHookNamespace);
+
+            if (oldHook->get().isFieldPresent(sfHookNamespace))
+                oldNamespace = oldHook->get().getFieldH256(sfHookNamespace);
+            else if (defNamespace)
+                oldNamespace = *defNamespace;
+
             oldDirKeylet = keylet::hookStateDir(account_, *oldNamespace);
             oldDirSLE = view().peek(*oldDirKeylet);
-            defHookOn = oldDefSLE->getFieldU64(sfHookOn);
-            oldHookOn = oldHook->get().isFieldPresent(sfHookOn)
-                    ? oldHook->get().getFieldU64(sfHookOn)
-                    : *defHookOn;
+            if (oldDefSLE)
+                defHookOn = oldDefSLE->getFieldU64(sfHookOn);
+
+            if (oldHook->get().isFieldPresent(sfHookOn))
+                oldHookOn = oldHook->get().getFieldU64(sfHookOn);
+            else if (defHookOn)
+                oldHookOn = *defHookOn;
         }
 
 
@@ -1744,11 +1754,11 @@ SetHook::setHook()
                     return tecINTERNAL;
                 }
 
-                auto hash = ripple::sha512Half_s(
+                createHookHash = ripple::sha512Half_s(
                     ripple::Slice(wasmBytes.data(), wasmBytes.size())
                 );
 
-                auto keylet = ripple::keylet::hookDefinition(hash);
+                auto keylet = ripple::keylet::hookDefinition(*createHookHash);
 
 
                 if (view().exists(keylet))
@@ -1787,7 +1797,7 @@ SetHook::setHook()
                     }
 
                     auto newHookDef = std::make_shared<SLE>( keylet );
-                    newHookDef->setFieldH256(sfHookHash, hash);
+                    newHookDef->setFieldH256(sfHookHash, *createHookHash);
                     newHookDef->setFieldU64(    sfHookOn, *newHookOn);
                     newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
                     newHookDef->setFieldArray(  sfHookParameters,
@@ -1800,7 +1810,7 @@ SetHook::setHook()
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
                     newHookDef->setFieldAmount(sfFee,  XRPAmount {hook::computeExecutionFee(maxInstrCount)} );
                     view().insert(newHookDef);
-                    newHook.setFieldH256(sfHookHash, hash);
+                    newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
                     continue;
                 }
@@ -1832,9 +1842,11 @@ SetHook::setHook()
                 if (oldHook && reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
 
-                // set the hookhash on the new hook
-                uint256 const& hash = hookSetObj->getFieldH256(sfHookHash);
-                newHook.setFieldH256(sfHookHash, hash);
+                // set the hookhash on the new hook, and allow for a fall through event from hsoCREATE
+                if (!createHookHash)
+                    createHookHash = hookSetObj->getFieldH256(sfHookHash);
+
+                newHook.setFieldH256(sfHookHash, *createHookHash);
 
                 // increment reference count of target HookDefintion
                 incrementReferenceCount(newDefSLE);

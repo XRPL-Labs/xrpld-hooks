@@ -181,7 +181,7 @@ Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet c
     {
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
 
-        if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
+        if (!hookObj->isFieldPresent(sfHookHash)) // skip blanks
             continue;
         
         uint256 const& hash = hookObj->getFieldH256(sfHookHash);
@@ -960,7 +960,7 @@ executeHookChain(
     {
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
 
-        if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
+        if (!hookObj->isFieldPresent(sfHookHash)) // skip blanks
             continue;
 
         // lookup hook definition
@@ -976,9 +976,10 @@ executeHookChain(
         auto const& hookDef = ctx.view().peek(keylet::hookDefinition(hookHash));
         if (!hookDef)
         {
-            JLOG(j_.fatal())
+            JLOG(j_.warn())
                 << "HookError[]: Failure: hook def missing (send)";
-            return true;
+//            return true;
+            continue;
         }
 
         // check if the hook can fire
@@ -1150,7 +1151,7 @@ Transactor::operator()()
 
                     STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
-                    if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
+                    if (!hookObj->isFieldPresent(sfHookHash)) // skip blanks
                         continue;
 
                     if (hookObj->getFieldH256(sfHookHash) != callbackHookHash)
