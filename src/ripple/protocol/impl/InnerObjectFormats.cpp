@@ -85,7 +85,8 @@ InnerObjectFormats::InnerObjectFormats()
             {sfHookParameters,  soeREQUIRED},
             {sfHookOn,          soeREQUIRED},
             {sfHookApiVersion,  soeREQUIRED},
-            {sfFlags,           soeREQUIRED}
+            {sfFlags,           soeREQUIRED},
+            {sfFee,             soeREQUIRED}
         });
     
     add(sfHook.jsonName.c_str(),
