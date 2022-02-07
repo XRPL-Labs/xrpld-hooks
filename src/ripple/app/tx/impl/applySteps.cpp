@@ -440,15 +440,15 @@ preflight(
     beast::Journal j)
 {
     PreflightContext const pfctx(app, tx, rules, flags, j);
-    try
-    {
+//    try
+//    {
         return {pfctx, invoke_preflight(pfctx)};
-    }
-    catch (std::exception const& e)
-    {
-        JLOG(j.fatal()) << "apply: " << e.what();
-        return {pfctx, {tefEXCEPTION, TxConsequences{tx}}};
-    }
+//    }
+//    catch (std::exception const& e)
+//    {
+//        JLOG(j.fatal()) << "apply: " << e.what();
+//        return {pfctx, {tefEXCEPTION, TxConsequences{tx}}};
+//    }
 }
 
 PreclaimResult
@@ -484,17 +484,17 @@ preclaim(
             preflightResult.flags,
             preflightResult.j);
     }
-    try
-    {
+//    try
+//    {
         if (ctx->preflightResult != tesSUCCESS)
             return {*ctx, ctx->preflightResult};
         return {*ctx, invoke_preclaim(*ctx)};
-    }
-    catch (std::exception const& e)
-    {
-        JLOG(ctx->j.fatal()) << "apply: " << e.what();
-        return {*ctx, tefEXCEPTION};
-    }
+//    }
+//    catch (std::exception const& e)
+//    {
+//        JLOG(ctx->j.fatal()) << "apply: " << e.what();
+//        return {*ctx, tefEXCEPTION};
+//    }
 }
 
 FeeUnit64
@@ -518,8 +518,8 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
         // info to recover.
         return {tefEXCEPTION, false};
     }
-    try
-    {
+//    try
+//    {
         if (!preclaimResult.likelyToClaimFee)
             return {preclaimResult.ter, false};
 
@@ -532,12 +532,12 @@ doApply(PreclaimResult const& preclaimResult, Application& app, OpenView& view)
             preclaimResult.flags,
             preclaimResult.j);
         return invoke_apply(ctx);
-    }
-    catch (std::exception const& e)
-    {
-        JLOG(preclaimResult.j.fatal()) << "apply: " << e.what();
-        return {tefEXCEPTION, false};
-    }
+//    }
+//    catch (std::exception const& e)
+//    {
+//        JLOG(preclaimResult.j.fatal()) << "apply: " << e.what();
+//        return {tefEXCEPTION, false};
+//    }
 }
 
 }  // namespace ripple

@@ -176,16 +176,25 @@ Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet c
     FeeUnit64 fee{0};
 
     auto const& hooks = hookSLE->getFieldArray(sfHooks);
+
     for (auto const& hook : hooks)
     {
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
 
-        if (hookObj->getCount() == 0) // skip blanks
+        if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
             continue;
         
         uint256 const& hash = hookObj->getFieldH256(sfHookHash);
             
         std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(hash));
+
+        // this is an edge case that happens when a hook is deleted and executed at the same ledger
+        // the fee calculation for it can no longer occur
+        if (!hookDef)
+        {
+            printf("calculateHookChainFee edge case\n");
+            continue;
+        }
             
         fee += FeeUnit64{
             (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
@@ -951,7 +960,7 @@ executeHookChain(
     {
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
 
-        if (hookObj->getCount() == 0) // skip blanks
+        if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
             continue;
 
         // lookup hook definition
@@ -1141,7 +1150,7 @@ Transactor::operator()()
 
                     STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
-                    if (hookObj->getCount() == 0) // skip blanks
+                    if (hookObj->getCount() == 0 || !hookObj->isFieldPresent(sfHookHash)) // skip blanks
                         continue;
 
                     if (hookObj->getFieldH256(sfHookHash) != callbackHookHash)

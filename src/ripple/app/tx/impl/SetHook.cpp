@@ -1602,7 +1602,7 @@ SetHook::setHook()
         uint32_t flags = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
 
         // if an existing hook exists at this position in the chain then extract the relevant fields
-        if (oldHook)
+        if (oldHook && oldHook->get().isFieldPresent(sfHookHash))
         {
             oldDefKeylet = keylet::hookDefinition(oldHook->get().getFieldH256(sfHookHash));
             oldDefSLE = view().peek(*oldDefKeylet);
@@ -1692,7 +1692,7 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (reduceReferenceCount(oldDefSLE))
+                if (oldDefSLE && reduceReferenceCount(oldDefSLE))
                     defsToDestroy.emplace(*oldDefKeylet);
 
                 continue;
@@ -1726,7 +1726,7 @@ SetHook::setHook()
 
             case hsoCREATE:
             {
-                if (oldHook && !(flags & hsfOVERRIDE))
+                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC()
@@ -1811,7 +1811,7 @@ SetHook::setHook()
             // otherwise be created already exists on the ledger
             case hsoINSTALL:
             {
-                if (oldHook && !(flags & hsfOVERRIDE))
+                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC()
