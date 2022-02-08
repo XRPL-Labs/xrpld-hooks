@@ -32,7 +32,6 @@ enum HookSetOperation : int8_t
     hsoUPDATE   = 5
 };
 
-
 namespace hook
 {
     struct HookContext;
@@ -40,6 +39,13 @@ namespace hook
     bool isEmittedTxn(ripple::STTx const& tx);
 
 
+    // this map type acts as both a read and write cache for hook execution
+    using HookStateMap =    std::map<ripple::AccountID,             // account that owns the state
+                         std::map<ripple::uint256,               // namespace
+                            std::map<ripple::uint256,               // key
+                            std::pair<
+                                bool,                               // is modified from ledger value
+                                ripple::Blob>>>>;                   // the value
 
     namespace log
     {
@@ -410,6 +416,7 @@ namespace hook
                 std::vector<uint8_t>,
                 std::vector<uint8_t>
             >> const& hookParamOverrides,
+        std::shared_ptr<HookStateMap>& stateMap,
         ripple::ApplyContext& applyCtx,
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
         bool callback = false,
@@ -441,14 +448,8 @@ namespace hook
         ripple::uint256     const&      hookNamespace;
 
         std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
-        std::shared_ptr<
-                std::map<ripple::AccountID,     // account to whom the state belongs
-                std::map<ripple::uint256,       // namespace
-                std::map<ripple::uint256,       // state key
-                std::pair<
-                    bool,                       // has been modified
-                    ripple::Blob>>>>>           // actual state data
-                        changedState;
+        std::shared_ptr<HookStateMap> stateMap;
+        uint16_t changedStateCount = 0;
         std::map<
             ripple::uint256,                    // hook hash
             std::map<
@@ -514,18 +515,26 @@ namespace hook
         ripple::uint256 const & key,
         ripple::Slice const& data);
 
-    // commit changes to ledger flags
-    enum cclFlags : uint8_t {
-        cclREMOVE = 0b10U,
-        cclAPPLY  = 0b01U
-    };
 
-    // finalize the changes the hook made to the ledger
-    void commitChangesToLedger( hook::HookResult& hookResult, ripple::ApplyContext&, uint8_t );
+    // write hook execution metadata and remove emitted transaction ledger entries
+    ripple::TER
+    finalizeHookResult(
+        hook::HookResult& hookResult,
+        ripple::ApplyContext&,
+        bool doEmit);
 
+    // write state map to ledger
+    ripple::TER
+    finalizeHookState(
+        std::shared_ptr<HookStateMap>&,
+        ripple::ApplyContext&);
 
+    // if the txn being executed was an emitted txn then this removes it from the emission directory
+    ripple::TER
+    removeEmissionEntry(
+        ripple::ApplyContext& applyCtx);
+    
     // RH TODO: call destruct for these on rippled shutdown
-
     #define ADD_HOOK_FUNCTION(F, ctx)\
     {\
         WasmEdge_FunctionInstanceContext* hf = WasmEdge_FunctionInstanceCreate(\

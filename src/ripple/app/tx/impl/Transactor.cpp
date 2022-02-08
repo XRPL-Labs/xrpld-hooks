@@ -939,6 +939,7 @@ gatherHookParameters(
 bool /* error = true */
 executeHookChain(
         std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
+        std::shared_ptr<hook::HookStateMap>& stateMap,
         std::vector<hook::HookResult>& results,
         int& executedHookCount,
         ripple::AccountID const& account,
@@ -956,6 +957,7 @@ executeHookChain(
 
     auto const& hooks = hookSLE->getFieldArray(sfHooks);
     int hook_no = 0;
+
     for (auto const& hook : hooks)
     {
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
@@ -999,7 +1001,11 @@ executeHookChain(
         // gather parameters
         std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
         if (gatherHookParameters(hookDef, hookObj, parameters, j_))
+        {
+            JLOG(j_.warn())
+                << "HookError[]: Failure: gatherHookParameters failed)";
             return true;
+        }
 
         results.push_back(
             hook::apply(
@@ -1009,6 +1015,7 @@ executeHookChain(
                 hookDef->getFieldVL(sfCreateCode),
                 parameters,
                 hookParamOverrides,
+                stateMap,
                 ctx,
                 account,
                 false,
@@ -1087,6 +1094,10 @@ Transactor::operator()()
         (result == tesSUCCESS || result == tecHOOK_REJECTED))
     {
 
+        // this state map will be shared across all hooks in this execution chain
+        // and any associated chains which are executed during this transaction also
+        std::shared_ptr<hook::HookStateMap> stateMap = std::make_shared<hook::HookStateMap>();
+
         auto const& ledger = ctx_.view();
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
         std::vector<hook::HookResult> sendResults;
@@ -1096,7 +1107,8 @@ Transactor::operator()()
 
         // First check if the Sending account has any hooks that can be fired
         if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
-            rollback = executeHookChain(hooksSending, sendResults, executedHookCount, accountID, ctx_, j_, result);
+            rollback = executeHookChain(hooksSending, stateMap,
+                    sendResults, executedHookCount, accountID, ctx_, j_, result);
 
         // Next check if the Receiving account has as a hook that can be fired...
         std::optional<AccountID>
@@ -1107,11 +1119,22 @@ Transactor::operator()()
             auto const& hooksReceiving = ledger.read(keylet::hook(*destAccountID));
             if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
                 rollback =
-                    executeHookChain(hooksReceiving, recvResults, executedHookCount, *destAccountID, ctx_, j_, result);
+                    executeHookChain(hooksReceiving, stateMap,
+                        recvResults, executedHookCount, *destAccountID, ctx_, j_, result);
         }
 
         if (rollback && result != temMALFORMED)
             result = tecHOOK_REJECTED;
+
+        // write state if all chains executed successfully
+        if (result == tesSUCCESS)
+            hook::finalizeHookState(stateMap, ctx_);
+
+        // write hook results
+        for (auto& sendResult: sendResults)
+            hook::finalizeHookResult(sendResult, ctx_, result == tesSUCCESS);
+        for (auto& recvResult: recvResults)
+            hook::finalizeHookResult(recvResult, ctx_, result == tesSUCCESS);
 
         // Finally check if there is a callback
         do
@@ -1138,7 +1161,6 @@ Transactor::operator()()
                 {
                     JLOG(j_.warn())
                         << "HookError[]: Hook def missing on callback";
-                    rollback = true;
                     break;
                 }
 
@@ -1168,31 +1190,58 @@ Transactor::operator()()
                     std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
                     if (gatherHookParameters(hookDef, hookObj, parameters, j_))
                     {
-                        rollback = true;
+                        JLOG(j_.warn())
+                            << "HookError[]: Failure: gatherHookParameters failed)";
                         break;
                     }
 
                     found = true;
 
                     // this call will clean up ltEMITTED_NODE as well
-                    try {
-                    hook::apply(
-                        hookDef->getFieldH256(sfHookSetTxnID),
-                        callbackHookHash,
-                        ns,
-                        hookDef->getFieldVL(sfCreateCode),
-                        // params
-                        parameters,
-                        {},
-                        ctx_,
-                        callbackAccountID,
-                        true,
-                        safe_cast<TxType>(
-                            ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE ? 1UL : 0UL, hook_no - 1);
+                    try
+                    {
+                        // reset the stateMap
+                        stateMap = std::make_shared<hook::HookStateMap>();
+
+                        hook::HookResult callbackResult = 
+                            hook::apply(
+                                hookDef->getFieldH256(sfHookSetTxnID),
+                                callbackHookHash,
+                                ns,
+                                hookDef->getFieldVL(sfCreateCode),
+                                // params
+                                parameters,
+                                {},
+                                stateMap,
+                                ctx_,
+                                callbackAccountID,
+                                true,
+                                safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE 
+                                    ? 1UL : 0UL, 
+                                hook_no - 1);
+
+                        
+                        bool success = callbackResult.exitType == hook_api::ExitType::ACCEPT;
+
+                        // write any state changes if cbak resulted in accept()
+                        if (result == tesSUCCESS)
+                            hook::finalizeHookState(stateMap, ctx_);
+
+                        // write the final result
+                        ripple::TER result =
+                            finalizeHookResult(callbackResult, ctx_, success);
+
+                        JLOG(j_.trace())
+                            << "HookInfo[" << HC_ACC() << "]: "
+                            << "Callback finalizeHookResult = "
+                            << result;
+
                     }
                     catch (std::exception& e)
                     {
-                        JLOG(j_.fatal()) << "HookError[" << callbackAccountID << "]: Callback failure " << e.what();
+                        JLOG(j_.fatal()) 
+                            << "HookError[" << callbackAccountID 
+                            << "]: Callback failure " << e.what();
                     }
 
                     break;
@@ -1203,18 +1252,13 @@ Transactor::operator()()
                     JLOG(j_.warn())
                         << "HookError[]: Hookhash not found on callback account";
                 }
-
-                if (rollback)
-                    break;
             }
         }
         while(0);
 
-        for (auto& sendResult: sendResults)
-            hook::commitChangesToLedger(sendResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE);
 
-        for (auto& recvResult: recvResults)
-            hook::commitChangesToLedger(recvResult, ctx_, result == tesSUCCESS ? hook::cclAPPLY : hook::cclREMOVE );
+        // remove emission entry if this is an emitted transaction
+        hook::removeEmissionEntry(ctx_);
     }
 
     uint64_t posthook_cycles = rdtsc();

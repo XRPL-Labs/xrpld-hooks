@@ -459,6 +459,7 @@ hook::apply(
             std::vector<uint8_t>,
             std::vector<uint8_t>
         >> const& hookParamOverrides,
+    std::shared_ptr<HookStateMap> stateMap,
     ApplyContext& applyCtx,
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
     bool callback,
@@ -479,14 +480,8 @@ hook::apply(
             .account = account,
             .otxnAccount = applyCtx.tx.getAccountID(sfAccount),
             .hookNamespace = hookNamespace,
-            .changedState =
-                std::make_shared<
-                    std::map<ripple::AccountID,
-                    std::map<ripple::uint256,
-                    std::map<ripple::uint256,
-                    std::pair<
-                        bool,
-                        ripple::Blob>>>>>(),
+            .stateMap = stateMap,
+            .changedStateCount = 0,
             .hookParamOverrides = hookParamOverrides,
             .hookParams = hookParams,
             .hookSkips = {},
@@ -518,17 +513,6 @@ hook::apply(
         "HookInfo[" << HC_ACC() << "]: " <<
             ( hookCtx.result.exitType == hook_api::ExitType::ROLLBACK ? "ROLLBACK" : "ACCEPT" ) <<
         " RS: '" <<  hookCtx.result.exitReason.c_str() << "' RC: " << hookCtx.result.exitCode;
-
-    // callback auto-commits on non-rollback
-    if (callback)
-    {
-        // importantly the callback always removes the entry from the ltEMITTED structure
-        uint8_t cclMode = hook::cclREMOVE;
-        // we will only apply changes from the callback if the callback accepted
-        if (hookCtx.result.exitType == hook_api::ExitType::ACCEPT)
-            cclMode |= hook::cclAPPLY;
-        commitChangesToLedger(hookCtx.result, applyCtx, cclMode);
-    }
 
     return hookCtx.result;
 }
@@ -632,20 +616,27 @@ lookup_state_cache(
         ripple::uint256 const& ns,
         ripple::uint256 const& key)
 {
-    auto& changedState = *(hookCtx.result.changedState);
-    if (changedState.find(acc) == changedState.end())
+    std::cout << "Lookup_state_cache: acc: " << acc << " ns: " << ns << " key: " << key << "\n";
+    auto& stateMap = *(hookCtx.result.stateMap);
+    if (stateMap.find(acc) == stateMap.end())
         return std::nullopt;
 
-    auto& changedStateAcc = changedState[acc];
-    if (changedStateAcc.find(ns) == changedStateAcc.end())
+    printf("here1\n");
+
+    auto& stateMapAcc = stateMap[acc];
+    if (stateMapAcc.find(ns) == stateMapAcc.end())
         return std::nullopt;
+    
+    printf("here2\n");
 
-    auto& changedStateNs = changedStateAcc[ns];
+    auto& stateMapNs = stateMapAcc[ns];
 
-    auto const& ret = changedStateNs.find(key);
+    auto const& ret = stateMapNs.find(key);
 
-    if (ret == changedStateNs.end())
+    if (ret == stateMapNs.end())
         return std::nullopt;
+    
+    printf("here3\n");
 
     return std::cref(ret->second);
 }
@@ -663,10 +654,10 @@ set_state_cache(
         bool modified)
 {
 
-    auto& changedState = *(hookCtx.result.changedState);
-    if (changedState.find(acc) == changedState.end())
+    auto& stateMap = *(hookCtx.result.stateMap);
+    if (stateMap.find(acc) == stateMap.end())
     {
-        changedState[acc] =
+        stateMap[acc] =
         {
             { ns,
                 {
@@ -679,10 +670,10 @@ set_state_cache(
         return;
     }
 
-    auto& changedStateAcc = changedState[acc];
-    if (changedStateAcc.find(ns) == changedStateAcc.end())
+    auto& stateMapAcc = stateMap[acc];
+    if (stateMapAcc.find(ns) == stateMapAcc.end())
     {
-        changedStateAcc[ns] =
+        stateMapAcc[ns] =
         {
             { key,
                        { modified, data }
@@ -691,17 +682,23 @@ set_state_cache(
         return;
     }
 
-    auto& changedStateNs = changedStateAcc[ns];
-    if (changedStateNs.find(key) == changedStateNs.end())
+    auto& stateMapNs = stateMapAcc[ns];
+    if (stateMapNs.find(key) == stateMapNs.end())
     {
-        changedStateNs[key] = { modified, data };
+        stateMapNs[key] = { modified, data };
+        hookCtx.changedStateCount++;
         return;
     }
 
     if (modified)
-        changedStateNs[key].first = true;
+    {
+        if (!stateMapNs[key].first)
+            hookCtx.changedStateCount++;
 
-    changedStateNs[key].second = data;
+        stateMapNs[key].first = true;
+    }
+
+    stateMapNs[key].second = data;
     return;
 }
 
@@ -869,73 +866,103 @@ DEFINE_HOOK_FUNCTION(
     return read_len;
 }
 
-
-void hook::commitChangesToLedger(
-        hook::HookResult& hookResult,
-        ripple::ApplyContext& applyCtx,
-        uint8_t cclMode = 0b11U)
-    /* Mode: (Bits)
-     *  (MSB)      (LSB)
-     * ------------------------
-     * | cclRemove | cclApply |
-     * ------------------------
-     * | 1         | 1        |  Remove old ltEMITTED entry (where applicable) and apply state changes
-     * | 0         | 1        |  Apply but don't Remove ltEMITTED entry
-     * | 1         | 0        |  Remove but don't Apply (used when rollback on an emitted txn)
-     * | 0         | 0        |  Invalid option
-     * ------------------------
-     */
+ripple::TER
+hook::
+finalizeHookState(
+        std::shared_ptr<HookStateMap>& stateMap,
+        ripple::ApplyContext& applyCtx)
 {
 
     auto const& j = applyCtx.app.journal("View");
-    if (cclMode == 0)
-    {
-        JLOG(j.warn()) <<
-            "HookError[" << HR_ACC() << "]: commitChangesToLedger called with invalid mode (00)";
-        return;
-    }
+    uint16_t changeCount = 0;
 
-    uint16_t change_count = 0;
-
-    // write hook state changes, if we are allowed to
-    if (cclMode & cclAPPLY)
-    {
-        // write all changes to state, if in "apply" mode
-        for (const auto& accEntry : *(hookResult.changedState)) {
-            const auto& acc = accEntry.first;
-            for (const auto& nsEntry : accEntry.second) {
-                const auto& ns = nsEntry.first;
-                for (const auto& cacheEntry : nsEntry.second) {
-                    bool is_modified = cacheEntry.second.first;
-                    const auto& key = cacheEntry.first;
-                    const auto& blob = cacheEntry.second.second;
-                    if (is_modified) {
-                        change_count++;
-                        // this entry isn't just cached, it was actually modified
-                        auto slice = Slice(blob.data(), blob.size());
-
-                        TER result = 
-                            setHookState(hookResult, applyCtx, acc, ns, key, slice);
-
-                        if (result != tesSUCCESS)
-                        {
-                            JLOG(j.warn())
-                                << "HookError[" << HR_ACC() << "]: SetHookState failed: " << result
-                                << " Key: " << key 
-                                << " Value: " << slice;
-
-                        }
-                        // ^ should not fail... checks were done before map insert
+    // write all changes to state, if in "apply" mode
+    for (const auto& accEntry : *(hookResult.stateMap)) {
+        const auto& acc = accEntry.first;
+        for (const auto& nsEntry : accEntry.second) {
+            const auto& ns = nsEntry.first;
+            for (const auto& cacheEntry : nsEntry.second) {
+                bool is_modified = cacheEntry.second.first;
+                const auto& key = cacheEntry.first;
+                const auto& blob = cacheEntry.second.second;
+                if (is_modified) {
+                    changeCount++;
+                    if (changeCount == 0)      // RH TODO: limit the max number of state changes?
+                    {
+                        // overflow
+                        JLOG(j.warn()) 
+                            << "HooKError[" << HR_ACC << "]: SetHooKState failed: Too many state changes";
+                        return tecHOOK_REJECTED;
                     }
+
+                    // this entry isn't just cached, it was actually modified
+                    auto slice = Slice(blob.data(), blob.size());
+
+                    TER result = 
+                        setHookState(hookResult, applyCtx, acc, ns, key, slice);
+
+                    if (result != tesSUCCESS)
+                    {
+                        JLOG(j.warn())
+                            << "HookError[" << HR_ACC() << "]: SetHookState failed: " << result
+                            << " Key: " << key 
+                            << " Value: " << slice;
+
+                    }
+                    // ^ should not fail... checks were done before map insert
                 }
             }
         }
-
     }
+    return changeCount;
+}
+
+ripple::TER
+hook::
+removeEmissionEntry(ripple::ApplyContext& applyCtx)
+{
+    auto const& j = applyCtx.app.journal("View");
+
+    auto const& tx = applyCtx.tx;
+    if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
+        return tesSUCCESS;
+
+    auto key = keylet::emitted(tx.getTransactionID());
+
+    auto const& sle = applyCtx.view().peek(key);
+
+    if (!sle)
+        return tesSUCCESS;
+
+    if (!applyCtx.view().dirRemove(
+            keylet::emittedDir(),
+            sle->getFieldU64(sfOwnerNode),
+            key,
+            false))
+    {
+        JLOG(j.fatal())
+            << "HookError[" << HR_ACC() << "]: ccl tefBAD_LEDGER";
+        return tefBAD_LEDGER;
+    }
+
+    applyCtx.view().erase(sle);
+    return tesSUCCESS;
+}
+
+TER
+hook::
+finalizeHookResult(
+        hook::HookResult& hookResult,
+        ripple::ApplyContext& applyCtx,
+        bool doEmit)
+{
+
+    auto const& j = applyCtx.app.journal("View");
+    uint16_t change_count = 0;
 
     // open views do not modify add/remove ledger entries
     if (applyCtx.view().open())
-        return;
+        return tesSUCCESS;
 
     //RH TODO: this seems hacky... and also maybe there's a way this cast might fail?
     ApplyViewImpl& avi = dynamic_cast<ApplyViewImpl&>(applyCtx.view());
@@ -943,7 +970,7 @@ void hook::commitChangesToLedger(
     uint16_t exec_index = avi.nextHookExecutionIndex();
     uint16_t emission_count = 0;
     // apply emitted transactions to the ledger (by adding them to the emitted directory) if we are allowed to
-    if (cclMode & cclAPPLY)
+    if (doEmit)
     {
         DBG_PRINTF("emitted txn count: %d\n", hookResult.emittedTxn.size());
         for (; hookResult.emittedTxn.size() > 0; hookResult.emittedTxn.pop())
@@ -985,45 +1012,10 @@ void hook::commitChangesToLedger(
                 {
                     JLOG(j.warn()) << "HookError[" << HR_ACC() << "]: " <<
                         "Emission Directory full when trying to insert " << id;
-                    break;
+                    return tecDIR_FULL;
                 }
             }
         }
-    }
-
-    // remove this (activating) transaction from the emitted directory if we were instructed to
-    if (cclMode & cclREMOVE)
-    {
-        do
-        {
-            auto const& tx = applyCtx.tx;
-            if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
-                break;
-
-            auto key = keylet::emitted(tx.getTransactionID());
-
-            auto const& sle = applyCtx.view().peek(key);
-
-            if (!sle)
-            {
-                JLOG(j.warn())
-                    << "HookError[" << HR_ACC() << "]: ccl tried to remove already removed emittedtxn";
-                break;
-            }
-
-            if (!applyCtx.view().dirRemove(
-                    keylet::emittedDir(),
-                    sle->getFieldU64(sfOwnerNode),
-                    key,
-                    false))
-            {
-                JLOG(j.fatal())
-                    << "HookError[" << HR_ACC() << "]: ccl tefBAD_LEDGER";
-                break;
-            }
-
-            applyCtx.view().erase(sle);
-        } while (0);
     }
 
     // add a metadata entry for this hook execution result
@@ -1042,10 +1034,13 @@ void hook::commitChangesToLedger(
     meta.setFieldU64(sfHookInstructionCount, hookResult.instructionCount);
     meta.setFieldU16(sfHookEmitCount, emission_count); // this will never wrap, hard limit
     meta.setFieldU16(sfHookExecutionIndex, exec_index );
-    meta.setFieldU16(sfHookStateChangeCount, change_count );
+    meta.setFieldU16(sfHookStateChangeCount, hookResult.changedStateCount );
     meta.setFieldH256(sfHookHash, hookResult.hookHash);
     avi.addHookMetaData(std::move(meta));
+
+    return tesSUCCESS;
 }
+
 
 /* Retrieve the state into write_ptr identified by the key in kread_ptr */
 DEFINE_HOOK_FUNCTION(
@@ -1058,8 +1053,8 @@ DEFINE_HOOK_FUNCTION(
         state_foreign(
             hookCtx, memoryCtx,
             write_ptr, write_len,
-            0, 0,
             kread_ptr, kread_len,
+            0, 0,
             0, 0);
 }
 
