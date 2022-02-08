@@ -327,12 +327,14 @@ hook::setHookState(
 
     auto& view = applyCtx.view();
     auto j = applyCtx.app.journal("View");
-    auto const sle =
+    auto const sleAccount =
         ( acc == hookResult.account ?
             view.peek(hookResult.accountKeylet) :
             view.peek(ripple::keylet::account(acc)));
 
-    if (!sle)
+    JLOG(j.trace()) << "HookState[" << acc << "]: hookResult.account = " << hookResult.account;
+
+    if (!sleAccount)
         return tefINTERNAL;
 
     // if the blob is too large don't set it
@@ -342,10 +344,12 @@ hook::setHookState(
     auto hookStateKeylet    = ripple::keylet::hookState(acc, key, ns);
     auto hookStateDirKeylet = ripple::keylet::hookStateDir(acc, ns);
 
-    uint32_t stateCount = sle->getFieldU32(sfHookStateCount);
+    uint32_t stateCount = sleAccount->getFieldU32(sfHookStateCount);
     uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
 
-    auto const oldHookState = view.peek(hookStateKeylet);
+    auto hookState = view.peek(hookStateKeylet);
+
+    bool createNew = !hookState;
 
     // if the blob is nil then delete the entry if it exists
     if (data.size() == 0)
@@ -354,14 +358,17 @@ hook::setHookState(
         if (!view.peek(hookStateKeylet))
             return tesSUCCESS; // a request to remove a non-existent entry is defined as success
 
-        auto const hint = (*oldHookState)[sfOwnerNode];
+        if (!view.peek(hookStateDirKeylet))
+            return tefBAD_LEDGER;
+
+        auto const hint = (*hookState)[sfOwnerNode];
 
         // Remove the node from the namespace directory
         if (!view.dirRemove(hookStateDirKeylet, hint, hookStateKeylet.key, false))
             return tefBAD_LEDGER;
 
         // remove the actual hook state obj
-        view.erase(oldHookState);
+        view.erase(hookState);
 
         // adjust state object count
         if (stateCount > 0)
@@ -369,23 +376,23 @@ hook::setHookState(
 
         // if removing this state entry would destroy the allotment then reduce the owner count
         if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) < oldStateReserve)
-            adjustOwnerCount(view, sle, -1, j);
+            adjustOwnerCount(view, sleAccount, -1, j);
 
-        sle->setFieldU32(sfHookStateCount, stateCount);
-        view.update(sle);
+        sleAccount->setFieldU32(sfHookStateCount, stateCount);
+        view.update(sleAccount);
         return tesSUCCESS;
     }
+        
 
+    std::uint32_t ownerCount{(*sleAccount)[sfOwnerCount]};
 
-    std::uint32_t ownerCount{(*sle)[sfOwnerCount]};
-
-    if (oldHookState) {
-        view.erase(oldHookState);
-    } else {
+    if (createNew)
+    {
 
         ++stateCount;
 
-        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) > oldStateReserve) {
+        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) > oldStateReserve)
+        {
             // the hook used its allocated allotment of state entries for its previous ownercount
             // increment ownercount and give it another allotment
 
@@ -393,43 +400,45 @@ hook::setHookState(
             XRPAmount const newReserve{
                 view.fees().accountReserve(ownerCount)};
 
-            if (STAmount((*sle)[sfBalance]).xrp() < newReserve)
+            if (STAmount((*sleAccount)[sfBalance]).xrp() < newReserve)
                 return tecINSUFFICIENT_RESERVE;
 
 
-            adjustOwnerCount(view, sle, 1, j);
+            adjustOwnerCount(view, sleAccount, 1, j);
 
         }
 
         // update state count
-        sle->setFieldU32(sfHookStateCount, stateCount);
-        view.update(sle);
+        sleAccount->setFieldU32(sfHookStateCount, stateCount);
+        view.update(sleAccount);
+
+        // create an entry
+        hookState = std::make_shared<SLE>(hookStateKeylet);
+    
     }
+    
 
-    // add new data to ledger
-    auto newHookState = std::make_shared<SLE>(hookStateKeylet);
-    view.insert(newHookState);
-    newHookState->setFieldVL(sfHookStateData, data);
-    newHookState->setFieldH256(sfHookStateKey, key);
-    newHookState->setAccountID(sfAccount, acc);         // RH TODO remove these
-    newHookState->setFieldH256(sfHookNamespace, ns);    // in prod
+    hookState->setFieldVL(sfHookStateData, data);
+    hookState->setFieldH256(sfHookStateKey, key);
 
-    if (!oldHookState) {
+    if (createNew)
+    {
         // Add the hook to the account's directory if it wasn't there already
         auto const page = view.dirInsert(
             hookStateDirKeylet,
             hookStateKeylet.key,
             describeOwnerDir(acc));
 
-        JLOG(j.trace()) << "HookInfo[" << HR_ACC() << "]: "
-            << "Create/update hook state: "
-            << (page ? "success" : "failure");
-
         if (!page)
             return tecDIR_FULL;
-
-        newHookState->setFieldU64(sfOwnerNode, *page);
+    
+        hookState->setFieldU64(sfOwnerNode, *page);
+        
+        // add new data to ledger
+        view.insert(hookState);
     }
+    else
+        view.update(hookState);
 
     return tesSUCCESS;
 }
@@ -751,9 +760,9 @@ DEFINE_HOOK_FUNCTION(
     if (nread_ptr == 0 && nread_len == 0 && !(aread_ptr == 0 && aread_len == 0))
         return INVALID_ARGUMENT;
 
-    if ((nread_len && !NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length)) ||
-        (kread_len && !NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length)) ||
-        (aread_len && !NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length)))
+    if ((nread_len && NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length)) ||
+        (kread_len && NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length)) ||
+        (aread_len && NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length)))
         return OUT_OF_BOUNDS;
 
     uint32_t maxSize = hook::maxHookStateDataSize();
@@ -766,7 +775,7 @@ DEFINE_HOOK_FUNCTION(
             : ripple::base_uint<256>::fromVoid(memory + nread_ptr);
 
     ripple::AccountID acc =
-        aread_len == 0
+        aread_len == 20
             ? AccountID::fromVoid(memory + aread_ptr)
             : hookCtx.result.account;
 
@@ -905,7 +914,17 @@ void hook::commitChangesToLedger(
                         // this entry isn't just cached, it was actually modified
                         auto slice = Slice(blob.data(), blob.size());
 
-                        setHookState(hookResult, applyCtx, acc, ns, key, slice);
+                        TER result = 
+                            setHookState(hookResult, applyCtx, acc, ns, key, slice);
+
+                        if (result != tesSUCCESS)
+                        {
+                            JLOG(j.warn())
+                                << "HookError[" << HR_ACC() << "]: SetHookState failed: " << result
+                                << " Key: " << key 
+                                << " Value: " << slice;
+
+                        }
                         // ^ should not fail... checks were done before map insert
                     }
                 }
@@ -3239,7 +3258,7 @@ DEFINE_HOOK_FUNCTION(
         {
             JLOG(j.trace())
                 << "HookInfo[" << HC_ACC() << "]: Guard violation. "
-                << "Src line: " << id
+                << "Src line: " << id << " "
                 << "Iterations: " << hookCtx.guard_map[id];
         }
         hookCtx.result.exitType = hook_api::ExitType::ROLLBACK;

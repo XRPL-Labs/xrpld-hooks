@@ -210,8 +210,8 @@
 }
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\
-    (ptr > memory_length || \
-     static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len) > static_cast<uint64_t>(memory_length))
+    ((static_cast<uint64_t>(ptr) > static_cast<uint64_t>(memory_length)) || \
+     ((static_cast<uint64_t>(ptr) + static_cast<uint64_t>(len)) > static_cast<uint64_t>(memory_length)))
 
 #define HOOK_EXIT(read_ptr, read_len, error_code, exit_type)\
 {\

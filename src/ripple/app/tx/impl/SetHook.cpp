@@ -1505,7 +1505,8 @@ updateHookParameters(
         newParameters.push_back(std::move(param));
     }
 
-    newHook.setFieldArray(sfHookParameters, std::move(newParameters));
+    if (newParameters.size() > 0)
+        newHook.setFieldArray(sfHookParameters, std::move(newParameters));
 
     return tesSUCCESS;
 }
@@ -1604,6 +1605,9 @@ SetHook::setHook()
 
         uint32_t flags = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
 
+        HookSetOperation op = inferOperation(*hookSetObj);
+
+
         // if an existing hook exists at this position in the chain then extract the relevant fields
         if (oldHook && oldHook->get().isFieldPresent(sfHookHash))
         {
@@ -1628,7 +1632,6 @@ SetHook::setHook()
                 oldHookOn = *defHookOn;
         }
 
-
         // in preparation for three way merge populate fields if they are present on the HookSetObj
         if (hookSetObj->isFieldPresent(sfHookHash))
         {
@@ -1645,7 +1648,6 @@ SetHook::setHook()
             newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
         }
 
-        HookSetOperation op = inferOperation(*hookSetObj);
 
         // users may destroy a namespace in any operation except NOOP and INVALID
         if (op != hsoNOOP && op != hsoINVALID && (flags & hsoNSDELETE) && oldDirSLE)
@@ -1702,8 +1704,13 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (oldDefSLE && reduceReferenceCount(oldDefSLE))
-                    defsToDestroy.emplace(*oldDefKeylet);
+                if (oldDefSLE)
+                {
+                    if (reduceReferenceCount(oldDefSLE))
+                        defsToDestroy.emplace(*oldDefKeylet);
+
+                    view().update(oldDefSLE);
+                }
 
                 continue;
             }
@@ -1743,6 +1750,7 @@ SetHook::setHook()
                         << "]: SetHook create operation would override but hsfOVERRIDE flag wasn't specified";
                     return tecREQUIRES_FLAG;
                 }
+                
 
                 ripple::Blob wasmBytes = hookSetObj->getFieldVL(sfCreateCode);
 
@@ -1766,6 +1774,7 @@ SetHook::setHook()
                     // update reference count
                     newDefSLE = view().peek(keylet);
                     newDefKeylet = keylet;
+        
                     // this falls through to hsoINSTALL
                 }
                 else
@@ -1794,6 +1803,15 @@ SetHook::setHook()
                             << "HookSet[" << HS_ACC()
                             << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
                         return tecINTERNAL;
+                    }
+                        
+                    // decrement the hook definition and mark it for deletion if appropriate
+                    if (oldDefSLE)
+                    {
+                        if (reduceReferenceCount(oldDefSLE))
+                            defsToDestroy.emplace(*oldDefKeylet);
+
+                        view().update(oldDefSLE);
                     }
 
                     auto newHookDef = std::make_shared<SLE>( keylet );
@@ -1838,9 +1856,14 @@ SetHook::setHook()
                     return tecNO_ENTRY;
                 }
 
-                // decrement references of old hook definition
-                if (oldHook && reduceReferenceCount(oldDefSLE))
+                // decrement the hook definition and mark it for deletion if appropriate
+                if (oldDefSLE)
+                {
+                    if (reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
+
+                    view().update(oldDefSLE);
+                }
 
                 // set the hookhash on the new hook, and allow for a fall through event from hsoCREATE
                 if (!createHookHash)
@@ -1850,6 +1873,10 @@ SetHook::setHook()
 
                 // increment reference count of target HookDefintion
                 incrementReferenceCount(newDefSLE);
+
+                // change which definition we're using to the new target
+                defNamespace = newDefSLE->getFieldH256(sfHookNamespace);
+                defHookOn = newDefSLE->getFieldU64(sfHookOn);
 
                 // set the namespace if it differs from the definition namespace
                 if (newNamespace && *defNamespace != *newNamespace)
@@ -1861,7 +1888,7 @@ SetHook::setHook()
 
                 // parameters
                 TER result =
-                    updateHookParameters(ctx, *hookSetObj, oldDefSLE, newHook);
+                    updateHookParameters(ctx, *hookSetObj, newDefSLE, newHook);
 
                 if (result != tesSUCCESS)
                     return result;
@@ -1871,6 +1898,9 @@ SetHook::setHook()
                     newHook.setFieldArray(sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
 
                 newHooks.push_back(std::move(newHook));
+
+                view().update(newDefSLE);
+
                 continue;
             }
 

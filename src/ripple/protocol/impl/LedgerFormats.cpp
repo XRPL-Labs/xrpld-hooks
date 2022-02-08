@@ -67,8 +67,6 @@ LedgerFormats::LedgerFormats()
             {sfTakerGetsCurrency, soeOPTIONAL},  // for order book directories
             {sfTakerGetsIssuer, soeOPTIONAL},    // for order book directories
             {sfExchangeRate, soeOPTIONAL},       // for order book directories
-            {sfHookNamespace, soeOPTIONAL},      // for hook state directories
-            {sfOwnerNode, soeOPTIONAL},          // for hook state directories
             {sfReferenceCount, soeOPTIONAL},     // for hook state directories
             {sfIndexes, soeREQUIRED},
             {sfRootIndex, soeREQUIRED},
@@ -210,11 +208,9 @@ LedgerFormats::LedgerFormats()
     add(jss::HookState,
         ltHOOK_STATE,
         {
-            {sfAccount, soeOPTIONAL},   //RH TODO: this can be removed for production
             {sfOwnerNode, soeREQUIRED},   
             {sfHookStateKey, soeREQUIRED},
             {sfHookStateData, soeREQUIRED},
-            {sfHookNamespace, soeOPTIONAL}  // as can this
         },
         commonFields);
 
