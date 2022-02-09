@@ -22,6 +22,8 @@
 #include <ripple/protocol/Sign.h>
 #include <ripple/protocol/UintTypes.h>
 #include <ripple/protocol/jss.h>
+#include <optional>
+#include <sstream>
 #include <test/jtx/multisign.h>
 #include <test/jtx/utility.h>
 
@@ -46,6 +48,12 @@ signers(
         auto& je = ja[i][sfSignerEntry.getJsonName()];
         je[jss::Account] = e.account.human();
         je[sfSignerWeight.getJsonName()] = e.weight;
+        if (e.tag)
+        {
+            std::stringstream ss;
+            ss << *(e.tag);
+            je[sfWalletLocator.getJsonName()] = ss.str();
+        }
     }
     return jv;
 }

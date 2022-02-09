@@ -21,6 +21,8 @@
 #define RIPPLE_PROTOCOL_STTX_H_INCLUDED
 
 #include <ripple/basics/Expected.h>
+#include <ripple/ledger/Rules.h>
+#include <ripple/protocol/Feature.h>
 #include <ripple/protocol/PublicKey.h>
 #include <ripple/protocol/STObject.h>
 #include <ripple/protocol/SecretKey.h>
@@ -44,7 +46,16 @@ class STTx final : public STObject, public CountedObject<STTx>
 {
 public:
     static std::size_t const minMultiSigners = 1;
-    static std::size_t const maxMultiSigners = 8;
+
+    // if rules are not supplied then the largest possible value is returned
+    static std::size_t
+    maxMultiSigners(Rules const* rules = 0)
+    {
+        if (rules && !rules->enabled(featureExpandedSignerList))
+            return 8;
+
+        return 32;
+    }
 
 public:
     STTx() = delete;
@@ -133,7 +144,8 @@ public:
     */
     enum class RequireFullyCanonicalSig : bool { no, yes };
     Expected<void, std::string>
-    checkSign(RequireFullyCanonicalSig requireCanonicalSig) const;
+    checkSign(RequireFullyCanonicalSig requireCanonicalSig, Rules const& rules)
+        const;
 
     // SQL Functions with metadata.
     static std::string const&
@@ -155,7 +167,9 @@ private:
     checkSingleSign(RequireFullyCanonicalSig requireCanonicalSig) const;
 
     Expected<void, std::string>
-    checkMultiSign(RequireFullyCanonicalSig requireCanonicalSig) const;
+    checkMultiSign(
+        RequireFullyCanonicalSig requireCanonicalSig,
+        Rules const& rules) const;
 
     uint256 tid_;
     TxType tx_type_;

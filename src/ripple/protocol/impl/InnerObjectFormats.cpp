@@ -39,6 +39,7 @@ InnerObjectFormats::InnerObjectFormats()
         {
             {sfAccount, soeREQUIRED},
             {sfSignerWeight, soeREQUIRED},
+            {sfWalletLocator, soeOPTIONAL},
         });
 
     add(sfSigner.jsonName.c_str(),

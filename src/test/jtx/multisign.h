@@ -21,6 +21,7 @@
 #define RIPPLE_TEST_JTX_MULTISIGN_H_INCLUDED
 
 #include <cstdint>
+#include <optional>
 #include <test/jtx/Account.h>
 #include <test/jtx/amount.h>
 #include <test/jtx/owners.h>
@@ -35,10 +36,16 @@ struct signer
 {
     std::uint32_t weight;
     Account account;
+    std::optional<uint256> tag;
 
-    signer(Account account_, std::uint32_t weight_ = 1)
+    signer(
+        Account account_,
+        std::uint32_t weight_ = 1,
+        std::optional<uint256> tag_ = std::nullopt)
         : weight(weight_), account(std::move(account_))
     {
+        if (tag_)
+            tag = *tag_;
     }
 };
 

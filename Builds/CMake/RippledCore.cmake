@@ -493,6 +493,7 @@ target_sources (rippled PRIVATE
   src/ripple/ledger/impl/RawStateTable.cpp
   src/ripple/ledger/impl/ReadView.cpp
   src/ripple/ledger/impl/View.cpp
+  src/ripple/ledger/impl/Rules.cpp
   #[===============================[
      main sources:
        subdir: net

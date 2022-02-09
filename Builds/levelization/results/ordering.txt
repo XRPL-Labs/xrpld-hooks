@@ -23,7 +23,6 @@ ripple.ledger > ripple.basics
 ripple.ledger > ripple.beast
 ripple.ledger > ripple.core
 ripple.ledger > ripple.json
-ripple.ledger > ripple.protocol
 ripple.net > ripple.basics
 ripple.net > ripple.beast
 ripple.net > ripple.json
@@ -178,6 +177,7 @@ test.protocol > ripple.basics
 test.protocol > ripple.beast
 test.protocol > ripple.crypto
 test.protocol > ripple.json
+test.protocol > ripple.ledger
 test.protocol > ripple.protocol
 test.protocol > test.toplevel
 test.resource > ripple.basics
