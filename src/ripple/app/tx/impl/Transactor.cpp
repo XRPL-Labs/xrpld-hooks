@@ -1128,7 +1128,7 @@ Transactor::operator()()
 
         // write state if all chains executed successfully
         if (result == tesSUCCESS)
-            hook::finalizeHookState(stateMap, ctx_);
+            hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
 
         // write hook results
         for (auto& sendResult: sendResults)
@@ -1225,14 +1225,14 @@ Transactor::operator()()
 
                         // write any state changes if cbak resulted in accept()
                         if (result == tesSUCCESS)
-                            hook::finalizeHookState(stateMap, ctx_);
+                            hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
 
                         // write the final result
                         ripple::TER result =
                             finalizeHookResult(callbackResult, ctx_, success);
 
                         JLOG(j_.trace())
-                            << "HookInfo[" << HC_ACC() << "]: "
+                            << "HookInfo[" << callbackAccountID << "-" <<ctx_.tx.getAccountID(sfAccount) << "]: "
                             << "Callback finalizeHookResult = "
                             << result;
 
@@ -1240,7 +1240,7 @@ Transactor::operator()()
                     catch (std::exception& e)
                     {
                         JLOG(j_.fatal()) 
-                            << "HookError[" << callbackAccountID 
+                            << "HookError[" << callbackAccountID << "-" <<ctx_.tx.getAccountID(sfAccount) << "]: "
                             << "]: Callback failure " << e.what();
                     }
 

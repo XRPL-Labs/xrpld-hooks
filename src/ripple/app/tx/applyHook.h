@@ -508,7 +508,6 @@ namespace hook
 
     ripple::TER
     setHookState(
-        HookResult& hookResult,
         ripple::ApplyContext& applyCtx,
         ripple::AccountID const& acc,
         ripple::uint256 const& ns,
@@ -527,7 +526,8 @@ namespace hook
     ripple::TER
     finalizeHookState(
         std::shared_ptr<HookStateMap>&,
-        ripple::ApplyContext&);
+        ripple::ApplyContext&,
+        ripple::uint256 const&);
 
     // if the txn being executed was an emitted txn then this removes it from the emission directory
     ripple::TER

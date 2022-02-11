@@ -317,7 +317,6 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 // assumes the specified acc has already been checked for authoriation (hook grants)
 TER
 hook::setHookState(
-    HookResult& hookResult,
     ripple::ApplyContext& applyCtx,
     ripple::AccountID const& acc,
     ripple::uint256 const& ns,
@@ -328,11 +327,7 @@ hook::setHookState(
     auto& view = applyCtx.view();
     auto j = applyCtx.app.journal("View");
     auto const sleAccount =
-        ( acc == hookResult.account ?
-            view.peek(hookResult.accountKeylet) :
-            view.peek(ripple::keylet::account(acc)));
-
-    JLOG(j.trace()) << "HookState[" << acc << "]: hookResult.account = " << hookResult.account;
+            view.peek(ripple::keylet::account(acc));
 
     if (!sleAccount)
         return tefINTERNAL;
@@ -459,7 +454,7 @@ hook::apply(
             std::vector<uint8_t>,
             std::vector<uint8_t>
         >> const& hookParamOverrides,
-    std::shared_ptr<HookStateMap> stateMap,
+    std::shared_ptr<HookStateMap>& stateMap,
     ApplyContext& applyCtx,
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
     bool callback,
@@ -686,14 +681,14 @@ set_state_cache(
     if (stateMapNs.find(key) == stateMapNs.end())
     {
         stateMapNs[key] = { modified, data };
-        hookCtx.changedStateCount++;
+        hookCtx.result.changedStateCount++;
         return;
     }
 
     if (modified)
     {
         if (!stateMapNs[key].first)
-            hookCtx.changedStateCount++;
+            hookCtx.result.changedStateCount++;
 
         stateMapNs[key].first = true;
     }
@@ -870,28 +865,33 @@ ripple::TER
 hook::
 finalizeHookState(
         std::shared_ptr<HookStateMap>& stateMap,
-        ripple::ApplyContext& applyCtx)
+        ripple::ApplyContext& applyCtx,
+        ripple::uint256 const& txnID)
 {
 
     auto const& j = applyCtx.app.journal("View");
     uint16_t changeCount = 0;
 
     // write all changes to state, if in "apply" mode
-    for (const auto& accEntry : *(hookResult.stateMap)) {
+    for (const auto& accEntry : *(stateMap))
+    {
         const auto& acc = accEntry.first;
-        for (const auto& nsEntry : accEntry.second) {
+        for (const auto& nsEntry : accEntry.second)
+        {
             const auto& ns = nsEntry.first;
-            for (const auto& cacheEntry : nsEntry.second) {
+            for (const auto& cacheEntry : nsEntry.second)
+            {
                 bool is_modified = cacheEntry.second.first;
                 const auto& key = cacheEntry.first;
                 const auto& blob = cacheEntry.second.second;
-                if (is_modified) {
+                if (is_modified)
+                {
                     changeCount++;
-                    if (changeCount == 0)      // RH TODO: limit the max number of state changes?
+                    if (changeCount >= 0xFFFFU)      // RH TODO: limit the max number of state changes?
                     {
                         // overflow
                         JLOG(j.warn()) 
-                            << "HooKError[" << HR_ACC << "]: SetHooKState failed: Too many state changes";
+                            << "HooKError[TX:" << txnID << "]: SetHooKState failed: Too many state changes";
                         return tecHOOK_REJECTED;
                     }
 
@@ -899,22 +899,22 @@ finalizeHookState(
                     auto slice = Slice(blob.data(), blob.size());
 
                     TER result = 
-                        setHookState(hookResult, applyCtx, acc, ns, key, slice);
+                        setHookState(applyCtx, acc, ns, key, slice);
 
                     if (result != tesSUCCESS)
                     {
                         JLOG(j.warn())
-                            << "HookError[" << HR_ACC() << "]: SetHookState failed: " << result
+                            << "HookError[TX:" << txnID << "]: SetHookState failed: " << result
                             << " Key: " << key 
                             << " Value: " << slice;
-
+                        return result;
                     }
                     // ^ should not fail... checks were done before map insert
                 }
             }
         }
     }
-    return changeCount;
+    return tesSUCCESS;
 }
 
 ripple::TER
@@ -941,7 +941,7 @@ removeEmissionEntry(ripple::ApplyContext& applyCtx)
             false))
     {
         JLOG(j.fatal())
-            << "HookError[" << HR_ACC() << "]: ccl tefBAD_LEDGER";
+            << "HookError[TX:" << tx.getTransactionID() << "]: removeEmissionEntry failed tefBAD_LEDGER";
         return tefBAD_LEDGER;
     }
 
@@ -958,7 +958,6 @@ finalizeHookResult(
 {
 
     auto const& j = applyCtx.app.journal("View");
-    uint16_t change_count = 0;
 
     // open views do not modify add/remove ledger entries
     if (applyCtx.view().open())
