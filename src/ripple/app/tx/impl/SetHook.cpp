@@ -905,6 +905,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 
     uint32_t flags = hookSetObj.isFieldPresent(sfFlags) ? hookSetObj.getFieldU32(sfFlags) : 0;
 
+
     switch (inferOperation(hookSetObj))
     {
         case hsoNOOP:
@@ -1563,9 +1564,10 @@ SetHook::setHook()
     int hookSetNumber = -1;
     auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
 
-    for (auto const& hookSet : hookSets)
+    int hookSetCount = hookSets.size();
+
+    for (hookSetNumber = 0; hookSetNumber < std::max(oldHookCount, hookSetCount); ++hookSetNumber)
     {
-        hookSetNumber++;
 
         ripple::STObject                                                newHook         { sfHook };
         std::optional<std::reference_wrapper<ripple::STObject const>>   oldHook;
@@ -1573,7 +1575,9 @@ SetHook::setHook()
         if (hookSetNumber < oldHookCount)
             oldHook = std::cref((oldHooks->get()[hookSetNumber]).downcast<ripple::STObject const>());
 
-        STObject const* hookSetObj        = dynamic_cast<STObject const*>(&hookSet);
+        std::optional<std::reference_wrapper<ripple::STObject const>>   hookSetObj;
+        if (hookSetNumber < hookSetCount)
+            hookSetObj = std::cref((hookSets[hookSetNumber]).downcast<ripple::STObject const>());
 
         std::optional<ripple::uint256>                                  oldNamespace;
         std::optional<ripple::uint256>                                  defNamespace;
@@ -1603,10 +1607,24 @@ SetHook::setHook()
          * so a degree of copying is required.
          */
 
-        uint32_t flags = hookSetObj->isFieldPresent(sfFlags) ? hookSetObj->getFieldU32(sfFlags) : 0;
+        uint32_t flags = 0;
+        
+        if (hookSetObj && hookSetObj->get().isFieldPresent(sfFlags))
+            flags = hookSetObj->get().getFieldU32(sfFlags);
 
-        HookSetOperation op = inferOperation(*hookSetObj);
 
+        HookSetOperation op = hsoNOOP;
+        
+        if (hookSetObj)
+            op = inferOperation(hookSetObj->get());
+
+        printf("HookSet operation %d: %s\n", hookSetNumber, 
+                (op == hsoNSDELETE ? "hsoNSDELETE" :
+                (op == hsoDELETE ? "hsoDELETE" :
+                (op == hsoCREATE ? "hsoCREATE" :
+                (op == hsoINSTALL ? "hsoINSTALL" :
+                (op == hsoUPDATE ? "hsoUPDATE" :
+                (op == hsoNOOP ? "hsoNOOP" : "hsoINALID")))))));
 
         // if an existing hook exists at this position in the chain then extract the relevant fields
         if (oldHook && oldHook->get().isFieldPresent(sfHookHash))
@@ -1633,21 +1651,23 @@ SetHook::setHook()
         }
 
         // in preparation for three way merge populate fields if they are present on the HookSetObj
-        if (hookSetObj->isFieldPresent(sfHookHash))
+        if (hookSetObj)
         {
-            newDefKeylet = keylet::hookDefinition(hookSetObj->getFieldH256(sfHookHash));
-            newDefSLE = view().peek(*newDefKeylet);
+            if (hookSetObj->get().isFieldPresent(sfHookHash))
+            {
+                newDefKeylet = keylet::hookDefinition(hookSetObj->get().getFieldH256(sfHookHash));
+                newDefSLE = view().peek(*newDefKeylet);
+            }
+
+            if (hookSetObj->get().isFieldPresent(sfHookOn))
+                newHookOn = hookSetObj->get().getFieldU64(sfHookOn);
+
+            if (hookSetObj->get().isFieldPresent(sfHookNamespace))
+            {
+                newNamespace = hookSetObj->get().getFieldH256(sfHookNamespace);
+                newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
+            }
         }
-
-        if (hookSetObj->isFieldPresent(sfHookOn))
-            newHookOn = hookSetObj->getFieldU64(sfHookOn);
-
-        if (hookSetObj->isFieldPresent(sfHookNamespace))
-        {
-            newNamespace = hookSetObj->getFieldH256(sfHookNamespace);
-            newDirKeylet = keylet::hookStateDir(account_, *newNamespace);
-        }
-
 
         // users may destroy a namespace in any operation except NOOP and INVALID
         if (op != hsoNOOP && op != hsoINVALID && (flags & hsoNSDELETE) && oldDirSLE)
@@ -1664,19 +1684,27 @@ SetHook::setHook()
             }
         }
 
+        // if there is only an existing hook, without a HookSetObj then it is
+        // logically impossible for the operation to not be NOOP
+        assert(hookSetObj || op == hsoNOOP);
+
         switch (op)
         {
-            case hsoNSDELETE:
-            {
-                // this case is handled directly above already
-                continue;
-            }
             
             case hsoNOOP:
             {
                 // if a hook already exists here then migrate it to the new array
                 // if it doesn't exist just place a blank object here
                 newHooks.push_back( oldHook ? oldHook->get() : ripple::STObject{sfHook} );
+                continue;
+            }
+           
+            // every case below here is guarenteed to have a populated hookSetObj
+            // by the assert statement above
+
+            case hsoNSDELETE:
+            {
+                // this case is handled directly above already
                 continue;
             }
             
@@ -1727,14 +1755,14 @@ SetHook::setHook()
 
                 // parameters
                 TER result = 
-                    updateHookParameters(ctx, *hookSetObj, oldDefSLE, newHook);
+                    updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, newHook);
 
                 if (result != tesSUCCESS)
                     return result;
 
                 // if grants are provided set them
-                if (hookSetObj->isFieldPresent(sfHookGrants))
-                    newHook.setFieldArray(sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
+                if (hookSetObj->get().isFieldPresent(sfHookGrants))
+                    newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
 
                 newHooks.push_back(std::move(newHook));
                 continue;
@@ -1752,7 +1780,7 @@ SetHook::setHook()
                 }
                 
 
-                ripple::Blob wasmBytes = hookSetObj->getFieldVL(sfCreateCode);
+                ripple::Blob wasmBytes = hookSetObj->get().getFieldVL(sfCreateCode);
 
                 if (wasmBytes.size() > blobMax)
                 {
@@ -1787,7 +1815,7 @@ SetHook::setHook()
                     {
 
                         std::tie(valid, maxInstrCount) =
-                            validateHookSetEntry(ctx, *hookSetObj);
+                            validateHookSetEntry(ctx, hookSetObj->get());
 
                         if (!valid)
                         {
@@ -1819,10 +1847,11 @@ SetHook::setHook()
                     newHookDef->setFieldU64(    sfHookOn, *newHookOn);
                     newHookDef->setFieldH256(   sfHookNamespace, *newNamespace);
                     newHookDef->setFieldArray(  sfHookParameters,
-                            hookSetObj->isFieldPresent(sfHookParameters)
-                            ? hookSetObj->getFieldArray(sfHookParameters)
+                            hookSetObj->get().isFieldPresent(sfHookParameters)
+                            ? hookSetObj->get().getFieldArray(sfHookParameters)
                             : STArray {} );
-                    newHookDef->setFieldU16(    sfHookApiVersion, hookSetObj->getFieldU16(sfHookApiVersion));
+                    newHookDef->setFieldU16(    sfHookApiVersion, 
+                            hookSetObj->get().getFieldU16(sfHookApiVersion));
                     newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
                     newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
@@ -1867,7 +1896,7 @@ SetHook::setHook()
 
                 // set the hookhash on the new hook, and allow for a fall through event from hsoCREATE
                 if (!createHookHash)
-                    createHookHash = hookSetObj->getFieldH256(sfHookHash);
+                    createHookHash = hookSetObj->get().getFieldH256(sfHookHash);
 
                 newHook.setFieldH256(sfHookHash, *createHookHash);
 
@@ -1888,14 +1917,14 @@ SetHook::setHook()
 
                 // parameters
                 TER result =
-                    updateHookParameters(ctx, *hookSetObj, newDefSLE, newHook);
+                    updateHookParameters(ctx, hookSetObj->get(), newDefSLE, newHook);
 
                 if (result != tesSUCCESS)
                     return result;
 
                 // if grants are provided set them
-                if (hookSetObj->isFieldPresent(sfHookGrants))
-                    newHook.setFieldArray(sfHookGrants, hookSetObj->getFieldArray(sfHookGrants));
+                if (hookSetObj->get().isFieldPresent(sfHookGrants))
+                    newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
 
                 newHooks.push_back(std::move(newHook));
 
