@@ -1670,19 +1670,30 @@ SetHook::setHook()
         }
 
         // users may destroy a namespace in any operation except NOOP and INVALID
-        if (op != hsoNOOP && op != hsoINVALID && (flags & hsoNSDELETE) && oldDirSLE)
+        if (flags & hsfNSDELETE)
         {
-            if (op == hsoNSDELETE && newDirKeylet)
+            if (op == hsoNOOP || op == hsoINVALID)
+            {
+                // don't do any namespace deletion
+            }
+            else if(op == hsoNSDELETE && newDirKeylet)
+            {
+                printf("Marking a namespace for destruction.... NSDELETE\n");
                 dirsToDestroy.emplace(*newDirKeylet);
+            }
             else if (oldDirKeylet)
+            {
+                printf("Marking a namespace for destruction.... non-NSDELETE\n");
                 dirsToDestroy.emplace(*oldDirKeylet);
+            }
             else
             {
-                JLOG(ctx.j.trace())
+                JLOG(ctx.j.warn())
                     << "HookSet[" << HS_ACC()
                     << "]: SetHook hsoNSDELETE specified but nothing to delete";
             }
         }
+
 
         // if there is only an existing hook, without a HookSetObj then it is
         // logically impossible for the operation to not be NOOP
@@ -1952,8 +1963,8 @@ SetHook::setHook()
         auto const& sle = view().peek(p);
         if (!sle)
             continue;
+        printf("==>> Destroying namespace\n");
         destroyNamespace(ctx, view(), account_, p);
-        view().erase(sle);
     }
 
 
