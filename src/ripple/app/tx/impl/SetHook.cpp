@@ -41,6 +41,7 @@
 #include <wasmedge/wasmedge.h>
 #include <exception>
 #include <tuple>
+#include <optional>
 
 #define DEBUG_GUARD_CHECK 0
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
@@ -641,6 +642,11 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         }
     }
 
+    // these will store the function type indicies of hook and cbak if
+    // hook and cbak are found in the export section
+    std::optional<int> hook_func_idx;
+    std::optional<int> cbak_func_idx;
+
     // now we check for guards... first check if _g is imported
     int guard_import_number = -1;
     int last_import_number = -1;
@@ -780,19 +786,42 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 return {false, 0};
             }
 
-            bool found_hook_export = false;
-            bool found_cbak_export = false;
-            for (int j = 0; j < export_count && !(found_hook_export && found_cbak_export); ++j)
+            for (int j = 0; j < export_count && !(hook_func_idx && cbak_func_idx); ++j)
             {
                 int name_len = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 if (name_len == 4)
                 {
 
                     if (hook[i] == 'h' && hook[i+1] == 'o' && hook[i+2] == 'o' && hook[i+3] == 'k')
-                        found_hook_export = true;
-                    else
+                    {
+                        i += name_len; CHECK_SHORT_HOOK();
+                        if (hook[i] != 0)
+                        {
+                            JLOG(ctx.j.trace())
+                                << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                                << "Hook did not export: A valid int64_t hook(uint32_t)";
+                            return {false, 0};
+                        }
+
+                        i++; CHECK_SHORT_HOOK();
+                        hook_func_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                        continue;
+                    }
+                    
                     if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
-                        found_cbak_export = true;
+                    {
+                        i += name_len; CHECK_SHORT_HOOK();
+                        if (hook[i] != 0)
+                        {
+                            JLOG(ctx.j.trace())
+                                << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                                << "Hook did not export: A valid int64_t cbak(uint32_t)";
+                            return {false, 0};
+                        }
+                        i++; CHECK_SHORT_HOOK();
+                        cbak_func_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                        continue;
+                    }
                 }
 
                 i += name_len + 1;
@@ -800,13 +829,13 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             }
 
             // execution to here means export section was parsed
-            if (!(found_hook_export && found_cbak_export))
+            if (!(hook_func_idx && cbak_func_idx))
             {
                 JLOG(ctx.j.trace())
                     << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not export: " <<
-                    ( !found_hook_export ? "hook(int64_t); " : "" ) <<
-                    ( !found_cbak_export ? "cbak(int64_t);"  : "" );
+                    ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" ) <<
+                    ( !cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" );
                 return {false, 0};
             }
         }
@@ -826,9 +855,98 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         //int section_start = i;
         int next_section = i + section_length;
 
-        // RH TODO: parse anywhere else an expr is allowed in wasm and enforce rules there too
+        if (section_type == 1) // type section
+        {
+            int type_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            for (int j = 0; j < type_count; ++j)
+            { 
+                if (hook[i++] != 0x60)
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Invalid function type. "
+                        << "Codesec: " << section_type << " "
+                        << "Local: " << j << " "
+                        << "Offset: " << i;
+                    return {false, 0};
+                }
+                CHECK_SHORT_HOOK();
+                
+                int param_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                for (int k = 0; k < param_count; ++k)
+                {
+                    int param_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    if (param_type == 0x7F || param_type == 0x7E ||
+                        param_type == 0x7D || param_type == 0x7C)
+                    {
+                        // pass, this is fine
+                    }
+                    else
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet[" << HS_ACC() << "]: Invalid parameter type in function type. "
+                            << "Codesec: " << section_type << " "
+                            << "Local: " << j << " "
+                            << "Offset: " << i;
+                        return {false, 0};
+                    }
+
+                    // hook and cbak parameter check here
+                    if ((j == *hook_func_idx || j == *cbak_func_idx) && 
+                        (param_count != 1 || param_type != 0x7F /* i32 */ ))
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                            << "Hook did not export: "
+                            << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
+                            << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
+                            << ". Function definition must have exactly one uint32_t parameter.";
+                        return {false, 0};
+                    }
+                }
+
+                int result_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (result_count != 1)
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook declares a function type that returns more than one value.";
+                    return {false, 0};
+                }
+
+                int result_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (result_type == 0x7F || result_type == 0x7E ||
+                    result_type == 0x7D || result_type == 0x7C)
+                {
+                    // pass, this is fine
+                }
+                else
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Invalid return type in function type. "
+                        << "Codesec: " << section_type << " "
+                        << "Local: " << j << " "
+                        << "Offset: " << i;
+                    return {false, 0};
+                }
+                    
+                // hook and cbak return type check here
+                if ((j == *hook_func_idx || j == *cbak_func_idx) && 
+                    result_type != 0x7E /* i64 */ )
+                {
+                    JLOG(ctx.j.trace())
+                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "Hook did not export: "
+                        << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
+                        << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
+                        << ". Function definition must have exactly one int64_t return type.";
+                    return {false, 0};
+                }
+            }
+        }
+        else
         if (section_type == 10) // code section
         {
+            // RH TODO: parse anywhere else an expr is allowed in wasm and enforce rules there too
             // these are the functions
             int func_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
 
