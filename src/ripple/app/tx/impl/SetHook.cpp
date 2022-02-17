@@ -905,41 +905,49 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 }
 
                 int result_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                if (result_count != 1)
+                
+                // RH TODO: enable this for production
+                // this needs a reliable hook cleaner otherwise it will catch most compilers out
+                if (0 && result_count != 1)
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook declares a function type that returns more than one value.";
+                        << "Hook declares a function type that returns fewer or more than one value.";
                     return {false, 0};
                 }
 
-                int result_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                if (result_type == 0x7F || result_type == 0x7E ||
-                    result_type == 0x7D || result_type == 0x7C)
+                // this can only ever be 1 in production, but in testing it may also be 0 or >1
+                // so for completeness this loop is here but can be taken out in prod
+                for (int j = 0; j < result_count; ++j)
                 {
-                    // pass, this is fine
-                }
-                else
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Invalid return type in function type. "
-                        << "Codesec: " << section_type << " "
-                        << "Local: " << j << " "
-                        << "Offset: " << i;
-                    return {false, 0};
-                }
-                    
-                // hook and cbak return type check here
-                if ((j == *hook_func_idx || j == *cbak_func_idx) && 
-                    result_type != 0x7E /* i64 */ )
-                {
-                    JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                        << "Hook did not export: "
-                        << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
-                        << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
-                        << ". Function definition must have exactly one int64_t return type.";
-                    return {false, 0};
+                    int result_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                    if (result_type == 0x7F || result_type == 0x7E ||
+                        result_type == 0x7D || result_type == 0x7C)
+                    {
+                        // pass, this is fine
+                    }
+                    else
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet[" << HS_ACC() << "]: Invalid return type in function type. "
+                            << "Codesec: " << section_type << " "
+                            << "Local: " << j << " "
+                            << "Offset: " << i;
+                        return {false, 0};
+                    }
+                        
+                    // hook and cbak return type check here
+                    if ((j == *hook_func_idx || j == *cbak_func_idx) && 
+                        (result_count != 1 || result_type != 0x7E /* i64 */ ))
+                    {
+                        JLOG(ctx.j.trace())
+                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                            << "Hook did not export: "
+                            << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
+                            << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
+                            << ". Function definition must have exactly one int64_t return type.";
+                        return {false, 0};
+                    }
                 }
             }
         }
