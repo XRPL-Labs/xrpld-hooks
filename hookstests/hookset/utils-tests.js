@@ -1,6 +1,8 @@
 const fs = require('fs')
 const xrpljs = require('xrpl-hooks');
 const kp = require('ripple-keypairs');
+const crypto = require('crypto')
+
 
 // Fails via process.exit
 module.exports = {
@@ -45,6 +47,12 @@ module.exports = {
                 return xrpljs.Wallet.fromSeed(kp.generateSeed());
             };
 
+            const hookHash = fn =>
+            {
+                let b = fs.readFileSync('wasm/' + fn);
+                return crypto.createHash('SHA512').update(b).digest().slice(0,32).toString('hex').toUpperCase()
+            }
+
             const fundFromGenesis = (acc) =>
             {    
                 return new Promise((resolve, reject) =>
@@ -56,7 +64,8 @@ module.exports = {
                         Account: genesis.classicAddress,        // fund account from genesis
                         TransactionType: "Payment",
                         Amount: "1000000000",
-                        Destination: acc
+                        Destination: acc,
+                        Fee: "10000"
                     }, {wallet: genesis}).then(x=>
                     {
                         assertTxnSuccess(x);
@@ -79,7 +88,10 @@ module.exports = {
                     fundFromGenesis: fundFromGenesis,
                     err: err,
                     hsfOVERRIDE: 1,
-                    hsfNSDELETE: 2
+                    hsfNSDELETE: 2,
+                    hfsOVERRIDE: 1,
+                    hfsNSDELETE: 2,
+                    hookHash: hookHash
                 });
             }).catch(err);
         });

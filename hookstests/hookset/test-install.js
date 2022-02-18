@@ -6,6 +6,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     {
         t.fundFromGenesis(account2).then(()=>
         {
+
+            let hash = t.hookHash('checkstate.wasm')
             t.api.submit(
             {
                 Account: account.classicAddress,
@@ -31,14 +33,13 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                     Fee: "100000",
                     Hooks: [
                         { Hook: {
-                            HookHash: "348C7966C79737F6254C3D3866DBEE0AE1584E0751771F0588F898E65C7DFB84",
-                            Flags: 0
+                            HookHash: hash
                         }},
                         { Hook: {
 
                         }},
                         { Hook: {
-                            HookHash: "348C7966C79737F6254C3D3866DBEE0AE1584E0751771F0588F898E65C7DFB84"
+                            HookHash: hash
                         }}
                     ]
                 }, {wallet: account2}).then(x=>

@@ -7,18 +7,12 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
         {
             Account: account.classicAddress,
             TransactionType: "SetHook",
-            Hooks: [
-                {
-                    Hook: {
-                        CreateCode: "",
-                        Flags: t.hfsOVERRIDE
-                    }
-                }
-            ],
+            Hooks: [{Hook:{}}],
             Fee: "100000"
         }, {wallet: account}).then(x=>
         {
             t.assertTxnSuccess(x)
+            console.log(x)
             t.api.submit(
             {
                 Account: account.classicAddress,
@@ -45,8 +39,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                     Hooks: [
                         {
                             Hook: {
-                                CreateCode: "",          // hook delete
-                                Flags: t.hfsOVERRIDE
+                                Flags: t.hsfOVERRIDE,
+                                CreateCode: ""          // hook delete
                             }
                         }
                     ],

@@ -40,7 +40,6 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
             }, {wallet: account}).then(x=>
             {
                 t.assertTxnFailure(x)
-                console.log(x);
                 process.exit(0);
             }).catch(t.err);
         }).catch(t.err);

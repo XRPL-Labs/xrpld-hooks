@@ -35,7 +35,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                 Fee: "100000"
             }, {wallet: account}).then(x=>
             {
-                t.assertTxnFailure(x)
+                t.assertTxnSuccess(x)
                 console.log(x);
                 process.exit(0);
             }).catch(t.err);
