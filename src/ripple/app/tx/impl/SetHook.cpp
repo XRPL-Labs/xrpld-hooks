@@ -647,9 +647,15 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     std::optional<int> hook_func_idx;
     std::optional<int> cbak_func_idx;
 
+    // this maps function ids to type ids, used for looking up the type of cbak and hook
+    // as established inside the wasm binary.
+    std::map<int, int> func_type_map;
+
+
     // now we check for guards... first check if _g is imported
     int guard_import_number = -1;
     int last_import_number = -1;
+    int import_count = 0;
     for (int i = 8, j = 0; i < hook.size();)
     {
 
@@ -678,7 +684,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         // we are interested in the import section... we need to know if _g is imported and which import# it is
         if (section_type == 2) // import section
         {
-            int import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             if (import_count <= 0)
             {
                 JLOG(ctx.j.trace())
@@ -786,7 +792,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 return {false, 0};
             }
 
-            for (int j = 0; j < export_count && !(hook_func_idx && cbak_func_idx); ++j)
+            for (int j = 0; j < export_count; ++j)
             {
                 int name_len = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 if (name_len == 4)
@@ -839,11 +845,47 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 return {false, 0};
             }
         }
+        else if (section_type == 3) // function section
+        {
+            int function_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            if (function_count <= 0)
+            {
+                JLOG(ctx.j.trace())
+                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "Hook did not establish any functions... "
+                    << "required hook(int64_t), callback(int64_t).";
+                return {false, 0};
+            }
+
+            for (int j = 0; j < function_count; ++j)
+            {
+                int type_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                printf("Function map: func %d -> type %d\n", j, type_idx);
+                func_type_map[j] = type_idx;
+            }
+        }
 
         i = next_section;
         continue;
     }
 
+    // we must subtract import_count from the hook and cbak function in order to be able to 
+    // look them up in the functions section. this is a rule of the webassembly spec
+    // note that at this point in execution we are guarenteed these are populated
+    *hook_func_idx -= import_count;
+    *cbak_func_idx -= import_count;
+
+    if (func_type_map.find(*hook_func_idx) == func_type_map.end() ||
+        func_type_map.find(*cbak_func_idx) == func_type_map.end())
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+            << "hook or cbak functions did not have a corresponding type in WASM binary.";
+        return {false, 0};
+    }
+
+    int hook_type_idx = func_type_map[*hook_func_idx];
+    int cbak_type_idx = func_type_map[*cbak_func_idx];
 
     // second pass... where we check all the guard function calls follow the guard rules
     // minimal other validation in this pass because first pass caught most of it
@@ -890,16 +932,17 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         return {false, 0};
                     }
 
+                    printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
+                           "param_count: %d param_type: %x\n", 
+                           j, *hook_func_idx, *cbak_func_idx, param_count, param_type);
+
                     // hook and cbak parameter check here
-                    if ((j == *hook_func_idx || j == *cbak_func_idx) && 
+                    if ((j == hook_type_idx || j == cbak_type_idx) && 
                         (param_count != 1 || param_type != 0x7F /* i32 */ ))
                     {
                         JLOG(ctx.j.trace())
                             << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook did not export: "
-                            << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
-                            << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
-                            << ". Function definition must have exactly one uint32_t parameter.";
+                            << "hook and cbak function definition must have exactly one uint32_t parameter.";
                         return {false, 0};
                     }
                 }
@@ -935,17 +978,18 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                             << "Offset: " << i;
                         return {false, 0};
                     }
+                    
+                    printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
+                           "result_count: %d result_type: %x\n", 
+                           j, *hook_func_idx, *cbak_func_idx, result_count, result_type);
                         
                     // hook and cbak return type check here
-                    if ((j == *hook_func_idx || j == *cbak_func_idx) && 
+                    if ((j == hook_type_idx || j == cbak_type_idx) && 
                         (result_count != 1 || result_type != 0x7E /* i64 */ ))
                     {
                         JLOG(ctx.j.trace())
                             << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "Hook did not export: "
-                            << ( j == *hook_func_idx ? "int64_t hook(uint32_t); " : "" )
-                            << ( j == *cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" )
-                            << ". Function definition must have exactly one int64_t return type.";
+                            << "hook and cbak function definition must have exactly one int64_t return type.";
                         return {false, 0};
                     }
                 }
