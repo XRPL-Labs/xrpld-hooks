@@ -995,12 +995,13 @@ finalizeHookResult(
                 sleEmitted->emplace_back(
                     ripple::STObject(sit, sfEmittedTxn)
                 );
-                auto page = applyCtx.view().dirAppend(
+                auto page = applyCtx.view().dirInsert(
                     keylet::emittedDir(),
                     emittedId,
                     [&](SLE::ref sle) {
                     // RH TODO: should something be here?
                     });
+
 
                 if (page)
                 {
