@@ -1,0 +1,15 @@
+{
+  "name": "hook-api-examples",
+  "version": "1.0.0",
+  "description": "",
+  "main": "''",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "ripple-keypairs": "^1.1.3",
+    "xrpl-hooks": "^2.1.1"
+  }
+}
