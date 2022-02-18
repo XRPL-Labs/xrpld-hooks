@@ -3184,14 +3184,14 @@ DEFINE_HOOK_FUNCTION(
 
     unsigned char* out = memory + write_ptr;
 
-    *out++ = 0xECU; // begin sfEmitDetails                            /* upto =   0 | size =  1 */
+    *out++ = 0xEDU; // begin sfEmitDetails                            /* upto =   0 | size =  1 */
     *out++ = 0x20U; // sfEmitGeneration preamble                      /* upto =   1 | size =  6 */
-    *out++ = 0x2BU; // preamble cont
+    *out++ = 0x2EU; // preamble cont
     *out++ = ( generation >> 24 ) & 0xFFU;
     *out++ = ( generation >> 16 ) & 0xFFU;
     *out++ = ( generation >>  8 ) & 0xFFU;
     *out++ = ( generation >>  0 ) & 0xFFU;
-    *out++ = 0x3C; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
+    *out++ = 0x3D; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
     *out++ = ( burden >> 56 ) & 0xFFU;
     *out++ = ( burden >> 48 ) & 0xFFU;
     *out++ = ( burden >> 40 ) & 0xFFU;
@@ -3200,18 +3200,18 @@ DEFINE_HOOK_FUNCTION(
     *out++ = ( burden >> 16 ) & 0xFFU;
     *out++ = ( burden >>  8 ) & 0xFFU;
     *out++ = ( burden >>  0 ) & 0xFFU;
-    *out++ = 0x5A; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
+    *out++ = 0x5B; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
     if (otxn_id(hookCtx, memoryCtx, out - memory, 32, 1) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++ = 0x5B; // sfEmitNonce                                     /* upto =  49 | size = 33 */
+    *out++ = 0x5C; // sfEmitNonce                                     /* upto =  49 | size = 33 */
     if (nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++= 0x5C; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
+    *out++= 0x5D; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
     for (int i = 0; i < 32; ++i)
         *out++ = hookCtx.result.hookHash.data()[i];                   
-    *out++ = 0x89; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
+    *out++ = 0x8A; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
     *out++ = 0x14; // preamble cont
     if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
         return INTERNAL_ERROR;

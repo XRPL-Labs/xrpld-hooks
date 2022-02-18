@@ -101,8 +101,9 @@ namespace hook_api
 
 
 // for debugging if you want a lot of output change these to if (1)
-#define DBG_PRINTF if (0) printf
-#define DBG_FPRINTF if (0) fprintf
+#define HOOK_DBG 1
+#define DBG_PRINTF if (HOOK_DBG) printf
+#define DBG_FPRINTF if (HOOK_DBG) fprintf
 
     namespace keylet_code
     {
