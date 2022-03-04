@@ -1477,7 +1477,9 @@ SetHook::destroyNamespace(
     unsigned int uDirEntry{0};
     uint256 dirEntry{beast::zero};
 
-    if (dirIsEmpty(view, dirKeylet))
+    auto sleDir = view.peek(dirKeylet);
+    
+    if (!sleDir || dirIsEmpty(view, dirKeylet))
         return tesSUCCESS;
 
     auto sleAccount = view.peek(keylet::account(account));
@@ -1497,13 +1499,14 @@ SetHook::destroyNamespace(
             dirEntry)) {
             JLOG(ctx.j.fatal())
                 << "HookSet[" << HS_ACC() << "]: DeleteState "
-                << "account directory missing ";
+                << "directory missing ";
         return tefINTERNAL;
     }
 
     uint32_t stateCount =sleAccount->getFieldU32(sfHookStateCount);
     uint32_t oldStateCount = stateCount;
 
+    std::vector<std::optional<uint256>> toDelete {sleDir->getFieldV256(sfIndexes).size()};
     do
     {
         // Make sure any directory node types that we find are the kind
@@ -1523,23 +1526,57 @@ SetHook::destroyNamespace(
 
         auto nodeType = sleItem->getFieldU16(sfLedgerEntryType);
 
-        if (nodeType == ltHOOK_STATE) {
-            // delete it!
-            auto const hint = (*sleItem)[sfOwnerNode];
-            if (!view.dirRemove(dirKeylet, hint, itemKeylet.key, false))
-            {
-                JLOG(ctx.j.fatal())
-                    << "HookSet[" << HS_ACC() << "]: DeleteState "
-                    << "directory node in ledger " << view.seq() << " "
-                    << "has undeletable ltHOOK_STATE";
-                return tefBAD_LEDGER;
-            }
-            view.erase(sleItem);
-            stateCount--;
+        if (nodeType != ltHOOK_STATE)
+        {
+            JLOG(ctx.j.fatal())
+                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "directory node in ledger " << view.seq() << " "
+                << "has non-ltHOOK_STATE entry " << to_string(dirEntry);
+            return tefBAD_LEDGER;
         }
 
+        toDelete.push_back(uint256::fromVoidChecked(itemKeylet.key));
 
     } while (cdirNext(view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry));
+
+
+    // delete it!
+    for (auto const& itemKey: toDelete)
+    {
+        // should never happen
+        if (!itemKey)
+        {
+            JLOG(ctx.j.fatal())
+                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "directory entry in ledger " << view.seq() << " "
+                << "was invalid key fromVoidChecked.";
+            return tefBAD_LEDGER;
+        }
+
+        auto const& sleItem = view.peek({ltHOOK_STATE, *itemKey});
+
+    
+        if (!sleItem)
+        {
+            JLOG(ctx.j.warn())
+                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "Namespace ltHOOK_STATE entry was not found in ledger: "
+                << *itemKey;
+            continue;
+        }
+
+        auto const hint = (*sleItem)[sfOwnerNode];
+        if (!itemKey || !view.dirRemove(dirKeylet, hint, *itemKey, false))
+        {
+            JLOG(ctx.j.fatal())
+                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "directory node in ledger " << view.seq() << " "
+                << "could not be deleted.";
+            return tefBAD_LEDGER;
+        }
+        view.erase(sleItem);
+        stateCount--;
+    }
 
     if (stateCount > oldStateCount)
     {
@@ -1710,6 +1747,8 @@ SetHook::setHook()
         .tx = ctx_.tx,
         .app = ctx_.app
     };
+
+    bool commitChanges = true; //!view().open();
 
     const int  blobMax = hook::maxHookWasmSize();
     auto const accountKeylet = keylet::account(account_);
@@ -1913,7 +1952,7 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (oldDefSLE)
+                if (oldDefSLE && commitChanges)
                 {
                     if (reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
@@ -1980,7 +2019,6 @@ SetHook::setHook()
 
                 if (view().exists(keylet))
                 {
-                    // update reference count
                     newDefSLE = view().peek(keylet);
                     newDefKeylet = keylet;
         
@@ -2015,7 +2053,7 @@ SetHook::setHook()
                     }
                         
                     // decrement the hook definition and mark it for deletion if appropriate
-                    if (oldDefSLE)
+                    if (oldDefSLE && commitChanges)
                     {
                         if (reduceReferenceCount(oldDefSLE))
                             defsToDestroy.emplace(*oldDefKeylet);
@@ -2037,7 +2075,8 @@ SetHook::setHook()
                     newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
                     newHookDef->setFieldAmount(sfFee,  XRPAmount {hook::computeExecutionFee(maxInstrCount)} );
-                    view().insert(newHookDef);
+                    if (commitChanges)
+                        view().insert(newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
                     continue;
@@ -2067,7 +2106,7 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (oldDefSLE)
+                if (oldDefSLE && commitChanges)
                 {
                     if (reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
@@ -2109,7 +2148,8 @@ SetHook::setHook()
 
                 newHooks.push_back(std::move(newHook));
 
-                view().update(newDefSLE);
+                if (commitChanges)
+                    view().update(newDefSLE);
 
                 continue;
             }
@@ -2125,39 +2165,42 @@ SetHook::setHook()
         }
     }
 
-    // clean up any Namespace directories marked for deletion and any zero reference Hook Definitions
-
-    // dirs
-    for (auto const& p : dirsToDestroy)
+    if (commitChanges)
     {
-        auto const& sle = view().peek(p);
-        if (!sle)
-            continue;
-        printf("==>> Destroying namespace\n");
-        destroyNamespace(ctx, view(), account_, p);
-    }
+        // clean up any Namespace directories marked for deletion and any zero reference Hook Definitions
 
-
-    // defs
-    for (auto const& p : defsToDestroy)
-    {
-        auto const& sle = view().peek(p);
-        if (!sle)
-            continue;
-        uint64_t refCount = sle->getFieldU64(sfReferenceCount);
-        if (refCount <= 0)
+        // dirs
+        for (auto const& p : dirsToDestroy)
         {
-            view().erase(sle);
+            auto const& sle = view().peek(p);
+            if (!sle)
+                continue;
+            printf("==>> Destroying namespace\n");
+            destroyNamespace(ctx, view(), account_, p);
         }
+
+
+        // defs
+        for (auto const& p : defsToDestroy)
+        {
+            auto const& sle = view().peek(p);
+            if (!sle)
+                continue;
+            uint64_t refCount = sle->getFieldU64(sfReferenceCount);
+            if (refCount <= 0)
+            {
+                view().erase(sle);
+            }
+        }
+
+        newHookSLE->setFieldArray(sfHooks, newHooks);
+        newHookSLE->setAccountID(sfAccount, account_);
+
+        if (oldHookSLE)
+            view().erase(oldHookSLE);
+
+        view().insert(newHookSLE);
     }
-
-    newHookSLE->setFieldArray(sfHooks, newHooks);
-    newHookSLE->setAccountID(sfAccount, account_);
-
-    if (oldHookSLE)
-        view().erase(oldHookSLE);
-
-    view().insert(newHookSLE);
     return tesSUCCESS;
 }
 
