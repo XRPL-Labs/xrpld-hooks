@@ -44,7 +44,9 @@ module.exports = {
 
             const randomAccount = ()=>
             {
-                return xrpljs.Wallet.fromSeed(kp.generateSeed());
+                const acc = xrpljs.Wallet.fromSeed(kp.generateSeed());
+                console.log(acc)
+                return acc
             };
 
             const hookHash = fn =>

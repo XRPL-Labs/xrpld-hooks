@@ -1,6 +1,8 @@
 require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
 {
-    const account =  t.randomAccount();
+    const account =  (process.argv.length < 3 ? t.randomAccount() :
+        t.xrpljs.Wallet.fromSeed(process.argv[2]));
+    
     t.fundFromGenesis(account).then(()=>
     {
         t.api.submit(
@@ -20,6 +22,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                 Hooks: [
                     {
                         Hook: {
+                            Flags: t.hsfOVERRIDE,
                             CreateCode: t.wasm('accept.wasm'),
                             HookApiVersion: 0,
                             HookNamespace: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF",

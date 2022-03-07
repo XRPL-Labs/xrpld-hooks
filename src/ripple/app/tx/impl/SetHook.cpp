@@ -1748,11 +1748,11 @@ SetHook::setHook()
         .app = ctx_.app
     };
 
-    bool commitChanges = true; //!view().open();
-
     const int  blobMax = hook::maxHookWasmSize();
     auto const accountKeylet = keylet::account(account_);
     auto const hookKeylet = keylet::hook(account_);
+
+    auto accountSLE = view().peek(accountKeylet);
 
     ripple::STArray newHooks{sfHooks, 8};
     auto newHookSLE = std::make_shared<SLE>(hookKeylet);
@@ -1952,7 +1952,7 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (oldDefSLE && commitChanges)
+                if (oldDefSLE)
                 {
                     if (reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
@@ -2053,7 +2053,7 @@ SetHook::setHook()
                     }
                         
                     // decrement the hook definition and mark it for deletion if appropriate
-                    if (oldDefSLE && commitChanges)
+                    if (oldDefSLE)
                     {
                         if (reduceReferenceCount(oldDefSLE))
                             defsToDestroy.emplace(*oldDefKeylet);
@@ -2075,8 +2075,7 @@ SetHook::setHook()
                     newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
                     newHookDef->setFieldAmount(sfFee,  XRPAmount {hook::computeExecutionFee(maxInstrCount)} );
-                    if (commitChanges)
-                        view().insert(newHookDef);
+                    view().insert(newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
                     continue;
@@ -2106,7 +2105,7 @@ SetHook::setHook()
                 }
 
                 // decrement the hook definition and mark it for deletion if appropriate
-                if (oldDefSLE && commitChanges)
+                if (oldDefSLE)
                 {
                     if (reduceReferenceCount(oldDefSLE))
                         defsToDestroy.emplace(*oldDefKeylet);
@@ -2148,8 +2147,7 @@ SetHook::setHook()
 
                 newHooks.push_back(std::move(newHook));
 
-                if (commitChanges)
-                    view().update(newDefSLE);
+                view().update(newDefSLE);
 
                 continue;
             }
@@ -2165,7 +2163,6 @@ SetHook::setHook()
         }
     }
 
-    if (commitChanges)
     {
         // clean up any Namespace directories marked for deletion and any zero reference Hook Definitions
 
@@ -2193,13 +2190,75 @@ SetHook::setHook()
             }
         }
 
+        // check if the new hook object is empty
+        bool newHooksEmpty = true;
+        for (auto const& h: newHooks)
+        {
+            if (h.isFieldPresent(sfHookHash))
+            {
+                newHooksEmpty = false;
+                break;
+            }
+        }
+        
+
         newHookSLE->setFieldArray(sfHooks, newHooks);
         newHookSLE->setAccountID(sfAccount, account_);
 
-        if (oldHookSLE)
-            view().erase(oldHookSLE);
+        // There are three possible final outcomes
+        // Either the account's ltHOOK is deleted, updated or created.
 
-        view().insert(newHookSLE);
+        if (oldHookSLE && newHooksEmpty)
+        {
+            // DELETE ltHOOK
+            auto const hint = (*oldHookSLE)[sfOwnerNode];
+            if (!view().dirRemove(
+                        keylet::ownerDir(account_),
+                        hint, hookKeylet.key, false))
+            {
+                JLOG(j_.fatal()) << "Unable to delete ltHOOK from owner.";
+                return tefBAD_LEDGER;
+            }
+
+            view().erase(oldHookSLE);
+    
+            // update owner count to reflect removal
+            adjustOwnerCount(view(), accountSLE, -1, j_);
+            view().update(accountSLE);
+        }
+        else if (oldHookSLE && !newHooksEmpty)
+        {
+            // UPDATE ltHOOK
+            view().erase(oldHookSLE);
+            view().insert(newHookSLE);
+        }
+        else if (!oldHookSLE && !newHooksEmpty)
+        {       
+            // CREATE ltHOOK
+            auto const page = view().dirInsert(
+                keylet::ownerDir(account_),
+                hookKeylet,
+                describeOwnerDir(account_));
+            
+            JLOG(j_.trace()) << "Adding ltHook to account directory "
+                             << to_string(hookKeylet.key) << ": "
+                             << (page ? "success" : "failure");
+
+            if (!page)
+                return tecDIR_FULL;
+
+            newHookSLE->setFieldU64(sfOwnerNode, *page);
+            
+            view().insert(newHookSLE);
+            
+            // update owner count to reflect new ltHOOK object
+            adjustOwnerCount(view(), accountSLE, 1, j_);
+            view().update(accountSLE);
+        }
+        else
+        {
+            // for clarity if this is a NO-OP
+        }
     }
     return tesSUCCESS;
 }
