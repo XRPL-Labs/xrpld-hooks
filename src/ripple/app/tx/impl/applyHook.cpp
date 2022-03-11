@@ -313,7 +313,7 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 }
 
 
-// Update HookState ledger objects for the hook... only called after accept() or reject()
+// Update HookState ledger objects for the hook... only called after accept() or rollback()
 // assumes the specified acc has already been checked for authoriation (hook grants)
 TER
 hook::setHookState(
@@ -357,10 +357,11 @@ hook::setHookState(
             return tefBAD_LEDGER;
 
         auto const hint = (*hookState)[sfOwnerNode];
-
         // Remove the node from the namespace directory
         if (!view.dirRemove(hookStateDirKeylet, hint, hookStateKeylet.key, false))
             return tefBAD_LEDGER;
+
+        bool nsDestroyed = !view.peek(hookStateDirKeylet);
 
         // remove the actual hook state obj
         view.erase(hookState);
@@ -374,7 +375,35 @@ hook::setHookState(
             adjustOwnerCount(view, sleAccount, -1, j);
 
         sleAccount->setFieldU32(sfHookStateCount, stateCount);
+
+
+        if (nsDestroyed)
+        {
+            STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
+            if (vec.size() - 1 == 0)
+                sleAccount->makeFieldAbsent(sfHookNamespaces);
+            else
+            {
+                std::vector<uint256> nv { vec.size() - 1 };
+                for (uint256 u : vec.value())
+                    if (u != ns)
+                        nv.push_back(u);
+                sleAccount->setFieldV256(sfHookNamespaces, STVector256{std::move(nv)});
+            }
+        }
+
         view.update(sleAccount);
+
+        /*
+        // if the root page of this namespace was removed then also remove the root page
+        // from the owner directory
+        if (!view.peek(hookStateDirKeylet) && rootHint)
+        {
+            if (!view.dirRemove(keylet::ownerDir(acc), *rootHint, hookStateDirKeylet.key, false))
+                return tefBAD_LEDGER;
+        }
+        */
+
         return tesSUCCESS;
     }
         
@@ -418,22 +447,43 @@ hook::setHookState(
 
     if (createNew)
     {
-        // Add the hook to the account's directory if it wasn't there already
+        bool nsExists = !!view.peek(hookStateDirKeylet);
+
         auto const page = view.dirInsert(
             hookStateDirKeylet,
             hookStateKeylet.key,
             describeOwnerDir(acc));
-
         if (!page)
             return tecDIR_FULL;
-    
+
         hookState->setFieldU64(sfOwnerNode, *page);
-        
+
         // add new data to ledger
         view.insert(hookState);
+
+        // update namespace vector where necessary
+        if (!nsExists)
+        {
+            if (!sleAccount->isFieldPresent(sfHookNamespaces))
+            {
+                sleAccount->setFieldV256(sfHookNamespaces, STVector256{std::vector<uint256>{ns}});
+                view.update(sleAccount);
+            }
+            else
+            {
+                STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
+                std::vector<uint256> nv { vec.value() };
+                nv.push_back(ns);
+                sleAccount->setFieldV256(sfHookNamespaces, STVector256{std::move(nv)});
+                view.update(sleAccount);
+            }
+        }
+
     }
     else
+    {
         view.update(hookState);
+    }
 
     return tesSUCCESS;
 }

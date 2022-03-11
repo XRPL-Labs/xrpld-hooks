@@ -54,7 +54,8 @@ LedgerFormats::LedgerFormats()
             {sfDomain, soeOPTIONAL},
             {sfTickSize, soeOPTIONAL},
             {sfTicketCount, soeOPTIONAL},
-            {sfHookStateCount, soeOPTIONAL}
+            {sfHookStateCount, soeOPTIONAL},
+            {sfHookNamespaces, soeOPTIONAL}
         },
         commonFields);
 
@@ -68,6 +69,7 @@ LedgerFormats::LedgerFormats()
             {sfTakerGetsIssuer, soeOPTIONAL},    // for order book directories
             {sfExchangeRate, soeOPTIONAL},       // for order book directories
             {sfReferenceCount, soeOPTIONAL},     // for hook state directories
+            {sfOwnerNode, soeOPTIONAL},          // for directories that are members of other directories
             {sfIndexes, soeREQUIRED},
             {sfRootIndex, soeREQUIRED},
             {sfIndexNext, soeOPTIONAL},

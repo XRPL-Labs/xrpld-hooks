@@ -87,7 +87,7 @@ private:
         SetHookCtx& ctx,
         ApplyView& view,
         const AccountID& account,
-        const Keylet & dirKeylet        // the keylet of the namespace directory
+        uint256 ns
     );
 
     TER

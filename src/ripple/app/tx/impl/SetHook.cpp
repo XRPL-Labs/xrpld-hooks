@@ -1467,11 +1467,13 @@ SetHook::destroyNamespace(
     SetHookCtx& ctx,
     ApplyView& view,
     const AccountID& account,
-    const Keylet & dirKeylet        // the keylet of the namespace directory
+    uint256 ns
 ) {
     JLOG(ctx.j.trace())
         << "HookSet[" << HS_ACC() << "]: DeleteState "
-        << "Destroying Hook Namespace for " << account << " namespace keylet " << dirKeylet.key;
+        << "Destroying Hook Namespace for " << account << " namespace " << ns;
+
+    Keylet dirKeylet = keylet::hookStateDir(account, ns);
 
     std::shared_ptr<SLE const> sleDirNode{};
     unsigned int uDirEntry{0};
@@ -1506,7 +1508,7 @@ SetHook::destroyNamespace(
     uint32_t stateCount =sleAccount->getFieldU32(sfHookStateCount);
     uint32_t oldStateCount = stateCount;
 
-    std::vector<std::optional<uint256>> toDelete {sleDir->getFieldV256(sfIndexes).size()};
+    std::vector<uint256> toDelete {sleDir->getFieldV256(sfIndexes).size()};
     do
     {
         // Make sure any directory node types that we find are the kind
@@ -1535,7 +1537,8 @@ SetHook::destroyNamespace(
             return tefBAD_LEDGER;
         }
 
-        toDelete.push_back(uint256::fromVoidChecked(itemKeylet.key));
+
+        toDelete.push_back(uint256::fromVoid(itemKeylet.key.data()));
 
     } while (cdirNext(view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry));
 
@@ -1543,30 +1546,20 @@ SetHook::destroyNamespace(
     // delete it!
     for (auto const& itemKey: toDelete)
     {
-        // should never happen
-        if (!itemKey)
-        {
-            JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
-                << "directory entry in ledger " << view.seq() << " "
-                << "was invalid key fromVoidChecked.";
-            return tefBAD_LEDGER;
-        }
 
-        auto const& sleItem = view.peek({ltHOOK_STATE, *itemKey});
-
+        auto const& sleItem = view.peek({ltHOOK_STATE, itemKey});
     
         if (!sleItem)
         {
             JLOG(ctx.j.warn())
                 << "HookSet[" << HS_ACC() << "]: DeleteState "
                 << "Namespace ltHOOK_STATE entry was not found in ledger: "
-                << *itemKey;
+                << itemKey;
             continue;
         }
 
         auto const hint = (*sleItem)[sfOwnerNode];
-        if (!itemKey || !view.dirRemove(dirKeylet, hint, *itemKey, false))
+        if (!view.dirRemove(dirKeylet, hint, itemKey, false))
         {
             JLOG(ctx.j.fatal())
                 << "HookSet[" << HS_ACC() << "]: DeleteState "
@@ -1588,6 +1581,24 @@ SetHook::destroyNamespace(
     }
 
     sleAccount->setFieldU32(sfHookStateCount, stateCount);
+
+    STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
+    if (vec.size() - 1 == 0)
+    {
+        sleAccount->makeFieldAbsent(sfHookNamespaces);
+    }
+    else
+    {
+        std::vector<uint256> nv { vec.size() - 1 };
+    
+        for (uint256 u : vec.value())
+            if (u != ns)
+                nv.push_back(u);
+
+        sleAccount->setFieldV256(sfHookNamespaces, STVector256 { std::move(nv) } );
+    }
+
+    view.update(sleAccount);
 
     return tesSUCCESS;
 }
@@ -1648,7 +1659,7 @@ createOrReuseNamespace(ripple::Keylet& newDirKeylet)
     return tesSUSCCESS;
 }
         //if (oldDirSLE)
-        //    reduceReferenceCount(oldDirSLE, (flag & hsoNSDELETE) ? dirsToDestroy : std::nullopt);
+        //    reduceReferenceCount(oldDirSLE, (flag & hsoNSDELETE) ? namespacesToDestroy : std::nullopt);
 */
 
 TER
@@ -1768,7 +1779,7 @@ SetHook::setHook()
     }
 
     std::set<ripple::Keylet, KeyletComparator> defsToDestroy {};
-    std::set<ripple::Keylet, KeyletComparator> dirsToDestroy {};
+    std::set<uint256> namespacesToDestroy {};
 
     int hookSetNumber = -1;
     auto const& hookSets = ctx.tx.getFieldArray(sfHooks);
@@ -1888,12 +1899,12 @@ SetHook::setHook()
             else if(op == hsoNSDELETE && newDirKeylet)
             {
                 printf("Marking a namespace for destruction.... NSDELETE\n");
-                dirsToDestroy.emplace(*newDirKeylet);
+                namespacesToDestroy.emplace(*newNamespace);
             }
             else if (oldDirKeylet)
             {
                 printf("Marking a namespace for destruction.... non-NSDELETE\n");
-                dirsToDestroy.emplace(*oldDirKeylet);
+                namespacesToDestroy.emplace(*oldNamespace);
             }
             else
             {
@@ -2165,16 +2176,8 @@ SetHook::setHook()
 
     {
         // clean up any Namespace directories marked for deletion and any zero reference Hook Definitions
-
-        // dirs
-        for (auto const& p : dirsToDestroy)
-        {
-            auto const& sle = view().peek(p);
-            if (!sle)
-                continue;
-            printf("==>> Destroying namespace\n");
-            destroyNamespace(ctx, view(), account_, p);
-        }
+        for (auto const& ns : namespacesToDestroy)
+            destroyNamespace(ctx, view(), account_, ns);
 
 
         // defs
