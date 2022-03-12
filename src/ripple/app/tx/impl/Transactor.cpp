@@ -195,10 +195,18 @@ Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet c
             printf("calculateHookChainFee edge case\n");
             continue;
         }
-            
-        fee += FeeUnit64{
-            (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
-        };
+        
+        // check if the hook can fire
+        uint64_t hookOn = (hookObj->isFieldPresent(sfHookOn)
+                ? hookObj->getFieldU64(sfHookOn)
+                : hookDef->getFieldU64(sfHookOn));
+
+        if (hook::canHook(tx.getTxnType(), hookOn))
+        {
+            fee += FeeUnit64{
+                (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
+            };
+        }
     }
 
     return fee;
