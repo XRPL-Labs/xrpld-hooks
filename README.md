@@ -1,6 +1,9 @@
 # Hooks Public Testnet
 This is a fork of the rippled codebase incorporating the work-in-progress "Hooks" amendment. This amendment will allow web assembly smart contracts to run directly on the XRP ledger when completed and adopted.
 
+Currently, there are 2 different testnets with different transactions and features, which are v1 & v2.   
+The v1 testnet is still available for some time but we reccomend devs to migrate to the v2 testnet as it is the latest version.
+
 ## Docker Container
 Building `rippled` can be non-trivial, especially in this case since modified libraries are used. We have provided a testnet docker container for your convenience. This container contains an instance of `rippled` configured as a "Hooks stock node" running on the Public Testnet. You can interact with it using the steps below:
 
@@ -41,10 +44,18 @@ After following the above steps you will be inside a shell inside the container.
 3. Example hooks and support scripts to install them on your account.
 
 ## Get testnet XRP
-The Faucet is on the [main page](https://hooks-testnet.xrpl-labs.com/). Make a note of your secret (family seed) because you will need it for all the examples.
+Faucets:   
+v1 testnet: https://hooks-testnet.xrpl-labs.com/   
+v2 testnet: https://hooks-testnet-v2.xrpl-labs.com/
+
+Keep a note of your secret (family seed) because you will need it for all the examples and tests.
 
 ## Testnet explorer
-Use the [Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/) to view transactions, accounts and hook state objects as you go.
+Explorers:   
+v1 testnet: https://hooks-testnet-explorer.xrpl-labs.com/   
+v2 testnet: https://hooks-testnet-v2-explorer.xrpl-labs.com/
+
+Use the testnet explorer to view transactions, accounts and hook state objects as you go.  
 
 ## File types
 1. The example hooks are written in C. Any file ending in `.c` is a hook. Any file ending in `.h` is a header file used by
@@ -67,24 +78,24 @@ To interact with the example hooks change (`cd`) into one of these directories:
     
 All example hooks are installed by running `node <hook name>.js`. The usage information will be provided at the commandline.
 
-You can check a reported `SetHook` transaction ID with the [Hooks Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/).
+You can check a reported `SetHook` transaction ID with the Hooks Testnet Explorer ([v1](https://hooks-testnet-explorer.xrpl-labs.com/)/[v2](https://hooks-testnet-v2-explorer.xrpl-labs.com/)).
 
 Finally run the additional `.js` files to interact with the Hook or write your own interaction.
 
 ## Hook API
-- Documentation for the Hook API can be found at the [Hooks Testnet Site](https://hooks-testnet.xrpl-labs.com/).
+Documentation for the Hook API can be found at the Hooks Testnet Site, under `Docs` ([v1](https://hooks-testnet.xrpl-labs.com/)/[v2](https://hooks-testnet-v2.xrpl-labs.com/)).
 - For further details check:
 1. `hook-api-examples/hookapi.h`
 2. `src/ripple/app/tx/applyHook.h`
 3. `src/ripple/app/tx/impl/applyHook.cpp`
 
 ## Viewing state
-You can view the current Hook State for your Hook by locating the account it is installed on with the [Hooks Testnet Explorer](https://hooks-testnet-explorer.xrpl-labs.com/).
+You can view the current Hook State for a Hook by locating the account it is installed on with the Hooks Testnet Explorer ([v1](https://hooks-testnet-explorer.xrpl-labs.com/)/[v2](https://hooks-testnet-v2-explorer.xrpl-labs.com/))
 
 You can also run `./rippled account_objects <account on which the hook is installed on>` to inspect the Hook's State Data. 
 
 ## Minimum example hook
-Please have a look at the accept hook in `./accept/`
+Please have a look at the accept hook in `./accept/` ([here](https://github.com/XRPL-Labs/xrpld-hooks/tree/develop/hook-api-examples/accept))
 
 ## Tracing output
 Output is written to a file in the current working directory called `log`.
@@ -97,9 +108,11 @@ Greping for the relevant account will help, as all Hooks prepend the otxn accoun
 
 ## SetHook Transaction
 Set a Hook on an activated account using a SetHook Transaction (ttHOOK_SET = 22). This must contain the following fields:
-- sfAccount
-- sfCreateCode: Containing the binary of the web assembly
-- sfHookOn: An unsigned 64bit integer (explained bellow)
+- [sfAccount](https://xrpl.org/accounts.html#accounts): The account in which the Hook will be setup
+- [sfCreateCode](https://xrpl-hooks.readme.io/v2.0/docs/sethook-transaction) Containing the binary of the web assembly code
+- [sfHookNamespace](https://xrpl-hooks.readme.io/v2.0/docs/namespaces): An arbitrary & unique 32 byte namespace
+- [sfHookOn](https://xrpl-hooks.readme.io/v2.0/docs/hookon-field): An unsigned 64bit integer (explained bellow)
+
 
 ### sfHookOn
 Each bit in this unsigned int64 indicates whether the Hook should execute on a particular transaction type. All bits are *active low* **except** bit 22 which is *active high*. Since 22 is ttHOOK_SET this means the default value of all 0's will not fire on a SetHook transaction but will fire on every other transaction type. This is a deliberate design choice to help people avoid bricking their XRPL account with a misbehaving hook.
@@ -127,7 +140,6 @@ Examples:
 ```C
 (1ULL << 22)
 ```
-
 
 
 -------
