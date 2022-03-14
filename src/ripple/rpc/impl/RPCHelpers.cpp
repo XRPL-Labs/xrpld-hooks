@@ -226,6 +226,89 @@ getAccountObjects(
     }
 }
 
+bool
+getAccountNamespace(
+    ReadView const& ledger,
+    AccountID const& account,
+    uint256 const& ns,
+    uint256 dirIndex,
+    uint256 const& entryIndex,
+    std::uint32_t const limit,
+    Json::Value& jvResult)
+{
+    auto const root = keylet::hookStateDir(account, ns);
+    auto found = false;
+
+    if (dirIndex.isZero())
+    {
+        dirIndex = root.key;
+        found = true;
+    }
+
+    auto dir = ledger.read({ltDIR_NODE, dirIndex});
+    if (!dir)
+        return false;
+
+    std::uint32_t i = 0;
+    auto& jvObjects = (jvResult[jss::namespace_entries] = Json::arrayValue);
+    for (;;)
+    {
+        auto const& entries = dir->getFieldV256(sfIndexes);
+        auto iter = entries.begin();
+
+        if (!found)
+        {
+            iter = std::find(iter, entries.end(), entryIndex);
+            if (iter == entries.end())
+                return false;
+
+            found = true;
+        }
+
+        for (; iter != entries.end(); ++iter)
+        {
+            auto const sleNode = ledger.read(keylet::child(*iter));
+
+            jvObjects.append(sleNode->getJson(JsonOptions::none));
+
+            if (++i == limit)
+            {
+                if (++iter != entries.end())
+                {
+                    jvResult[jss::limit] = limit;
+                    jvResult[jss::marker] =
+                        to_string(dirIndex) + ',' + to_string(*iter);
+                    return true;
+                }
+
+                break;
+            }
+        }
+
+        auto const nodeIndex = dir->getFieldU64(sfIndexNext);
+        if (nodeIndex == 0)
+            return true;
+
+        dirIndex = keylet::page(root, nodeIndex).key;
+        dir = ledger.read({ltDIR_NODE, dirIndex});
+        if (!dir)
+            return true;
+
+        if (i == limit)
+        {
+            auto const& e = dir->getFieldV256(sfIndexes);
+            if (!e.empty())
+            {
+                jvResult[jss::limit] = limit;
+                jvResult[jss::marker] =
+                    to_string(dirIndex) + ',' + to_string(*e.begin());
+            }
+
+            return true;
+        }
+    }
+}
+
 namespace {
 
 bool

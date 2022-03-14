@@ -34,6 +34,7 @@ namespace detail {
 constexpr static ErrorInfo unorderedErrorInfos[]{
     {rpcACT_MALFORMED, "actMalformed", "Account malformed."},
     {rpcACT_NOT_FOUND, "actNotFound", "Account not found."},
+    {rpcNAMESPACE_NOT_FOUND, "nsNotFound", "Namespace not found."},
     {rpcALREADY_MULTISIG, "alreadyMultisig", "Already multisigned."},
     {rpcALREADY_SINGLE_SIG, "alreadySingleSig", "Already single-signed."},
     {rpcAMENDMENT_BLOCKED,
@@ -87,6 +88,7 @@ constexpr static ErrorInfo unorderedErrorInfos[]{
     {rpcLGR_NOT_FOUND, "lgrNotFound", "Ledger not found."},
     {rpcLGR_NOT_VALIDATED, "lgrNotValidated", "Ledger not validated."},
     {rpcMASTER_DISABLED, "masterDisabled", "Master key is disabled."},
+    {rpcNAMESPACE_MALFORMED, "namespaceMalformed", "Namespace identifier is malformed."},
     {rpcNOT_ENABLED, "notEnabled", "Not enabled in configuration."},
     {rpcNOT_IMPL, "notImpl", "Not implemented."},
     {rpcNOT_READY, "notReady", "Not ready to handle this request."},

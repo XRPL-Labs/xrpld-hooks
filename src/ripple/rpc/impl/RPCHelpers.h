@@ -109,6 +109,25 @@ getAccountObjects(
     std::uint32_t const limit,
     Json::Value& jvResult);
 
+/** Gathers all hook state objects for an account namespace in a ledger.
+    @param ledger Ledger to search account objects.
+    @param account AccountID to find objects for.
+    @param ns Namespace ID to find objects for.
+    @param dirIndex Begin gathering account objects from this directory.
+    @param entryIndex Begin gathering objects from this directory node.
+    @param limit Maximum number of objects to find.
+    @param jvResult A JSON result that holds the request objects.
+*/
+bool
+getAccountNamespace(
+    ReadView const& ledger,
+    AccountID const& account,
+    uint256 const& ns,
+    uint256 dirIndex,
+    uint256 const& entryIndex,
+    std::uint32_t const limit,
+    Json::Value& jvResult);
+
 /** Get ledger by hash
     If there is no error in the return value, the ledger pointer will have
     been filled

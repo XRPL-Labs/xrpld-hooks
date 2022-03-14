@@ -785,6 +785,13 @@ private:
         return parseAccountRaw2(jvParams, jss::peer);
     }
 
+    // account_namespace <account> <namespace hex> [<ledger>]
+    Json::Value
+    parseAccountNamespace(Json::Value const& jvParams)
+    {
+        return parseAccountNamespaceRaw(jvParams);
+    }
+
     // account_channels <account> <account>|"" [<ledger>]
     Json::Value
     parseAccountChannels(Json::Value const& jvParams)
@@ -861,6 +868,61 @@ private:
         jvRequest[jss::amount] = jvParams[2u];
 
         jvRequest[jss::signature] = jvParams[3u].asString();
+
+        return jvRequest;
+    }
+
+    Json::Value
+    parseAccountNamespaceRaw(Json::Value const& jvParams)
+    {
+        auto const nParams = jvParams.size();
+        Json::Value jvRequest(Json::objectValue);
+
+        for (auto i = 0; i < nParams; ++i)
+        {
+            std::string strParam = jvParams[i].asString();
+
+            if (i == 0)
+            {
+                // account
+                if (parseBase58<PublicKey>(
+                        TokenType::AccountPublic, strParam) ||
+                    parseBase58<AccountID>(strParam) ||
+                    parseGenericSeed(strParam))
+                {
+                    jvRequest[jss::account] = std::move(strParam);
+                }
+                else
+                {
+                    return rpcError(rpcACT_MALFORMED);
+                }
+                continue;
+            }
+            
+            if (i == 1)
+            {
+                // namespace hex
+                uint256 namespaceId;
+                if (!namespaceId.parseHex(strParam))
+                    return rpcError(rpcNAMESPACE_MALFORMED);
+                jvRequest[jss::namespace_id] = to_string(namespaceId);
+                continue;
+            }
+            
+            if (i == 2)
+            {
+                // ledger index (optional)
+                if (strParam.empty())
+                    break;
+
+                if (jvParseLedger(jvRequest, strParam))
+                    break;
+                else
+                    return rpcError(rpcLGR_IDX_MALFORMED);
+                
+                continue;
+            }
+        }
 
         return jvRequest;
     }
@@ -1237,6 +1299,7 @@ public:
             {"account_currencies", &RPCParser::parseAccountCurrencies, 1, 3},
             {"account_info", &RPCParser::parseAccountItems, 1, 3},
             {"account_lines", &RPCParser::parseAccountLines, 1, 5},
+            {"account_namespace", &RPCParser::parseAccountNamespace, 2, 3},
             {"account_channels", &RPCParser::parseAccountChannels, 1, 3},
             {"account_objects", &RPCParser::parseAccountItems, 1, 5},
             {"account_offers", &RPCParser::parseAccountItems, 1, 4},
