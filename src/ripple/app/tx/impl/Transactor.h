@@ -154,6 +154,17 @@ public:
     static FeeUnit64
     calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
 
+
+    // Returns a list of zero or more accounts which are
+    // not the originator of the transaction but which are
+    // stakeholders in the transaction. The bool parameter
+    // determines whether or not the specified account has
+    // permission for their hook/s to cause a rollback on
+    // the transaction.
+    static std::vector<std::pair<AccountID, bool>>
+    getTransactionalStakeHolders(STTx const& tx);
+
+
     static TER
     preclaim(PreclaimContext const& ctx)
     {

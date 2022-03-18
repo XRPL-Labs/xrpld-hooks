@@ -253,6 +253,7 @@ JSS(features);              // out: Feature
 JSS(fee);                   // out: NetworkOPs, Peers
 JSS(fee_base);              // out: NetworkOPs
 JSS(fee_div_max);           // in: TransactionSign
+JSS(fee_hooks_feeunits);    // out: Fee rpc call
 JSS(fee_level);             // out: AccountInfo
 JSS(fee_mult_max);          // in: TransactionSign
 JSS(fee_ref);               // out: NetworkOPs

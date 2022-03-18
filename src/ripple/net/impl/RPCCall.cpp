@@ -544,6 +544,25 @@ private:
         return jvRequest;
     }
 
+    // fee [<txblob>]
+    Json::Value
+    parseFee(Json::Value const& jvParams)
+    {
+        Json::Value jvRequest(Json::objectValue);
+
+        if (jvParams.size() == 0)
+        {
+            return jvRequest;
+        }
+        else if (jvParams.size() > 1)
+        {
+            return rpcError(rpcINVALID_PARAMS);
+        }
+
+        jvRequest[jss::tx_blob] = jvParams[0u].asString();
+        return jvRequest;
+    }
+
     // get_counts [<min_count>]
     Json::Value
     parseGetCounts(Json::Value const& jvParams)
@@ -1313,6 +1332,7 @@ public:
             {"deposit_authorized", &RPCParser::parseDepositAuthorized, 2, 3},
             {"download_shard", &RPCParser::parseDownloadShard, 2, -1},
             {"feature", &RPCParser::parseFeature, 0, 2},
+            {"fee", &RPCParser::parseFee, 0, 1},
             {"fetch_info", &RPCParser::parseFetchInfo, 0, 1},
             {"gateway_balances", &RPCParser::parseGatewayBalances, 1, -1},
             {"get_counts", &RPCParser::parseGetCounts, 0, 1},

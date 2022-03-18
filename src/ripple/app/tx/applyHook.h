@@ -47,6 +47,46 @@ namespace hook
                                 bool,                               // is modified from ledger value
                                 ripple::Blob>>>>;                   // the value
 
+    enum TSHFlags : uint8_t
+    {
+        tshNONE                = 0b000,
+        tshROLLBACK            = 0b001,
+        tshCOLLECT             = 0b010,
+    };
+
+    using namespace ripple;
+    static const std::map<uint16_t, uint8_t> TSHAllowances = 
+    {
+        {ttPAYMENT,             tshROLLBACK },
+        {ttESCROW_CREATE,       tshROLLBACK },
+        {ttESCROW_FINISH,       tshROLLBACK },
+        {ttACCOUNT_SET,         tshNONE     },
+        {ttESCROW_CANCEL,       tshCOLLECT  },
+        {ttREGULAR_KEY_SET,     tshNONE     },
+//        {ttNICKNAME_SET,        tshNONE     },
+        {ttOFFER_CREATE,        tshCOLLECT  },
+        {ttOFFER_CANCEL,        tshNONE     },
+//        {ttCONTRACT,            tshNONE     },
+        {ttTICKET_CREATE,       tshNONE     },
+//        {ttSPINAL_TAP,          tshNONE     },
+        {ttSIGNER_LIST_SET,     tshROLLBACK },
+        {ttPAYCHAN_CREATE,      tshROLLBACK },
+        {ttPAYCHAN_FUND,        tshCOLLECT  },
+        {ttPAYCHAN_CLAIM,       tshCOLLECT  },
+        {ttCHECK_CREATE,        tshROLLBACK },
+        {ttCHECK_CASH,          tshROLLBACK },
+        {ttCHECK_CANCEL,        tshCOLLECT  },
+        {ttDEPOSIT_PREAUTH,     tshROLLBACK },
+        {ttTRUST_SET,           tshCOLLECT  },
+        {ttACCOUNT_DELETE,      tshROLLBACK },
+        {ttHOOK_SET,            tshNONE     }
+        // RH TODO: add NFT transactions here
+    };
+
+
+    std::vector<std::pair<AccountID, bool>>
+    getTransactionalStakeHolders(STTx const& tx, ReadView const& rv);
+
     namespace log
     {
         /*

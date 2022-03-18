@@ -19,6 +19,174 @@
 
 using namespace ripple;
 
+namespace hook
+{
+
+    std::vector<std::pair<AccountID, bool>>
+    getTransactionalStakeHolders(STTx const& tx, ReadView const& rv)
+    {
+
+        if (!rv.rules().enabled(featureHooks))
+            return {};
+
+        if (!tx.isFieldPresent(sfAccount))
+            return {};
+
+        std::optional<AccountID> destAcc = tx.at(sfDestination);
+        std::optional<AccountID> otxnAcc = tx.at(sfAccount);
+
+        if (!otxnAcc)
+            return {};
+
+        uint16_t tt = tx.getFieldU16(sfTransactionType);
+
+        uint8_t tsh = tshNONE;
+        if (auto const& found = hook::TSHAllowances.find(tt); found != hook::TSHAllowances.end())
+            tsh = found->second;
+        else
+            return {};
+
+        std::map<AccountID, std::pair<int, bool>> tshEntries;
+        
+        int upto = 0;
+
+        bool canRollback = tsh & tshROLLBACK;
+
+        #define ADD_TSH(acc, rb)\
+        {\
+            auto acc_r = acc;\
+            if (acc_r != *otxnAcc)\
+            {\
+                if (tshEntries.find(acc_r) != tshEntries.end())\
+                {\
+                    if (tshEntries[acc_r].second == false && rb)\
+                        tshEntries[acc_r].second = true;\
+                }\
+                else\
+                    tshEntries.emplace(acc_r, std::pair<int, bool>{upto++, rb});\
+            }\
+        }
+
+        switch (tt)
+        {
+
+            // self transactions
+            case ttACCOUNT_SET:
+            case ttOFFER_CANCEL:
+            case ttREGULAR_KEY_SET:
+            case ttTICKET_CREATE:
+            case ttHOOK_SET:
+            case ttOFFER_CREATE: // this is handled seperately
+            //case ttCONTRACT:        // not used
+            //case ttSPINAL_TAP:      // not used
+            //case ttNICKNAME_SET:    // not used
+            {
+                break;
+            }
+
+            case ttDEPOSIT_PREAUTH:
+            {
+                if (!tx.isFieldPresent(sfAuthorize))
+                    return {};
+                ADD_TSH(tx.getAccountID(sfAuthorize), canRollback);
+                break;
+            }
+
+            // simple two party transactions
+            case ttPAYMENT:
+            case ttESCROW_CREATE:
+            case ttCHECK_CREATE:
+            case ttACCOUNT_DELETE:
+            case ttPAYCHAN_CREATE:
+            {
+                ADD_TSH(*destAcc, canRollback);
+                break;
+            }
+
+            case ttTRUST_SET:
+            {
+                if (!tx.isFieldPresent(sfLimitAmount))
+                    return {};
+
+                auto const& lim = tx.getFieldAmount(sfLimitAmount);
+                AccountID const& issuer = lim.getIssuer();
+
+                ADD_TSH(issuer, canRollback);
+                break;
+            }
+
+            case ttESCROW_CANCEL:
+            case ttESCROW_FINISH:
+            {
+                if (!tx.isFieldPresent(sfOwner) || !tx.isFieldPresent(sfOfferSequence))
+                    return {};
+
+                auto escrow = rv.read(
+                        keylet::escrow(tx.getAccountID(sfOwner), tx.getFieldU32(sfOfferSequence)));
+
+                if (!escrow)
+                    return {};
+
+                ADD_TSH(escrow->getAccountID(sfAccount), true);
+                ADD_TSH(escrow->getAccountID(sfDestination), canRollback);
+                break;
+            }
+
+            case ttPAYCHAN_FUND:
+            case ttPAYCHAN_CLAIM:
+            {
+                if (!tx.isFieldPresent(sfChannel))
+                    return {};
+
+                auto chan = rv.read(Keylet {ltPAYCHAN, tx.getFieldH256(sfChannel)});
+                if (!chan)
+                    return {};
+
+                ADD_TSH(chan->getAccountID(sfAccount), true);
+                ADD_TSH(chan->getAccountID(sfDestination), canRollback);
+                break;
+            }
+
+            case ttCHECK_CASH:
+            case ttCHECK_CANCEL:
+            {
+                if (!tx.isFieldPresent(sfCheckID))
+                    return {};
+
+                auto check = rv.read(Keylet {ltCHECK, tx.getFieldH256(sfCheckID)});
+                if (!check)
+                    return {};
+
+                ADD_TSH(check->getAccountID(sfAccount), true);
+                ADD_TSH(check->getAccountID(sfDestination), canRollback);
+                break;
+            }
+
+            // the owners of accounts whose keys appear on a signer list are entitled to prevent their inclusion
+            case ttSIGNER_LIST_SET:
+            {
+                STArray const& signerEntries = tx.getFieldArray(sfSignerEntries);
+                for (auto const& e : signerEntries)
+                {
+                    auto const& entryObj = dynamic_cast<STObject const*>(&e);
+                    if (entryObj->isFieldPresent(sfAccount))
+                        ADD_TSH(entryObj->getAccountID(sfAccount), canRollback);
+                }
+                break;
+            }
+
+            default:
+                return {};
+        }
+
+        std::vector<std::pair<AccountID, bool>> ret {tshEntries.size()};
+        for (auto& [a, e] : tshEntries)
+            ret[e.first] = std::pair<AccountID, bool>{a, e.second};
+
+        return std::move(ret);
+    }
+
+}
 
 namespace hook_float
 {

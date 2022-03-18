@@ -152,19 +152,9 @@ Transactor::Transactor(ApplyContext& ctx)
 {
 }
 
-inline
-std::optional<AccountID>
-getDestinationAccount(STTx const& tx)
-{
-    if (tx.isFieldPresent(sfOwner))
-        return tx.getAccountID(sfOwner);
-    
-    if (tx.isFieldPresent(sfDestination))
-        return tx.getAccountID(sfDestination);
 
-    return std::nullopt;
-}
-
+// RH NOTE: this only computes one chain at a time, so if there is a receiving side to a txn
+// then it must seperately be computed by a second call here
 FeeUnit64
 Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet)
 {
@@ -210,7 +200,6 @@ Transactor::calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet c
     }
 
     return fee;
-    
 }
 
 FeeUnit64
@@ -255,13 +244,14 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
             hookExecutionFee +=
                 calculateHookChainFee(view, tx, keylet::hook(tx.getAccountID(sfAccount)));
 
-        std::optional<AccountID>
-            destAccountID = getDestinationAccount(tx);
-        
-        // if there is a receiving account then we also compute the fee for its hook chain
-        if (destAccountID)
-            hookExecutionFee +=
-                calculateHookChainFee(view, tx, keylet::hook(*destAccountID));
+        // find any additional stakeholders whose hooks will be executed and charged to this transaction
+        std::vector<std::pair<AccountID, bool>> tsh =
+            hook::getTransactionalStakeHolders(tx, view);
+
+        for (auto& [tshAcc, canRollback] : tsh)
+            if (canRollback)
+                hookExecutionFee +=
+                    calculateHookChainFee(view, tx, keylet::hook(tshAcc));
     }
 
     return baseFee + (signerCount * baseFee) + hookExecutionFee; // RH NOTE: hookExecutionFee = 0 
@@ -1118,17 +1108,29 @@ Transactor::operator()()
             rollback = executeHookChain(hooksSending, stateMap,
                     sendResults, executedHookCount, accountID, ctx_, j_, result);
 
-        // Next check if the Receiving account has as a hook that can be fired...
-        std::optional<AccountID>
-            destAccountID = getDestinationAccount(ctx_.tx);
-
-        if (!rollback && destAccountID)
+        // Next check if there are any transactional stake holders whose hooks need to be executed
+        if (!rollback)
         {
-            auto const& hooksReceiving = ledger.read(keylet::hook(*destAccountID));
-            if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
-                rollback =
-                    executeHookChain(hooksReceiving, stateMap,
-                        recvResults, executedHookCount, *destAccountID, ctx_, j_, result);
+            std::vector<std::pair<AccountID, bool>> tsh = 
+                hook::getTransactionalStakeHolders(ctx_.tx, ledger);
+
+            for (auto& [tshAccountID, canRollback] : tsh)
+            {
+                auto const& hooksReceiving = ledger.read(keylet::hook(tshAccountID));
+                if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
+                {
+                    bool tshRollback =
+                        executeHookChain(hooksReceiving, stateMap,
+                            recvResults, executedHookCount, tshAccountID, ctx_, j_, result);
+                    if (canRollback && tshRollback)
+                    {
+                        rollback = true;
+                        break;
+                    }
+
+                    //RH TODO: charge non-rollback tsh executions a fee here
+                }
+            }
         }
 
         if (rollback && result != temMALFORMED)
