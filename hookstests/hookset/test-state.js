@@ -16,7 +16,14 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                         HookOn: "0000000000000000"
                     }
                 },
-                {   Hook: {} },
+                {   
+                    Hook: {
+                        CreateCode: t.wasm('makestate2.wasm'),
+                        HookApiVersion: 0,
+                        HookNamespace: "CAFEF00DCAFEF00DCAFEF00DCAFEF00DCAFEF00DCAFEF00DCAFEF00DCAFEF00D",
+                        HookOn: "0000000000000000"
+                    }
+                },
                 {   Hook: {} },
                 {    Hook: {
                         CreateCode: t.wasm('checkstate.wasm'),

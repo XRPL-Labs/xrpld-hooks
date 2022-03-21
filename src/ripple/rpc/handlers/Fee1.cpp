@@ -88,9 +88,10 @@ doFee(RPC::JsonContext& context)
     }
 
     Json::Value jvResult = context.app.getTxQ().doRPC(context.app, hookFees);
-    if (jvResult.type() == Json::objectValue && hookFees)
+    if (jvResult.type() == Json::objectValue)
     {
-        jvResult[jss::fee_hooks_feeunits] = to_string(*hookFees);
+        if (hookFees)
+            jvResult[jss::fee_hooks_feeunits] = to_string(*hookFees);
         return jvResult;
     }
 
