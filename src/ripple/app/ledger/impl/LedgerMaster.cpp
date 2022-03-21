@@ -699,7 +699,7 @@ LedgerMaster::getEarliestFetch()
 }
 
 void
-LedgerMaster::tryFill(Job& job, std::shared_ptr<Ledger const> ledger)
+LedgerMaster::tryFill(std::shared_ptr<Ledger const> ledger)
 {
     std::uint32_t seq = ledger->info().seq;
     uint256 prevHash = ledger->info().parentHash;
@@ -710,7 +710,7 @@ LedgerMaster::tryFill(Job& job, std::shared_ptr<Ledger const> ledger)
     std::uint32_t maxHas = seq;
 
     NodeStore::Database& nodeStore{app_.getNodeStore()};
-    while (!job.shouldCancel() && seq > 0)
+    while (!app_.getJobQueue().isStopping() && seq > 0)
     {
         {
             std::lock_guard ml(m_mutex);
@@ -1457,7 +1457,7 @@ LedgerMaster::tryAdvance()
     if (!mAdvanceThread && !mValidLedger.empty())
     {
         mAdvanceThread = true;
-        app_.getJobQueue().addJob(jtADVANCE, "advanceLedger", [this](Job&) {
+        app_.getJobQueue().addJob(jtADVANCE, "advanceLedger", [this]() {
             std::unique_lock sl(m_mutex);
 
             assert(!mValidLedger.empty() && mAdvanceThread);
@@ -1480,7 +1480,7 @@ LedgerMaster::tryAdvance()
 }
 
 void
-LedgerMaster::updatePaths(Job& job)
+LedgerMaster::updatePaths()
 {
     {
         std::lock_guard ml(m_mutex);
@@ -1491,7 +1491,7 @@ LedgerMaster::updatePaths(Job& job)
         }
     }
 
-    while (!job.shouldCancel())
+    while (!app_.getJobQueue().isStopping())
     {
         std::shared_ptr<ReadView const> lastLedger;
         {
@@ -1531,8 +1531,7 @@ LedgerMaster::updatePaths(Job& job)
 
         try
         {
-            app_.getPathRequests().updateAll(
-                lastLedger, job.getCancelCallback());
+            app_.getPathRequests().updateAll(lastLedger);
         }
         catch (SHAMapMissingNode const& mn)
         {
@@ -1595,7 +1594,7 @@ LedgerMaster::newPFWork(
     if (mPathFindThread < 2)
     {
         if (app_.getJobQueue().addJob(
-                jtUPDATE_PF, name, [this](Job& j) { updatePaths(j); }))
+                jtUPDATE_PF, name, [this]() { updatePaths(); }))
         {
             ++mPathFindThread;
         }
@@ -1946,8 +1945,8 @@ LedgerMaster::fetchForHistory(
                         mFillInProgress = seq;
                     }
                     app_.getJobQueue().addJob(
-                        jtADVANCE, "tryFill", [this, ledger](Job& j) {
-                            tryFill(j, ledger);
+                        jtADVANCE, "tryFill", [this, ledger]() {
+                            tryFill(ledger);
                         });
                 }
             }
@@ -2128,7 +2127,7 @@ LedgerMaster::gotFetchPack(bool progress, std::uint32_t seq)
 {
     if (!mGotFetchPackThread.test_and_set(std::memory_order_acquire))
     {
-        app_.getJobQueue().addJob(jtLEDGER_DATA, "gotFetchPack", [&](Job&) {
+        app_.getJobQueue().addJob(jtLEDGER_DATA, "gotFetchPack", [&]() {
             app_.getInboundLedgers().gotFetchPack();
             mGotFetchPackThread.clear(std::memory_order_release);
         });

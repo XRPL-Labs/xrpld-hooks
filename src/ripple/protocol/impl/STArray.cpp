@@ -42,11 +42,6 @@ STArray::STArray(int n)
     v_.reserve(n);
 }
 
-STArray::STArray(std::vector<STObject> const& v, SField const& f) : STBase(f)
-{
-    v_ = v;
-}
-
 STArray::STArray(SField const& f) : STBase(f)
 {
 }
@@ -54,6 +49,11 @@ STArray::STArray(SField const& f) : STBase(f)
 STArray::STArray(SField const& f, int n) : STBase(f)
 {
     v_.reserve(n);
+}
+
+STArray::STArray(std::vector<STObject> const& v, SField const& f) : STBase(f)
+{
+    v_ = v;
 }
 
 STArray::STArray(SerialIter& sit, SField const& f, int depth) : STBase(f)
@@ -92,6 +92,18 @@ STArray::STArray(SerialIter& sit, SField const& f, int depth) : STBase(f)
 
         v_.back().applyTemplateFromSField(fn);  // May throw
     }
+}
+
+STBase*
+STArray::copy(std::size_t n, void* buf) const
+{
+    return emplace(n, buf, *this);
+}
+
+STBase*
+STArray::move(std::size_t n, void* buf)
+{
+    return emplace(n, buf, std::move(*this));
 }
 
 std::string
@@ -158,11 +170,23 @@ STArray::add(Serializer& s) const
     }
 }
 
+SerializedTypeID
+STArray::getSType() const
+{
+    return STI_ARRAY;
+}
+
 bool
 STArray::isEquivalent(const STBase& t) const
 {
     auto v = dynamic_cast<const STArray*>(&t);
     return v != nullptr && v_ == v->v_;
+}
+
+bool
+STArray::isDefault() const
+{
+    return v_.empty();
 }
 
 void

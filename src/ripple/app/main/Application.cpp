@@ -1085,7 +1085,7 @@ public:
                     if (e.value() == boost::system::errc::success)
                     {
                         m_jobQueue->addJob(
-                            jtSWEEP, "sweep", [this](Job&) { doSweep(); });
+                            jtSWEEP, "sweep", [this]() { doSweep(); });
                     }
                     // Recover as best we can if an unexpected error occurs.
                     if (e.value() != boost::system::errc::success &&
@@ -1339,8 +1339,6 @@ ApplicationImp::setup()
                 {
                     // Fall back to syncing from the network, such as
                     // when there's no existing data.
-                    if (startUp == Config::NETWORK && !config_->standalone())
-                        m_networkOPs->setNeedNetworkLedger();
                     startGenesisLedger();
                 }
                 else

@@ -120,7 +120,7 @@ public:
     }
 
     void
-    setHookExecutions(const STArray& hookExecutions)
+    setHookExecutions(STArray const& hookExecutions)
     {
         mHookExecutions = hookExecutions;
     }

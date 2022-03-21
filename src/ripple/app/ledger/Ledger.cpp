@@ -774,7 +774,7 @@ Ledger::walkLedger(beast::Journal j, bool parallel) const
     else
     {
         if (parallel)
-            stateMap_->walkMapParallel(missingNodes1, 32);
+            return stateMap_->walkMapParallel(missingNodes1, 32);
         else
             stateMap_->walkMap(missingNodes1, 32);
     }
@@ -981,10 +981,9 @@ pendSaveValidated(
 
     // See if we can use the JobQueue.
     if (!isSynchronous &&
-        app.getJobQueue().addJob(
-            jobType, jobName, [&app, ledger, isCurrent](Job&) {
-                saveValidatedLedger(app, ledger, isCurrent);
-            }))
+        app.getJobQueue().addJob(jobType, jobName, [&app, ledger, isCurrent]() {
+            saveValidatedLedger(app, ledger, isCurrent);
+        }))
     {
         return true;
     }

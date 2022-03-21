@@ -220,7 +220,6 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
     FeeUnit64 hookExecutionFee{0};
     if (view.rules().enabled(featureHooks))
     {
-        // RH UPTO: reserve callback fee on emit, and unreserve and burn on callback
         // if this is a "cleanup" txn we regard it as already paid up
         if (tx.getFieldU16(sfTransactionType) == ttEMIT_FAILURE)
             return FeeUnit64{0};    
