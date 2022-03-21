@@ -1914,7 +1914,7 @@ TxQ::getTxs(ReadView const& view) const
 }
 
 Json::Value
-TxQ::doRPC(Application& app) const
+TxQ::doRPC(Application& app, std::optional<FeeUnit64> hookFeeUnits) const
 {
     auto const view = app.openLedger().current();
     if (!view)
@@ -1941,7 +1941,7 @@ TxQ::doRPC(Application& app) const
     levels[jss::median_level] = to_string(metrics.medFeeLevel);
     levels[jss::open_ledger_level] = to_string(metrics.openLedgerFeeLevel);
 
-    auto const baseFee = view->fees().base;
+    auto const baseFee = view->fees().base + (hookFeeUnits ? hookFeeUnits->fee() : 0);
     auto& drops = ret[jss::drops] = Json::Value();
 
     drops[jss::base_fee] =

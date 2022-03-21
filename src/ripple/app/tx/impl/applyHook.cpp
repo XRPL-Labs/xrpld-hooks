@@ -32,8 +32,8 @@ namespace hook
         if (!tx.isFieldPresent(sfAccount))
             return {};
 
-        std::optional<AccountID> destAcc = tx.at(sfDestination);
-        std::optional<AccountID> otxnAcc = tx.at(sfAccount);
+        std::optional<AccountID> destAcc = tx.at(~sfDestination);
+        std::optional<AccountID> otxnAcc = tx.at(~sfAccount);
 
         if (!otxnAcc)
             return {};
@@ -183,7 +183,7 @@ namespace hook
         for (auto& [a, e] : tshEntries)
             ret[e.first] = std::pair<AccountID, bool>{a, e.second};
 
-        return std::move(ret);
+        return ret;
     }
 
 }

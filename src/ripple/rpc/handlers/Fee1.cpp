@@ -27,62 +27,73 @@
 #include <ripple/rpc/GRPCHandlers.h>
 #include <ripple/app/tx/applyHook.h>
 #include <ripple/app/tx/impl/Transactor.h>
+#include <ripple/basics/FeeUnits.h>
 
 namespace ripple {
+
+inline
+std::optional<FeeUnit64>
+getHookFees(RPC::JsonContext const& context)
+{
+    auto const& params(context.params);
+    if (params.isMember(jss::tx_blob))
+    {
+        auto ret = strUnHex(context.params[jss::tx_blob].asString());
+
+        if (!ret || !ret->size())
+            throw std::invalid_argument("Invalid tx_blob");
+
+        SerialIter sitTrans(makeSlice(*ret));
+
+        std::unique_ptr<STTx const> stpTrans;
+        stpTrans = std::make_unique<STTx const>(std::ref(sitTrans));
+
+        if (!stpTrans->isFieldPresent(sfAccount))
+            throw std::invalid_argument("No sfAccount specified");
+
+        FeeUnit64 hookFees =
+            Transactor::calculateHookChainFee(*(context.app.openLedger().current()),
+                *stpTrans, keylet::hook(stpTrans->getAccountID(sfAccount)));
+
+        auto const view = context.app.openLedger().current();
+
+        std::vector<std::pair<AccountID, bool>> tsh = 
+            hook::getTransactionalStakeHolders(*stpTrans, *view);
+
+        for (auto const& [tshAccount, canRollback] : tsh)
+            if (canRollback)
+                hookFees +=
+                    Transactor::calculateHookChainFee(*view, *stpTrans, keylet::hook(tshAccount));
+        return hookFees;
+    }
+
+    return std::nullopt;
+}
+
 Json::Value
 doFee(RPC::JsonContext& context)
 {
-    Json::Value jvResult = context.app.getTxQ().doRPC(context.app);
-    if (jvResult.type() == Json::objectValue)
+    // get hook fees, if any
+    std::optional<FeeUnit64> hookFees;
+    try
     {
-        auto const& params(context.params);
-        if (params.isMember(jss::tx_blob))
-        {
-            auto ret = strUnHex(context.params[jss::tx_blob].asString());
-
-            if (!ret || !ret->size())
-                return rpcError(rpcINVALID_PARAMS);
-
-            SerialIter sitTrans(makeSlice(*ret));
-
-            std::unique_ptr<STTx const> stpTrans;
-            try
-            {
-                stpTrans = std::make_unique<STTx const>(std::ref(sitTrans));
-            }
-            catch (std::exception& e)
-            {
-                jvResult[jss::error] = "invalidTransaction";
-                jvResult[jss::error_exception] = e.what();
-                return jvResult;
-            }
-
-            if (!stpTrans->isFieldPresent(sfAccount))
-            {
-                jvResult[jss::error] = "invalidTransaction";
-                jvResult[jss::error_exception] = "No sfAccount specified";
-                return jvResult;
-            }
-
-            FeeUnit64 hookFees =
-                Transactor::calculateHookChainFee(*(context.app.openLedger().current()),
-                    *stpTrans, keylet::hook(stpTrans->getAccountID(sfAccount)));
-
-            auto const view = context.app.openLedger().current();
-
-            std::vector<std::pair<AccountID, bool>> tsh = 
-                hook::getTransactionalStakeHolders(*stpTrans, *view);
-
-            for (auto const& [tshAccount, canRollback] : tsh)
-                if (canRollback)
-                    hookFees +=
-                        Transactor::calculateHookChainFee(*view, *stpTrans, keylet::hook(tshAccount));
-
-            jvResult[jss::fee_hooks_feeunits] = to_string(hookFees.value());
-        }
-
+        hookFees = getHookFees(context);
+    }
+    catch (std::exception& e)
+    {
+        Json::Value jvResult;
+        jvResult[jss::error] = "invalidTransaction";
+        jvResult[jss::error_exception] = e.what();
         return jvResult;
     }
+
+    Json::Value jvResult = context.app.getTxQ().doRPC(context.app, hookFees);
+    if (jvResult.type() == Json::objectValue && hookFees)
+    {
+        jvResult[jss::fee_hooks_feeunits] = to_string(*hookFees);
+        return jvResult;
+    }
+
     assert(false);
     RPC::inject_error(rpcINTERNAL, context.params);
     return context.params;

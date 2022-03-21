@@ -48,6 +48,26 @@ module.exports = {
                 console.log(acc)
                 return acc
             };
+            
+            const pay = (seed, amt, dest) =>
+            {    
+                return new Promise((resolve, reject) =>
+                {
+                    let wal = xrpljs.Wallet.fromSeed(seed);
+
+                    api.submit({
+                        Account: wal.classicAddress,
+                        TransactionType: "Payment",
+                        Amount: ''+amt,
+                        Destination: dest,
+                        Fee: "10000"
+                    }, {wallet: wal}).then(x=>
+                    {
+                        assertTxnSuccess(x);
+                        resolve(x);
+                    }).catch(err);
+                });
+            };
 
             const hookHash = fn =>
             {
@@ -93,7 +113,8 @@ module.exports = {
                     hsfNSDELETE: 2,
                     hfsOVERRIDE: 1,
                     hfsNSDELETE: 2,
-                    hookHash: hookHash
+                    hookHash: hookHash,
+                    pay: pay
                 });
             }).catch(err);
         });
