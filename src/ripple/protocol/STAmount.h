@@ -516,6 +516,16 @@ isXRP(STAmount const& amount)
     return isXRP(amount.issue().currency);
 }
 
+inline bool
+isFakeXRP(STAmount const& amount)
+{
+    if (mIsNative)
+        return false;
+
+    return isFakeXRP(amount.issue().currency);
+}    
+
+
 // Since `canonicalize` does not have access to a ledger, this is needed to put
 // the low-level routine stAmountCanonicalize on an amendment switch. Only
 // transactions need to use this switchover. Outside of a transaction it's safe

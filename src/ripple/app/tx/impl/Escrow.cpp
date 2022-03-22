@@ -106,8 +106,25 @@ EscrowCreate::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    if (!isXRP(ctx.tx[sfAmount]))
-        return temBAD_AMOUNT;
+    STAmount const amount {ctx.tx[sfAmount]};
+    if (!isXRP(amount))
+    { 
+        if (!ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
+            return temBAD_AMOUNT;
+
+        if (!isLegalNet(amount))
+            return temBAD_AMOUNT;
+        
+        if (isFakeXRP(amount))
+            return temBAD_CURRENCY;
+
+        if (account == amount.getIssuer())
+        {
+            JLOG(ctx.j.trace())                                                                                        
+                << "Malformed transaction: Cannot escrow own tokens to self.";
+            return temDST_IS_SRC;
+        }
+    }
 
     if (ctx.tx[sfAmount] <= beast::zero)
         return temBAD_AMOUNT;
@@ -199,7 +216,12 @@ EscrowCreate::doApply()
     if (!sle)
         return tefINTERNAL;
 
+    STAmount const amount {ctx.tx[sfAmount]};
+
+    std::shared_ptr<SLE> sleLine;
+
     // Check reserve and funds availability
+    if (isXRP(amount))
     {
         auto const balance = STAmount((*sle)[sfBalance]).xrp();
         auto const reserve =
@@ -211,6 +233,52 @@ EscrowCreate::doApply()
         if (balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
             return tecUNFUNDED;
     }
+    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        // find the user's trustline
+        auto const currency = amount.getCurrency();
+        auto const issuer = amount.getIssuer();
+
+        if (!ctx_.view.peek(keylet::account(issuer)))
+        {
+            JLOG(ctx_.j.warn
+        }
+
+        if (isGlobalFrozen(ctx_.view(), issuer))
+        {
+            JLOG(ctx_.j.warn()) << "Creating escrow for frozen asset";
+            return tecFROZEN;
+        }
+
+        sleLine = ctx_.view().peek(keylet::line(account, issuer, currency));
+        
+        if (!sleLine)
+            return tecUNFUNDED_PAYMENT;
+        
+        if (sleLine->isFlag(ctx_.tx[sfDestination] > issuer ? lsfHighFreeze : lsfLowFreeze))
+        {
+            JLOG(ctx_.j.warn()) << "Creating escrow for destination frozen trustline";
+            return tecFROZEN;
+        }
+
+        bool high = account > issuer;
+        
+        STAmount balance = (*sleLine)[sfBalance];
+    
+        STAmount lockedBalance {sfLockedBalance};
+        if (sleLine->isFieldPresent(sfLockedBalance))
+            lockedBalance = (*sleLine)[sfLockedBalance];
+
+        auto spendableBalance = balance - lockedBalance;
+
+        if (high)
+            spendableBalance = -spendableBalance;
+
+        if (amount > spendableBalance)
+            return tecUNFUNDED;
+    }
+    else
+        return tecINTERNAL;  // should never happen
 
     // Check destination account
     {
@@ -265,7 +333,26 @@ EscrowCreate::doApply()
     }
 
     // Deduct owner's balance, increment owner count
-    (*sle)[sfBalance] = (*sle)[sfBalance] - ctx_.tx[sfAmount];
+    if (isXRP(amount))
+        (*sle)[sfBalance] = (*sle)[sfBalance] - ctx_.tx[sfAmount];
+    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens) && sleLine)
+    {
+        // update trustline to reflect locked up balance
+        auto const issuer = amount.getIssuer();
+        bool high = account > issuer;
+       
+        STAmount lockedBalance;
+
+        if (sleLine->isFieldPresent(sfLockedBalance))
+            lockedBalance = (*sleLine)[sfLockedBalance];
+
+        lockedBalance += high ? -amount : amount;
+        sleLine->setFieldAmount(sfLockedBalance, lockedBalance);
+        ctx_.view().update(sleLine);
+    }
+    else
+        return tecINTERNAL;  // should never happen
+    
     adjustOwnerCount(ctx_.view(), sle, 1, ctx_.journal);
     ctx_.view().update(sle);
 
@@ -489,7 +576,86 @@ EscrowFinish::doApply()
     }
 
     // Transfer amount to destination
-    (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
+    auto amount = (*sled)[sfBalance];
+
+    if (isXRP(amount))
+    {
+        (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
+    }
+    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        // check if the destination has a trustline already
+        auto issuer = amount.getIssuer();
+        auto currency = amount.getCurrency();
+        
+        // check the issuer exists
+        if (!ctx_.view().exits(keylet::account(issuer)))
+        {
+            JLOG(ctx_.j.warn())
+                << "Cannot finish escrow for token from non-existent issuer: "
+                << to_string(issuer);
+            return tecNO_ISSUER;
+        }
+        
+        // check the trustline isn't frozen
+        if (isGlobalFrozen(ctx_.view(), issuer))
+        {
+            JLOG(ctx_.j.warn()) << "Cannot finish an escrow for frozen issuer";
+            return tecFROZEN;
+        }
+
+        // check the source line exists
+        auto sleSrcLine = ctx_.view().peek(keylet::line(account, issuer, currency));
+        if (!sleSrcLine)
+        {
+            JLOG(ctx_.j.error()) 
+                << "Cannot finish an escrow where the source line does not exist: "
+                << "acc: " << to_string(account) << " "
+                << "iss: " << to_string(issuer)  << " "
+                << "cur: " << to_string(currency);
+            return tefINTERNAL;
+        }
+
+        Keylet k = keylet::line(destID, issuer, currency);
+       
+        // check if the dest line exists, and if it doesn't create it if we're allowed to 
+        auto sleDestLine = ctx_.view().peek(k);
+        if (!sleDestLine)
+        {
+            // if a line doesn't already exist between issuer and destination then
+            // such a line can now be created but only if either the person who signed
+            // for this txn is the destination account or the source and dest are the same
+            if (account != destID && account_ != destID)
+                return tecNO_PERMISSION;
+
+            // create trustline
+
+            // RH UPTO
+
+            // 1. reduce sfLockedBalance on source line by escrow[sfAmount]
+            // 2. reduce sfBalance on source line by escrow[sfAmount]
+            // 3. increase sfBalance on dest line by escrow[sfAmount]
+        }
+        else
+        {
+            // trustline already exists
+            // check is it's frozen
+            if (destID != issuer)
+            {
+                if (sleLine->isFlag(destID > issuer ? lsfHighFreeze : lsfLowFreeze))
+                {
+                    JLOG(ctx_.j.warn())
+                        << "Finishing an escrow for destination frozen trustline.";
+                    return tecFROZEN;
+                }
+            }
+
+            // if balance is higher than limit then only allow if dest is signer
+        }
+    }
+    else
+        return tecINTERNAL; // should never happen
+
     ctx_.view().update(sled);
 
     // Adjust source owner count
