@@ -519,7 +519,7 @@ isXRP(STAmount const& amount)
 inline bool
 isFakeXRP(STAmount const& amount)
 {
-    if (mIsNative)
+    if (amount.native())
         return false;
 
     return isFakeXRP(amount.issue().currency);
