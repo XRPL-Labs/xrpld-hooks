@@ -108,19 +108,19 @@ EscrowCreate::preflight(PreflightContext const& ctx)
 
     STAmount const amount {ctx.tx[sfAmount]};
     if (!isXRP(amount))
-    { 
+    {
         if (!ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
             return temBAD_AMOUNT;
 
         if (!isLegalNet(amount))
             return temBAD_AMOUNT;
-        
+
         if (isFakeXRP(amount))
             return temBAD_CURRENCY;
 
         if (account == amount.getIssuer())
         {
-            JLOG(ctx.j.trace())                                                                                        
+            JLOG(ctx.j.trace())
                 << "Malformed transaction: Cannot escrow own tokens to self.";
             return temDST_IS_SRC;
         }
@@ -251,10 +251,10 @@ EscrowCreate::doApply()
         }
 
         sleLine = ctx_.view().peek(keylet::line(account, issuer, currency));
-        
+
         if (!sleLine)
             return tecUNFUNDED_PAYMENT;
-        
+
         if (sleLine->isFlag(ctx_.tx[sfDestination] > issuer ? lsfHighFreeze : lsfLowFreeze))
         {
             JLOG(ctx_.j.warn()) << "Creating escrow for destination frozen trustline";
@@ -262,9 +262,9 @@ EscrowCreate::doApply()
         }
 
         bool high = account > issuer;
-        
+
         STAmount balance = (*sleLine)[sfBalance];
-    
+
         STAmount lockedBalance {sfLockedBalance};
         if (sleLine->isFieldPresent(sfLockedBalance))
             lockedBalance = (*sleLine)[sfLockedBalance];
@@ -340,7 +340,7 @@ EscrowCreate::doApply()
         // update trustline to reflect locked up balance
         auto const issuer = amount.getIssuer();
         bool high = account > issuer;
-       
+
         STAmount lockedBalance;
 
         if (sleLine->isFieldPresent(sfLockedBalance))
@@ -352,7 +352,7 @@ EscrowCreate::doApply()
     }
     else
         return tecINTERNAL;  // should never happen
-    
+
     adjustOwnerCount(ctx_.view(), sle, 1, ctx_.journal);
     ctx_.view().update(sle);
 
@@ -575,40 +575,69 @@ EscrowFinish::doApply()
         }
     }
 
-    // Transfer amount to destination
-    auto amount = (*sled)[sfBalance];
+    auto const sle = ctx_.view().peek(keylet::account(account));
+
+    auto amount = (*slep)[sfBalance];
 
     if (isXRP(amount))
-    {
         (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
-    }
     else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
     {
-        // check if the destination has a trustline already
-        auto issuer = amount.getIssuer();
+
+
+        auto issuerAccID = amount.getIssuer();
         auto currency = amount.getCurrency();
-        
+
+        // amendments should only change as much code as is necessary to make the amendment work
+        // these renames should be applied to the whole class in a later, non-amendment, commit
+        auto& view = ctx_.view();
+
+        auto& sleEscrow = slep;
+
+        auto& srcAccID = account;
+        auto& dstAccID = destID;
+
+        bool dstLow = dstAccID < issuerAccID;
+        bool srcLow = srcAccID < issuerAccID;
+
+        auto& sleSrcAcc = sle;
+        auto& sleDstAcc = sled;
+
+        if (!sleSrcAcc)
+        {
+            JLOG(ctx_.j.warn())
+                << "Src account not found in escrow finish";
+            return tecINTERNAL;
+        }
+
+        STAmount dstBalanceDrops = sleDstAcc->at[sfBalance];
+
+        // check if the destination has a trustline already
+        Keylet klDstLine = keylet::line(destID, issuer, currency);
+
+        auto sleSrcLine = view.peek(keylet::line(srcAccID, issuerAccID, currency));
+        auto sleDestLine = view.peek(kDestLine);
+
         // check the issuer exists
-        if (!ctx_.view().exits(keylet::account(issuer)))
+        if (!view.exist(keylet::account(issuerAccID)))
         {
             JLOG(ctx_.j.warn())
                 << "Cannot finish escrow for token from non-existent issuer: "
                 << to_string(issuer);
             return tecNO_ISSUER;
         }
-        
+
         // check the trustline isn't frozen
-        if (isGlobalFrozen(ctx_.view(), issuer))
+        if (isGlobalFrozen(view, issuerAccID))
         {
             JLOG(ctx_.j.warn()) << "Cannot finish an escrow for frozen issuer";
             return tecFROZEN;
         }
 
         // check the source line exists
-        auto sleSrcLine = ctx_.view().peek(keylet::line(account, issuer, currency));
         if (!sleSrcLine)
         {
-            JLOG(ctx_.j.error()) 
+            JLOG(ctx_.j.error())
                 << "Cannot finish an escrow where the source line does not exist: "
                 << "acc: " << to_string(account) << " "
                 << "iss: " << to_string(issuer)  << " "
@@ -616,41 +645,116 @@ EscrowFinish::doApply()
             return tefINTERNAL;
         }
 
-        Keylet k = keylet::line(destID, issuer, currency);
-       
-        // check if the dest line exists, and if it doesn't create it if we're allowed to 
-        auto sleDestLine = ctx_.view().peek(k);
-        if (!sleDestLine)
+        // check if the dest line exists, and if it doesn't create it if we're allowed to
+        if (!sleDstLine)
         {
             // if a line doesn't already exist between issuer and destination then
             // such a line can now be created but only if either the person who signed
             // for this txn is the destination account or the source and dest are the same
-            if (account != destID && account_ != destID)
+            if (srcAccID != destAccID && account_ != destAccID)
                 return tecNO_PERMISSION;
 
             // create trustline
 
-            // RH UPTO
+            if (std::uint32_t const ownerCount = {sleDstAcc->at(sfOwnerCount)};
+                dstBalanceDrops < view.fees().accountReserve(ownerCount + 1))
+            {
+                JLOG(j_.trace()) << "Dest Trust line does not exist. "
+                                    "Insufficent reserve to create line.";
+                return tecNO_LINE_INSUF_RESERVE;
+            }
 
-            // 1. reduce sfLockedBalance on source line by escrow[sfAmount]
-            // 2. reduce sfBalance on source line by escrow[sfAmount]
-            // 3. increase sfBalance on dest line by escrow[sfAmount]
+            // clang-format off
+            if (TER const ter = trustCreate(
+                    view,
+                    dstLow,                         // is dest low?
+                    issuerAccID,                    // source
+                    dstAccID,                       // destination
+                    klDstLine.key,                  // ledger index
+                    sleDstAcc,                      // Account to add to
+                    false,                          // authorize account
+                    (sleDst->getFlags() & lsfDefaultRipple) == 0,
+                    false,                          // freeze trust line
+                    amount,                         // initial balance
+                    Issue(currency, account_),      // limit of zero
+                    0,                              // quality in
+                    0,                              // quality out
+                    ctx_.j);                        // journal
+                !isTesSuccess(ter))
+            {
+                return ter;
+            }
+            // clang-format on
         }
         else
         {
             // trustline already exists
             // check is it's frozen
-            if (destID != issuer)
-            {
-                if (sleLine->isFlag(destID > issuer ? lsfHighFreeze : lsfLowFreeze))
-                {
+            if (destAccID != issuerAccID &&
+                sleLine->isFlag(destLow ? lsfLowFreeze : lsfHighFreeze))
                     JLOG(ctx_.j.warn())
                         << "Finishing an escrow for destination frozen trustline.";
                     return tecFROZEN;
-                }
             }
 
-            // if balance is higher than limit then only allow if dest is signer
+            // decrement source balance
+            {
+                STAmount priorBalance =
+                    srcLow ? (*sleSrcLine)[sfBalance] : -((*sleSrcLine)[sfBalance]);
+
+                STAmount finalBalance = priorBalance - amount;
+                if (finalBalance < beast::zero)
+                {
+                    JLOG(ctx_.j.warn())
+                        << "Escrow finish results in a negative balance on source line";
+                    return tecINTERNAL;
+                }
+
+                STAmount priorLockedBalance =
+                    srcLow ? (*sleSrcLine)[sfLockedBalance] : -((*sleSrcLine)[sfLockedBalance]);
+
+                STAmount finalLockedBalance = priorLockedBalance - amount;
+                if (finalLockedBalance < beast::zero)
+                {
+                    JLOG(ctx_.j.warn())
+                        << "Escrow finish results in a negative locked balance on source line";
+                    return tecINTERNAL;
+                }
+
+                sleSrcLine.setFieldAmount(sfBalance, srcLow ? finalBalance : -finalBalance);
+                sleSrcLine.setFieldAmount(sfLockedBalance, srcLow ? finalLockedBalance : -finalLockedBalance);
+            }
+
+            // increment dest balance
+            {
+                // if balance is higher than limit then only allow if dest is signer
+                STAmount dstLimit = 
+                    dstLow ? (*sleDstLine)[sfLowLimit] : (*sleDstLine)[sfHighLimit];
+
+                STAmount priorBalance = 
+                    dstLow ? (*sleDstLine)[sfBalance] : -((*sleDstLine)[sfBalance]);
+
+                STAmount finalBalance = priorBalance + amount;
+
+                if (finalBalance < priorBalance)
+                {
+                    JLOG(ctx_.j.warn())
+                        << "Escrow finish resulted in a lower final balance on dest line";
+                    return tecINTERNAL;
+                }
+
+                if (finalBalance > dstLimit && account_ != destAccID)
+                {
+                    JLOG(ctx_.j.trace())
+                        << "Escrow finish would increase dest line above limit without permission";
+                    return tecPATH_DRY;
+                }
+
+                sleDestLine.setFieldAmount(sfBalance, dstLow ? finalBalance : -finalBalance);
+            }
+
+            view.update(sleSrcLine);
+            view.update(sleDestLine);
         }
     }
     else
@@ -659,7 +763,6 @@ EscrowFinish::doApply()
     ctx_.view().update(sled);
 
     // Adjust source owner count
-    auto const sle = ctx_.view().peek(keylet::account(account));
     adjustOwnerCount(ctx_.view(), sle, -1, ctx_.journal);
     ctx_.view().update(sle);
 
@@ -740,9 +843,48 @@ EscrowCancel::doApply()
         }
     }
 
-    // Transfer amount back to owner, decrement owner count
     auto const sle = ctx_.view().peek(keylet::account(account));
-    (*sle)[sfBalance] = (*sle)[sfBalance] + (*slep)[sfAmount];
+    auto amount = (*slep)[sfBalance];
+
+    if (isXRP(amount))
+        (*sle)[sfBalance] = (*sle)[sfBalance] + (*slep)[sfAmount];
+    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        auto issuerAccID = amount.getIssuer();
+        auto currency = amount.getCurrency();
+        auto sleSrcLine = view.peek(keylet::line(account, issuerAccID, currency));
+        bool isLow = account < issuerAccID;
+
+        STAmount priorLockedBalance = 
+            isLow ? (*sleSrcLine)[sfLockedBalance] : -(*sleSrcLine)[sfLockedBalance];
+
+        STAmount finalLockedBalance = priorLockedBalance - amount;
+        if (finalLockedBalance < beast::zero)
+        {
+            JLOG(ctx_.j.warn())
+                << "Escrow cancel would force locked balance below zero";
+            return tecINTERNAL;
+        }
+
+        STAmount priorBalance =
+            isLow ? (*sleSrcLine)[sfBalance] : -(*sleSrcLine)[sfBalance];
+
+        STAmount finalBalance = priorBalance - amount;
+        if (finalBalance < beast::zero)
+        {
+            JLOG(ctx_.j.warn())
+                << "Escrow cancel would force line balance below zero";
+            return tecINTERNAL;
+        }
+
+        sleSrcLine.setFieldAmount(sfBalance, isLow ? finalBalance : -finalBalance);
+        sleSrcLine.setFieldAmount(sfLockedBalance, isLow ? finalLockedBalance : -finalLockedBalance); 
+
+        ctx_view().update(sleSrcLine);
+    }
+    else
+        return tecInternal;
+    // Transfer amount back to owner, decrement owner count
     adjustOwnerCount(ctx_.view(), sle, -1, ctx_.journal);
     ctx_.view().update(sle);
 
