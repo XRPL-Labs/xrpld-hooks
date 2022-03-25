@@ -95,11 +95,14 @@ XRPNotCreated::visitEntry(
                 drops_ -= (*before)[sfBalance].xrp().drops();
                 break;
             case ltPAYCHAN:
-                drops_ -=
-                    ((*before)[sfAmount] - (*before)[sfBalance]).xrp().drops();
+                if (isXRP((*before)[sfAmount]))
+                    drops_ -=
+                        ((*before)[sfAmount] - (*before)[sfBalance]).xrp().drops();
                 break;
             case ltESCROW:
-                drops_ -= (*before)[sfAmount].xrp().drops();
+                if (isXRP((*before)[sfAmount]))
+                    drops_ -= 
+                        (*before)[sfAmount].xrp().drops();
                 break;
             default:
                 break;
@@ -114,14 +117,14 @@ XRPNotCreated::visitEntry(
                 drops_ += (*after)[sfBalance].xrp().drops();
                 break;
             case ltPAYCHAN:
-                if (!isDelete)
-                    drops_ += ((*after)[sfAmount] - (*after)[sfBalance])
-                                  .xrp()
-                                  .drops();
+                if (!isDelete && isXRP((*after)[sfAmount]))
+                    drops_ += 
+                        ((*after)[sfAmount] - (*after)[sfBalance]).xrp().drops();
                 break;
             case ltESCROW:
-                if (!isDelete)
-                    drops_ += (*after)[sfAmount].xrp().drops();
+                if (!isDelete && isXRP((*after)[sfAmount]))
+                    drops_ += 
+                        (*after)[sfAmount].xrp().drops();
                 break;
             default:
                 break;
@@ -281,12 +284,26 @@ NoZeroEscrow::visitEntry(
 
 bool
 NoZeroEscrow::finalize(
-    STTx const&,
+    STTx const& txn,
     TER const,
     XRPAmount const,
-    ReadView const&,
+    ReadView const& rv,
     beast::Journal const& j)
 {
+    // bypass this invariant check for IOU escrows
+    if (bad_ &&
+        rv.rules().enabled(featurePaychanAndEscrowForTokens) &&
+        txn.isFieldPresent(sfTransactionType) &&
+        txn.isFieldPresent(sfAmount))
+    {
+        uint16_t tt = txn.getFieldU16(sfTransactionType);
+        if (tt == ttESCROW_CREATE || tt == ttESCROW_FINISH || tt == ttESCROW_CANCEL)
+        {
+            if (!isXRP(txn.getFieldAmount(sfAmount)))
+            return true;
+        }
+    }
+
     if (bad_)
     {
         JLOG(j.fatal()) << "Invariant failed: escrow specifies invalid amount";

@@ -93,7 +93,8 @@ after(NetClock::time_point now, std::uint32_t mark)
 TxConsequences
 EscrowCreate::makeTxConsequences(PreflightContext const& ctx)
 {
-    return TxConsequences{ctx.tx, ctx.tx[sfAmount].xrp()};
+    return TxConsequences{ctx.tx,
+        isXRP(ctx.tx[sfAmount]) ? ctx.tx[sfAmount].xrp() : beast::zero};
 }
 
 NotTEC
@@ -270,7 +271,7 @@ EscrowCreate::doApply()
 
         STAmount balance = (*sleLine)[sfBalance];
 
-        STAmount lockedBalance {sfLockedBalance};
+        STAmount lockedBalance {sfLockedBalance, amount.issue()};
         if (sleLine->isFieldPresent(sfLockedBalance))
             lockedBalance = (*sleLine)[sfLockedBalance];
 
@@ -343,10 +344,9 @@ EscrowCreate::doApply()
     else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens) && sleLine)
     {
         // update trustline to reflect locked up balance
-        auto const issuer = amount.getIssuer();
-        bool high = account > issuer;
+        bool high = account > amount.getIssuer();
 
-        STAmount lockedBalance;
+        STAmount lockedBalance {sfLockedBalance, amount.issue()};
 
         if (sleLine->isFieldPresent(sfLockedBalance))
             lockedBalance = (*sleLine)[sfLockedBalance];
@@ -898,7 +898,11 @@ EscrowCancel::doApply()
         }
 
         sleSrcLine->setFieldAmount(sfBalance, isLow ? finalBalance : -finalBalance);
-        sleSrcLine->setFieldAmount(sfLockedBalance, isLow ? finalLockedBalance : -finalLockedBalance); 
+
+        if (finalLockedBalance == beast::zero)
+            sleSrcLine->makeFieldAbsent(sfLockedBalance);
+        else
+            sleSrcLine->setFieldAmount(sfLockedBalance, isLow ? finalLockedBalance : -finalLockedBalance); 
 
         view.update(sleSrcLine);
     }
