@@ -47,6 +47,9 @@
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
 
 namespace ripple {
+//RH UPTO: sethook needs to correctly compute and charge fee for creating new hooks, updating existing hooks
+//and it also needs to account for reserve requirements for namespaces, parameters and grants
+
 
 // RH TODO test overflow on leb128 detection
 // web assembly contains a lot of run length encoding in LEB128 format

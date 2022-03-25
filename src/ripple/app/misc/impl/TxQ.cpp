@@ -49,7 +49,9 @@ getFeeLevelPaid(ReadView const& view, STTx const& tx)
         return std::pair{baseFee + ref, feePaid + ref};
     }();
 
-    assert(baseFee.signum() > 0);
+    //RH TODO: check if >= 0 is appropriate for hooks / emitted txn
+    //this was previously > 0 and a crash bug in tn2
+    assert(baseFee.signum() >= 0);
     if (effectiveFeePaid.signum() <= 0 || baseFee.signum() <= 0)
     {
         return FeeLevel64(0);
