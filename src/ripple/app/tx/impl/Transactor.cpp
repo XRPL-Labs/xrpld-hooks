@@ -1164,12 +1164,26 @@ Transactor::operator()()
                 uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
 
                 
-                auto const& hooksCallback = ledger.read(keylet::hook(callbackAccountID));
+                auto const& hooksCallback = view().peek(keylet::hook(callbackAccountID));
                 auto const& hookDef = view().peek(keylet::hookDefinition(callbackHookHash));
                 if (!hookDef)
                 {
                     JLOG(j_.warn())
                         << "HookError[]: Hook def missing on callback";
+                    break;
+                }
+
+                if (!hooksCallback)
+                {
+                    JLOG(j_.warn())
+                        << "HookError[]: Hook missing on callback";
+                    break;
+                }
+
+                if (!hooksCallback->isFieldPresent(sfHooks))
+                {
+                    JLOG(j_.warn())
+                        << "HookError[]: Hooks Array missing on callback";
                     break;
                 }
 
