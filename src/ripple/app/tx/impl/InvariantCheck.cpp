@@ -293,15 +293,14 @@ NoZeroEscrow::finalize(
     // bypass this invariant check for IOU escrows
     if (bad_ &&
         rv.rules().enabled(featurePaychanAndEscrowForTokens) &&
-        txn.isFieldPresent(sfTransactionType) &&
-        txn.isFieldPresent(sfAmount))
+        txn.isFieldPresent(sfTransactionType))
     {
         uint16_t tt = txn.getFieldU16(sfTransactionType);
-        if (tt == ttESCROW_CREATE || tt == ttESCROW_FINISH || tt == ttESCROW_CANCEL)
-        {
-            if (!isXRP(txn.getFieldAmount(sfAmount)))
+        if (tt == ttESCROW_CANCEL || tt == ttESCROW_FINISH)
             return true;
-        }
+        
+        if (txn.isFieldPresent(sfAmount) && !isXRP(txn.getFieldAmount(sfAmount)))
+            return true;
     }
 
     if (bad_)

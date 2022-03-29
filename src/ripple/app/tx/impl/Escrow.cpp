@@ -582,7 +582,7 @@ EscrowFinish::doApply()
 
     auto const sle = ctx_.view().peek(keylet::account(account));
 
-    auto amount = slep->getFieldAmount(sfBalance);
+    auto amount = slep->getFieldAmount(sfAmount);
 
     if (isXRP(amount))
         (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
@@ -654,6 +654,10 @@ EscrowFinish::doApply()
             return tefINTERNAL;
         }
 
+        // dstLow XNOR srcLow tells us if we need to flip the balance amount
+        // on the destination line
+        bool flipDstAmt = !((dstLow && srcLow) || (!dstLow && !srcLow));
+
         // check if the dest line exists, and if it doesn't create it if we're allowed to
         if (!sleDstLine)
         {
@@ -684,7 +688,7 @@ EscrowFinish::doApply()
                     false,                          // authorize account
                     (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
                     false,                          // freeze trust line
-                    amount,                         // initial balance
+                    flipDstAmt ? -amount : amount,  // initial balance
                     Issue(currency, account_),      // limit of zero
                     0,                              // quality in
                     0,                              // quality out
@@ -706,42 +710,7 @@ EscrowFinish::doApply()
                         << "Finishing an escrow for destination frozen trustline.";
                     return tecFROZEN;
             }
-
-            // decrement source balance
-            {
-                STAmount priorBalance =
-                    srcLow ? (*sleSrcLine)[sfBalance] : -((*sleSrcLine)[sfBalance]);
-
-                STAmount finalBalance = priorBalance - amount;
-                if (finalBalance < beast::zero)
-                {
-                    JLOG(j.warn())
-                        << "Escrow finish results in a negative balance on source line";
-                    return tecINTERNAL;
-                }
-
-                if (!sleSrcLine->isFieldPresent(sfLockedBalance))
-                {
-                    JLOG(j.warn())
-                        << "Escrow finish could not find sfLockedBalance on source line";
-                    return tecINTERNAL;
-                }
-
-                STAmount priorLockedBalance =
-                    srcLow ? (*sleSrcLine)[sfLockedBalance] : -((*sleSrcLine)[sfLockedBalance]);
-
-                STAmount finalLockedBalance = priorLockedBalance - amount;
-                if (finalLockedBalance < beast::zero)
-                {
-                    JLOG(j.warn())
-                        << "Escrow finish results in a negative locked balance on source line";
-                    return tecINTERNAL;
-                }
-
-                sleSrcLine->setFieldAmount(sfBalance, srcLow ? finalBalance : -finalBalance);
-                sleSrcLine->setFieldAmount(sfLockedBalance, srcLow ? finalLockedBalance : -finalLockedBalance);
-            }
-
+            
             // increment dest balance
             {
                 // if balance is higher than limit then only allow if dest is signer
@@ -751,7 +720,7 @@ EscrowFinish::doApply()
                 STAmount priorBalance = 
                     dstLow ? (*sleDstLine)[sfBalance] : -((*sleDstLine)[sfBalance]);
 
-                STAmount finalBalance = priorBalance + amount;
+                STAmount finalBalance = priorBalance + (flipDstAmt ? -amount : amount);
 
                 if (finalBalance < priorBalance)
                 {
@@ -770,9 +739,52 @@ EscrowFinish::doApply()
                 sleDstLine->setFieldAmount(sfBalance, dstLow ? finalBalance : -finalBalance);
             }
 
-            view.update(sleSrcLine);
-            view.update(sleDstLine);
         }
+        
+        // decrement source balance
+        {
+            STAmount priorBalance =
+                srcLow ? (*sleSrcLine)[sfBalance] : -((*sleSrcLine)[sfBalance]);
+
+            STAmount finalBalance = priorBalance - amount;
+            if (finalBalance < beast::zero)
+            {
+                JLOG(j.warn())
+                    << "Escrow finish results in a negative balance on source line";
+                return tecINTERNAL;
+            }
+
+            if (!sleSrcLine->isFieldPresent(sfLockedBalance))
+            {
+                JLOG(j.warn())
+                    << "Escrow finish could not find sfLockedBalance on source line";
+                return tecINTERNAL;
+            }
+
+            STAmount priorLockedBalance =
+                srcLow ? (*sleSrcLine)[sfLockedBalance] : -((*sleSrcLine)[sfLockedBalance]);
+
+            STAmount finalLockedBalance = priorLockedBalance - amount;
+            if (finalLockedBalance < beast::zero)
+            {
+                JLOG(j.warn())
+                    << "Escrow finish results in a negative locked balance on source line";
+                return tecINTERNAL;
+            }
+
+            sleSrcLine->setFieldAmount(sfBalance, srcLow ? finalBalance : -finalBalance);
+
+            if (finalLockedBalance == beast::zero)
+                sleSrcLine->makeFieldAbsent(sfLockedBalance);
+            else
+                sleSrcLine->setFieldAmount(sfLockedBalance, srcLow ? finalLockedBalance : -finalLockedBalance);
+        }
+
+        // update source and dest lines to reflect balance mutation
+        view.update(sleSrcLine);
+
+        if (sleDstLine)
+            view.update(sleDstLine);
     }
     else
         return tecINTERNAL; // should never happen
@@ -861,7 +873,7 @@ EscrowCancel::doApply()
     }
 
     auto const sle = ctx_.view().peek(keylet::account(account));
-    auto amount = slep->getFieldAmount(sfBalance);
+    auto amount = slep->getFieldAmount(sfAmount);
 
     // Transfer amount back to the owner (or unlock it in TL case)
     if (isXRP(amount))
@@ -885,19 +897,6 @@ EscrowCancel::doApply()
                 << "Escrow cancel would force locked balance below zero";
             return tecINTERNAL;
         }
-
-        STAmount priorBalance =
-            isLow ? (*sleSrcLine)[sfBalance] : -(*sleSrcLine)[sfBalance];
-
-        STAmount finalBalance = priorBalance - amount;
-        if (finalBalance < beast::zero)
-        {
-            JLOG(j_.warn())
-                << "Escrow cancel would force line balance below zero";
-            return tecINTERNAL;
-        }
-
-        sleSrcLine->setFieldAmount(sfBalance, isLow ? finalBalance : -finalBalance);
 
         if (finalLockedBalance == beast::zero)
             sleSrcLine->makeFieldAbsent(sfLockedBalance);
