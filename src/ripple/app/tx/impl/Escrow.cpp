@@ -33,6 +33,8 @@
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/digest.h>
 #include <ripple/protocol/st.h>
+#include <ripple/protocol/Rate.h>
+
 
 // During an EscrowFinish, the transaction must specify both
 // a condition and a fulfillment. We track whether that
@@ -221,19 +223,16 @@ EscrowCreate::doApply()
 
     std::shared_ptr<SLE> sleLine;
 
+    auto const balance = STAmount((*sle)[sfBalance]).xrp();
+    auto const reserve =
+        ctx_.view().fees().accountReserve((*sle)[sfOwnerCount] + 1);
+
+    if (balance < reserve)
+        return tecINSUFFICIENT_RESERVE;
+
     // Check reserve and funds availability
-    if (isXRP(amount))
-    {
-        auto const balance = STAmount((*sle)[sfBalance]).xrp();
-        auto const reserve =
-            ctx_.view().fees().accountReserve((*sle)[sfOwnerCount] + 1);
-
-        if (balance < reserve)
-            return tecINSUFFICIENT_RESERVE;
-
-        if (balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
-            return tecUNFUNDED;
-    }
+    if (isXRP(amount) && balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
+        return tecUNFUNDED;
     else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
     {
         // find the user's trustline
@@ -281,7 +280,7 @@ EscrowCreate::doApply()
             spendableBalance = -spendableBalance;
 
         if (amount > spendableBalance)
-            return tecUNFUNDED;
+            return tecUNFUNDED_PAYMENT;
     }
     else
         return tecINTERNAL;  // should never happen
@@ -588,7 +587,6 @@ EscrowFinish::doApply()
         (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
     else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
     {
-
         // There are three involved accounts and two trustlines (at the end)
         // Src      - Account which created the escrow
         // Dst      - Account which will receive a payout in the event of success
@@ -596,6 +594,8 @@ EscrowFinish::doApply()
 
         auto issuerAccID = amount.getIssuer();
         auto currency = amount.getCurrency();
+
+        Keylet klIssuer = keylet::account(issuerAccID);
 
         // amendments should only change as much code as is necessary to make the amendment work
         // these renames should be applied to the whole class in a later, non-amendment, commit
@@ -628,7 +628,8 @@ EscrowFinish::doApply()
         auto sleDstLine = view.peek(klDstLine);
 
         // check the issuer exists
-        if (!view.exists(keylet::account(issuerAccID)))
+        auto sleIssuer = view.peek(klIssuer);
+        if (!sleIssuer)
         {
             JLOG(j.warn())
                 << "Cannot finish escrow for token from non-existent issuer: "
@@ -654,9 +655,30 @@ EscrowFinish::doApply()
             return tefINTERNAL;
         }
 
+        // check if rippling is allowed on the source line
+        {
+            auto const flag {srcLow ? lsfLowNoRipple : lsfHighNoRipple};
+            bool tlNoRipple = sleSrcLine->getFieldU32(sfFlags) & flag;
+            if (tlNoRipple)
+            {
+                JLOG(j.warn()) << "EscrowFinish would violate noripple stauts on issuer.";
+                return tecPATH_DRY;
+            }
+        }
+
         // dstLow XNOR srcLow tells us if we need to flip the balance amount
         // on the destination line
         bool flipDstAmt = !((dstLow && srcLow) || (!dstLow && !srcLow));
+        
+        // compute transfer fee, if any
+        auto xferRate = transferRate(view, issuerAccID);
+
+        // the destination will sometimes get less depending on xfer rate
+        // with any difference in tokens burned
+        auto dstAmt = 
+            xferRate == parityRate
+                ? amount 
+                : multiplyRound(amount, xferRate, amount.issue(), true);
 
         // check if the dest line exists, and if it doesn't create it if we're allowed to
         if (!sleDstLine)
@@ -688,7 +710,7 @@ EscrowFinish::doApply()
                     false,                          // authorize account
                     (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
                     false,                          // freeze trust line
-                    flipDstAmt ? -amount : amount,  // initial balance
+                    flipDstAmt ? -dstAmt : dstAmt,  // initial balance
                     Issue(currency, account_),      // limit of zero
                     0,                              // quality in
                     0,                              // quality out
@@ -720,7 +742,7 @@ EscrowFinish::doApply()
                 STAmount priorBalance = 
                     dstLow ? (*sleDstLine)[sfBalance] : -((*sleDstLine)[sfBalance]);
 
-                STAmount finalBalance = priorBalance + (flipDstAmt ? -amount : amount);
+                STAmount finalBalance = priorBalance + (flipDstAmt ? -dstAmt : dstAmt);
 
                 if (finalBalance < priorBalance)
                 {

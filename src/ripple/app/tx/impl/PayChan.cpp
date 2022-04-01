@@ -178,7 +178,27 @@ PayChanCreate::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    if (!isXRP(ctx.tx[sfAmount]) || (ctx.tx[sfAmount] <= beast::zero))
+    STAmount const amount {ctx.tx[sfAmount]};
+    if (!isXRP(amount))
+    {
+        if (!ctx.rules.enabled(featurePaychanAndEscrowForTokens))
+            return temBAD_AMOUNT;
+
+        if (!isLegalNet(amount))
+            return temBAD_AMOUNT;
+
+        if (isFakeXRP(amount))
+            return temBAD_CURRENCY;
+
+        if (ctx.tx[sfAccount] == amount.getIssuer())
+        {
+            JLOG(ctx.j.trace())
+                << "Malformed transaction: Cannot paychan own tokens to self.";
+            return temDST_IS_SRC;
+        }
+    }
+
+    if (ctx.tx[sfAmount] <= beast::zero)
         return temBAD_AMOUNT;
 
     if (ctx.tx[sfAccount] == ctx.tx[sfDestination])
@@ -198,18 +218,69 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
     if (!sle)
         return terNO_ACCOUNT;
 
+    STAmount const amount {ctx.tx[sfAmount]};
+
+    auto const balance = (*sle)[sfBalance];
+    auto const reserve =
+        ctx.view.fees().accountReserve((*sle)[sfOwnerCount] + 1);
+
+    if (balance < reserve)
+        return tecINSUFFICIENT_RESERVE;
+
     // Check reserve and funds availability
+    if (isXRP(amount) && balance < reserve + ctx.tx[sfAmount])
+        return tecUNFUNDED;
+    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
     {
-        auto const balance = (*sle)[sfBalance];
-        auto const reserve =
-            ctx.view.fees().accountReserve((*sle)[sfOwnerCount] + 1);
+        // find the user's trustline
+        auto const currency = amount.getCurrency();
+        auto const issuer = amount.getIssuer();
 
-        if (balance < reserve)
-            return tecINSUFFICIENT_RESERVE;
+        auto& view = ctx.view;
+        auto& j = ctx.j;
 
-        if (balance < reserve + ctx.tx[sfAmount])
+        if (!view.read(keylet::account(issuer)))
+        {
+            JLOG(j.warn())
+                << "Issuer not found for paychan create source line";
+            return tecNO_ISSUER;
+        }
+
+        if (isGlobalFrozen(view, issuer))
+        {
+            JLOG(j.warn()) << "Creating paychan for frozen asset";
+            return tecFROZEN;
+        }
+
+        auto const sleLine = view.read(keylet::line(account, issuer, currency));
+
+        if (!sleLine)
+            return tecUNFUNDED_PAYMENT;
+
+        if (sleLine->isFlag(ctx.tx[sfDestination] > issuer ? lsfHighFreeze : lsfLowFreeze))
+        {
+            JLOG(j.warn()) << "Creating paychan for destination frozen trustline";
+            return tecFROZEN;
+        }
+
+        bool high = account > issuer;
+
+        STAmount balance = (*sleLine)[sfBalance];
+
+        STAmount lockedBalance {sfLockedBalance, amount.issue()};
+        if (sleLine->isFieldPresent(sfLockedBalance))
+            lockedBalance = (*sleLine)[sfLockedBalance];
+
+        auto spendableBalance = balance - lockedBalance;
+
+        if (high)
+            spendableBalance = -spendableBalance;
+
+        if (amount > spendableBalance)
             return tecUNFUNDED;
     }
+    else
+        return tecINTERNAL;
 
     auto const dst = ctx.tx[sfDestination];
 
@@ -241,6 +312,8 @@ PayChanCreate::doApply()
         return tefINTERNAL;
 
     auto const dst = ctx_.tx[sfDestination];
+
+    STAmount const amount {ctx_.tx[sfAmount]};
 
     // Create PayChan in ledger.
     //
@@ -286,7 +359,43 @@ PayChanCreate::doApply()
     }
 
     // Deduct owner's balance, increment owner count
-    (*sle)[sfBalance] = (*sle)[sfBalance] - ctx_.tx[sfAmount];
+    if (isXRP(amount))
+        (*sle)[sfBalance] = (*sle)[sfBalance] - amount;
+    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        // find the user's trustline
+        auto const currency = amount.getCurrency();
+        auto const issuer = amount.getIssuer();
+
+        auto& view = ctx_.view();
+        auto& j = ctx_.journal;
+
+        auto sleLine = view.peek(keylet::line(account, issuer, currency));
+        if (!sleLine)
+            return tecUNFUNDED_PAYMENT;
+
+        bool high = account > issuer;
+
+        STAmount balance = (*sleLine)[sfBalance];
+
+        STAmount lockedBalance {sfLockedBalance, amount.issue()};
+        if (sleLine->isFieldPresent(sfLockedBalance))
+            lockedBalance = (*sleLine)[sfLockedBalance];
+
+        auto spendableBalance = balance - lockedBalance;
+
+        if (high)
+            spendableBalance = -spendableBalance;
+
+        if (amount > spendableBalance)
+            return tecUNFUNDED_PAYMENT;
+
+        lockedBalance += high ? -amount : amount;
+        sleLine->setFieldAmount(sfLockedBalance, lockedBalance);
+        ctx_.view().update(sleLine);
+    }
+    else
+        return tecINTERNAL;
     adjustOwnerCount(ctx_.view(), sle, 1, ctx_.journal);
     ctx_.view().update(sle);
 
@@ -298,7 +407,8 @@ PayChanCreate::doApply()
 TxConsequences
 PayChanFund::makeTxConsequences(PreflightContext const& ctx)
 {
-    return TxConsequences{ctx.tx, ctx.tx[sfAmount].xrp()};
+    return TxConsequences{ctx.tx,
+        isXRP(ctx.tx[sfAmount]) ? ctx.tx[sfAmount].xrp() : beast::zero};
 }
 
 NotTEC
@@ -311,7 +421,27 @@ PayChanFund::preflight(PreflightContext const& ctx)
     if (!isTesSuccess(ret))
         return ret;
 
-    if (!isXRP(ctx.tx[sfAmount]) || (ctx.tx[sfAmount] <= beast::zero))
+    STAmount const amount {ctx.tx[sfAmount]};
+    if (!isXRP(amount))
+    {
+        if (!ctx.rules.enabled(featurePaychanAndEscrowForTokens))
+            return temBAD_AMOUNT;
+
+        if (!isLegalNet(amount))
+            return temBAD_AMOUNT;
+
+        if (isFakeXRP(amount))
+            return temBAD_CURRENCY;
+
+        if (ctx.tx[sfAccount] == amount.getIssuer())
+        {
+            JLOG(ctx.j.trace())
+                << "Malformed transaction: Cannot escrow own tokens to self.";
+            return temDST_IS_SRC;
+        }
+    }
+
+    if (ctx.tx[sfAmount] <= beast::zero)
         return temBAD_AMOUNT;
 
     return preflight2(ctx);
@@ -361,19 +491,6 @@ PayChanFund::doApply()
     if (!sle)
         return tefINTERNAL;
 
-    {
-        // Check reserve and funds availability
-        auto const balance = (*sle)[sfBalance];
-        auto const reserve =
-            ctx_.view().fees().accountReserve((*sle)[sfOwnerCount]);
-
-        if (balance < reserve)
-            return tecINSUFFICIENT_RESERVE;
-
-        if (balance < reserve + ctx_.tx[sfAmount])
-            return tecUNFUNDED;
-    }
-
     // do not allow adding funds if dst does not exist
     if (AccountID const dst = (*slep)[sfDestination];
         !ctx_.view().read(keylet::account(dst)))
@@ -381,11 +498,67 @@ PayChanFund::doApply()
         return tecNO_DST;
     }
 
+    // Check reserve and funds availability
+    auto const balance = (*sle)[sfBalance];
+    auto const reserve =
+        ctx_.view().fees().accountReserve((*sle)[sfOwnerCount]);
+
+    if (balance < reserve)
+        return tecINSUFFICIENT_RESERVE;
+
+    STAmount const amount {ctx_.tx[sfAmount]};
+
+    if (isXRP(amount))
+    {
+        if (balance < reserve + amount)
+            return tecUNFUNDED;
+
+        (*sle)[sfBalance] = (*sle)[sfBalance] - amount;
+        ctx_.view().update(sle);
+    }
+    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        // find the user's trustline
+        auto const& account = src;
+        auto const currency = amount.getCurrency();
+        auto const issuer = amount.getIssuer();
+
+        auto& view = ctx_.view();
+
+        auto const chanAmount = slep->getFieldAmount(sfAmount);
+
+        if (chanAmount.getCurrency() != currency || chanAmount.getIssuer() != issuer)
+            return tecNO_AUTH;
+
+        auto sleLine = view.peek(keylet::line(account, issuer, currency));
+        if (!sleLine)
+            return tecUNFUNDED_PAYMENT;
+
+        bool high = account > issuer;
+
+        STAmount balance = (*sleLine)[sfBalance];
+
+        STAmount lockedBalance {sfLockedBalance, amount.issue()};
+        if (sleLine->isFieldPresent(sfLockedBalance))
+            lockedBalance = (*sleLine)[sfLockedBalance];
+
+        auto spendableBalance = balance - lockedBalance;
+
+        if (high)
+            spendableBalance = -spendableBalance;
+
+        if (amount > spendableBalance)
+            return tecUNFUNDED_PAYMENT;
+
+        lockedBalance += high ? -amount : amount;
+        sleLine->setFieldAmount(sfLockedBalance, lockedBalance);
+        ctx_.view().update(sleLine);
+    }
+    else
+        return tecINTERNAL;
+
     (*slep)[sfAmount] = (*slep)[sfAmount] + ctx_.tx[sfAmount];
     ctx_.view().update(slep);
-
-    (*sle)[sfBalance] = (*sle)[sfBalance] - ctx_.tx[sfAmount];
-    ctx_.view().update(sle);
 
     return tesSUCCESS;
 }
@@ -400,12 +573,25 @@ PayChanClaim::preflight(PreflightContext const& ctx)
         return ret;
 
     auto const bal = ctx.tx[~sfBalance];
-    if (bal && (!isXRP(*bal) || *bal <= beast::zero))
-        return temBAD_AMOUNT;
+    if (bal)
+    {
+        if (!isXRP(*bal) && !ctx.rules.enabled(featurePaychanAndEscrowForTokens))
+            return temBAD_AMOUNT;
+
+        if (*bal <= beast::zero)
+            return temBAD_AMOUNT;
+    }
 
     auto const amt = ctx.tx[~sfAmount];
-    if (amt && (!isXRP(*amt) || *amt <= beast::zero))
-        return temBAD_AMOUNT;
+
+    if (amt)
+    {
+        if (!isXRP(*amt) && !ctx.rules.enabled(featurePaychanAndEscrowForTokens))
+            return temBAD_AMOUNT;
+
+        if (*amt)
+            return temBAD_AMOUNT;
+    }
 
     if (bal && amt && *bal > *amt)
         return temBAD_AMOUNT;
@@ -429,8 +615,8 @@ PayChanClaim::preflight(PreflightContext const& ctx)
         // The signature isn't needed if txAccount == src, but if it's
         // present, check it
 
-        auto const reqBalance = bal->xrp();
-        auto const authAmt = amt ? amt->xrp() : reqBalance;
+        auto const reqBalance = *bal;
+        auto const authAmt = *amt ? *amt : reqBalance;
 
         if (reqBalance > authAmt)
             return temBAD_AMOUNT;
@@ -441,7 +627,12 @@ PayChanClaim::preflight(PreflightContext const& ctx)
 
         PublicKey const pk(ctx.tx[sfPublicKey]);
         Serializer msg;
-        serializePayChanAuthorization(msg, k.key, authAmt);
+
+        if (isXRP(authAmt))
+            serializePayChanAuthorization(msg, k.key, authAmt.xrp());
+        else
+            serializePayChanAuthorization(msg, k.key, authAmt.iou());
+
         if (!verify(pk, msg.slice(), *sig, /*canonical*/ true))
             return temBAD_SIGNATURE;
     }
@@ -477,9 +668,9 @@ PayChanClaim::doApply()
 
     if (ctx_.tx[~sfBalance])
     {
-        auto const chanBalance = slep->getFieldAmount(sfBalance).xrp();
-        auto const chanFunds = slep->getFieldAmount(sfAmount).xrp();
-        auto const reqBalance = ctx_.tx[sfBalance].xrp();
+        auto const chanBalance = slep->getFieldAmount(sfBalance);
+        auto const chanFunds = slep->getFieldAmount(sfAmount);
+        auto const reqBalance = ctx_.tx[sfBalance];
 
         if (txAccount == dst && !ctx_.tx[~sfSignature])
             return temBAD_SIGNATURE;
@@ -524,9 +715,235 @@ PayChanClaim::doApply()
         }
 
         (*slep)[sfBalance] = ctx_.tx[sfBalance];
-        XRPAmount const reqDelta = reqBalance - chanBalance;
+        STAmount const reqDelta = reqBalance - chanBalance;
         assert(reqDelta >= beast::zero);
-        (*sled)[sfBalance] = (*sled)[sfBalance] + reqDelta;
+        if (isXRP(reqDelta))
+            (*sled)[sfBalance] = (*sled)[sfBalance] + reqDelta;
+        else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+        {
+            // There are three involved accounts and two trustlines (at the end)
+            // Src      - Account which created the paychan
+            // Dst      - Account which will receive a payout in the event of success
+            // Issuer   - Account which issued the IOU the escrow locks
+
+            auto const& amount = reqDelta;
+            auto issuerAccID = amount.getIssuer();
+            auto currency = amount.getCurrency();
+
+            Keylet klIssuer = keylet::account(issuerAccID);
+
+            auto& view = ctx_.view();
+
+            auto& srcAccID = src;
+            auto& dstAccID = dst;
+
+            bool dstLow = dstAccID < issuerAccID;
+            bool srcLow = srcAccID < issuerAccID;
+
+            auto sleSrcAcc = view.peek(keylet::account(srcAccID));
+            auto& sleDstAcc = sled;
+
+            auto& j = ctx_.journal;
+
+            if (!sleSrcAcc)
+            {
+                JLOG(j.warn())
+                    << "Src account not found in paychan claim";
+                return tecINTERNAL;
+            }
+
+            STAmount dstBalanceDrops = sleDstAcc->getFieldAmount(sfBalance);
+
+            // check if the destination has a trustline already
+            Keylet klDstLine = keylet::line(dstAccID, issuerAccID, currency);
+
+            auto sleSrcLine = view.peek(keylet::line(srcAccID, issuerAccID, currency));
+            auto sleDstLine = view.peek(klDstLine);
+
+            // check the issuer exists
+            auto sleIssuer = view.peek(klIssuer);
+            if (!sleIssuer)
+            {
+                JLOG(j.warn())
+                    << "Cannot paychan claim for token from non-existent issuer: "
+                    << to_string(issuerAccID);
+                return tecNO_ISSUER;
+            }
+
+            // check the trustline isn't frozen
+            if (isGlobalFrozen(view, issuerAccID))
+            {
+                JLOG(j.warn()) << "Cannot finish an escrow for frozen issuer";
+                return tecFROZEN;
+            }
+
+            // check the source line exists
+            if (!sleSrcLine)
+            {
+                JLOG(j.error())
+                    << "Cannot claim a paychan where the source line does not exist: "
+                    << "src: " << to_string(srcAccID) << " "
+                    << "iss: " << to_string(issuerAccID)  << " "
+                    << "cur: " << to_string(currency);
+                return tefINTERNAL;
+            }
+
+            // check if rippling is allowed on the source line
+            {
+                auto const flag {srcLow ? lsfLowNoRipple : lsfHighNoRipple};
+                bool tlNoRipple = sleSrcLine->getFieldU32(sfFlags) & flag;
+                if (tlNoRipple)
+                {
+                    JLOG(j.warn()) << "PayChan claim would violate noripple status on issuer.";
+                    return tecPATH_DRY;
+                }
+            }
+
+            // dstLow XNOR srcLow tells us if we need to flip the balance amount
+            // on the destination line
+            bool flipDstAmt = !((dstLow && srcLow) || (!dstLow && !srcLow));
+            
+            // compute transfer fee, if any
+            auto xferRate = transferRate(view, issuerAccID);
+
+            // the destination will sometimes get less depending on xfer rate
+            // with any difference in tokens burned
+            auto dstAmt = 
+                xferRate == parityRate
+                    ? amount 
+                    : multiplyRound(amount, xferRate, amount.issue(), true);
+
+            // check if the dest line exists, and if it doesn't create it if we're allowed to
+            if (!sleDstLine)
+            {
+                // if a line doesn't already exist between issuer and destination then
+                // such a line can now be created but only if either the person who signed
+                // for this txn is the destination account or the source and dest are the same
+                if (srcAccID != dstAccID && account_ != dstAccID)
+                    return tecNO_PERMISSION;
+
+                // create trustline
+
+                if (std::uint32_t const ownerCount = {sleDstAcc->at(sfOwnerCount)};
+                    dstBalanceDrops < view.fees().accountReserve(ownerCount + 1))
+                {
+                    JLOG(j.trace()) << "Dest Trust line does not exist. "
+                                        "Insufficent reserve to create line.";
+                    return tecNO_LINE_INSUF_RESERVE;
+                }
+
+                // clang-format off
+                if (TER const ter = trustCreate(
+                        view,
+                        dstLow,                         // is dest low?
+                        issuerAccID,                    // source
+                        dstAccID,                       // destination
+                        klDstLine.key,                  // ledger index
+                        sleDstAcc,                      // Account to add to
+                        false,                          // authorize account
+                        (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
+                        false,                          // freeze trust line
+                        flipDstAmt ? -dstAmt : dstAmt,  // initial balance
+                        Issue(currency, account_),      // limit of zero
+                        0,                              // quality in
+                        0,                              // quality out
+                        j);                             // journal
+                    !isTesSuccess(ter))
+                {
+                    return ter;
+                }
+                // clang-format on
+            }
+            else
+            {
+                // trustline already exists
+                // check is it's frozen
+                if (dstAccID != issuerAccID &&
+                    sleDstLine->isFlag(dstLow ? lsfLowFreeze : lsfHighFreeze))
+                {
+                        JLOG(j.warn())
+                            << "Finishing an escrow for destination frozen trustline.";
+                        return tecFROZEN;
+                }
+                
+                // increment dest balance
+                {
+                    // if balance is higher than limit then only allow if dest is signer
+                    STAmount dstLimit = 
+                        dstLow ? (*sleDstLine)[sfLowLimit] : (*sleDstLine)[sfHighLimit];
+
+                    STAmount priorBalance = 
+                        dstLow ? (*sleDstLine)[sfBalance] : -((*sleDstLine)[sfBalance]);
+
+                    STAmount finalBalance = priorBalance + (flipDstAmt ? -dstAmt : dstAmt);
+
+                    if (finalBalance < priorBalance)
+                    {
+                        JLOG(j.warn())
+                            << "Escrow finish resulted in a lower final balance on dest line";
+                        return tecINTERNAL;
+                    }
+
+                    if (finalBalance > dstLimit && account_ != dstAccID)
+                    {
+                        JLOG(j.trace())
+                            << "Escrow finish would increase dest line above limit without permission";
+                        return tecPATH_DRY;
+                    }
+
+                    sleDstLine->setFieldAmount(sfBalance, dstLow ? finalBalance : -finalBalance);
+                }
+
+            }
+            
+            // decrement source balance
+            {
+                STAmount priorBalance =
+                    srcLow ? (*sleSrcLine)[sfBalance] : -((*sleSrcLine)[sfBalance]);
+
+                STAmount finalBalance = priorBalance - amount;
+                if (finalBalance < beast::zero)
+                {
+                    JLOG(j.warn())
+                        << "Escrow finish results in a negative balance on source line";
+                    return tecINTERNAL;
+                }
+
+                if (!sleSrcLine->isFieldPresent(sfLockedBalance))
+                {
+                    JLOG(j.warn())
+                        << "Escrow finish could not find sfLockedBalance on source line";
+                    return tecINTERNAL;
+                }
+
+                STAmount priorLockedBalance =
+                    srcLow ? (*sleSrcLine)[sfLockedBalance] : -((*sleSrcLine)[sfLockedBalance]);
+
+                STAmount finalLockedBalance = priorLockedBalance - amount;
+                if (finalLockedBalance < beast::zero)
+                {
+                    JLOG(j.warn())
+                        << "Escrow finish results in a negative locked balance on source line";
+                    return tecINTERNAL;
+                }
+
+                sleSrcLine->setFieldAmount(sfBalance, srcLow ? finalBalance : -finalBalance);
+
+                if (finalLockedBalance == beast::zero)
+                    sleSrcLine->makeFieldAbsent(sfLockedBalance);
+                else
+                    sleSrcLine->setFieldAmount(sfLockedBalance, srcLow ? finalLockedBalance : -finalLockedBalance);
+            }
+
+            // update source and dest lines to reflect balance mutation
+            view.update(sleSrcLine);
+
+            if (sleDstLine)
+                view.update(sleDstLine);
+
+        }
+        else
+            return tecINTERNAL;
         ctx_.view().update(sled);
         ctx_.view().update(slep);
     }
