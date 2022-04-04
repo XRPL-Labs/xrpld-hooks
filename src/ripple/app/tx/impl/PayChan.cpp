@@ -150,8 +150,43 @@ closeChannel(
         return tefINTERNAL;
 
     assert((*slep)[sfAmount] >= (*slep)[sfBalance]);
-    (*sle)[sfBalance] =
-        (*sle)[sfBalance] + (*slep)[sfAmount] - (*slep)[sfBalance];
+    auto const amount = (*slep)[sfAmount] - (*slep)[sfBalance];
+
+    if (isXRP(amount))
+    {
+        (*sle)[sfBalance] = (*sle)[sfBalance] + amount;
+    }
+    else if (view.rules().enabled(featurePaychanAndEscrowForTokens))
+    {
+        // unlock the TL balance that was locked by this channel
+        auto& account = src;
+        auto issuerAccID = amount.getIssuer();
+        auto currency = amount.getCurrency();
+        auto sleSrcLine = view.peek(keylet::line(account, issuerAccID, currency));
+        bool isLow = account < issuerAccID;
+
+        STAmount priorLockedBalance = 
+            isLow ? (*sleSrcLine)[sfLockedBalance] : -(*sleSrcLine)[sfLockedBalance];
+
+        STAmount finalLockedBalance = priorLockedBalance - amount;
+        if (finalLockedBalance < beast::zero)
+        {
+            JLOG(j.warn())
+                << "Paychanel close would force locked balance below zero";
+            return tecINTERNAL;
+        }
+
+        if (finalLockedBalance == beast::zero)
+            sleSrcLine->makeFieldAbsent(sfLockedBalance);
+        else
+            sleSrcLine->setFieldAmount(sfLockedBalance, isLow ? finalLockedBalance : -finalLockedBalance); 
+
+        view.update(sleSrcLine);
+
+    }
+    else
+        return tefINTERNAL;
+
     adjustOwnerCount(view, sle, -1, j);
     view.update(sle);
 
@@ -165,7 +200,8 @@ closeChannel(
 TxConsequences
 PayChanCreate::makeTxConsequences(PreflightContext const& ctx)
 {
-    return TxConsequences{ctx.tx, ctx.tx[sfAmount].xrp()};
+    return TxConsequences{ctx.tx,
+        isXRP(ctx.tx[sfAmount]) ? ctx.tx[sfAmount].xrp() : beast::zero};
 }
 
 NotTEC
@@ -518,6 +554,7 @@ PayChanFund::doApply()
     }
     else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
     {
+        // RH UPTO: add freeze checks for all featurePaychanAndEscrowForTokens applies on escrow and paychan
         // find the user's trustline
         auto const& account = src;
         auto const currency = amount.getCurrency();
@@ -552,7 +589,7 @@ PayChanFund::doApply()
 
         lockedBalance += high ? -amount : amount;
         sleLine->setFieldAmount(sfLockedBalance, lockedBalance);
-        ctx_.view().update(sleLine);
+        view.update(sleLine);
     }
     else
         return tecINTERNAL;
