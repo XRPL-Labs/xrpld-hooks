@@ -18,30 +18,47 @@
 //==============================================================================
 
 #include <ripple/app/paths/RippleLineCache.h>
+#include <ripple/app/paths/TrustLine.h>
 #include <ripple/ledger/OpenView.h>
 
 namespace ripple {
 
-RippleLineCache::RippleLineCache(std::shared_ptr<ReadView const> const& ledger)
+RippleLineCache::RippleLineCache(
+    std::shared_ptr<ReadView const> const& ledger,
+    beast::Journal j)
+    : journal_(j)
 {
-    // We want the caching that OpenView provides
-    // And we need to own a shared_ptr to the input view
-    // VFALCO TODO This should be a CachedLedger
-    mLedger = std::make_shared<OpenView>(&*ledger, ledger);
+    mLedger = ledger;
+
+    JLOG(journal_.debug()) << "RippleLineCache created for ledger "
+                           << mLedger->info().seq;
 }
 
-std::vector<RippleState::pointer> const&
+RippleLineCache::~RippleLineCache()
+{
+    JLOG(journal_.debug()) << "~RippleLineCache destroyed for ledger "
+                           << mLedger->info().seq << " with " << lines_.size()
+                           << " accounts";
+}
+
+std::vector<PathFindTrustLine> const&
 RippleLineCache::getRippleLines(AccountID const& accountID)
 {
     AccountKey key(accountID, hasher_(accountID));
 
     std::lock_guard sl(mLock);
 
-    auto [it, inserted] =
-        lines_.emplace(key, std::vector<RippleState::pointer>());
+    auto [it, inserted] = lines_.emplace(key, std::vector<PathFindTrustLine>());
 
     if (inserted)
-        it->second = getRippleStateItems(accountID, *mLedger);
+        it->second = PathFindTrustLine::getItems(accountID, *mLedger);
+
+    JLOG(journal_.debug()) << "RippleLineCache getRippleLines for ledger "
+                           << mLedger->info().seq << " found "
+                           << it->second.size() << " lines for "
+                           << (inserted ? "new " : "existing ") << accountID
+                           << " out of a total of " << lines_.size()
+                           << " accounts";
 
     return it->second;
 }

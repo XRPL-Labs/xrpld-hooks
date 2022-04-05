@@ -395,7 +395,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/paths/Pathfinder.cpp
   src/ripple/app/paths/RippleCalc.cpp
   src/ripple/app/paths/RippleLineCache.cpp
-  src/ripple/app/paths/RippleState.cpp
+  src/ripple/app/paths/TrustLine.cpp
   src/ripple/app/paths/impl/BookStep.cpp
   src/ripple/app/paths/impl/DirectStep.cpp
   src/ripple/app/paths/impl/PaySteps.cpp
@@ -733,6 +733,7 @@ if (tests)
     src/test/basics/contract_test.cpp
     src/test/basics/FeeUnits_test.cpp
     src/test/basics/hardened_hash_test.cpp
+    src/test/basics/join_test.cpp
     src/test/basics/mulDiv_test.cpp
     src/test/basics/tagged_integer_test.cpp
     #[===============================[
@@ -891,6 +892,7 @@ if (tests)
     src/test/protocol/InnerObjectFormats_test.cpp
     src/test/protocol/Issue_test.cpp
     src/test/protocol/KnownFormatToGRPC_test.cpp
+    src/test/protocol/Hooks_test.cpp
     src/test/protocol/PublicKey_test.cpp
     src/test/protocol/Quality_test.cpp
     src/test/protocol/STAccount_test.cpp
@@ -989,17 +991,18 @@ if (is_ci)
   target_compile_definitions(rippled PRIVATE RIPPLED_RUNNING_IN_CI)
 endif ()
 
-if (reporting)
-    target_compile_definitions(rippled PRIVATE RIPPLED_REPORTING)
-endif ()
+if(reporting)
+set_target_properties(rippled PROPERTIES OUTPUT_NAME rippled-reporting)
+get_target_property(BIN_NAME rippled OUTPUT_NAME)
+message(STATUS "Reporting mode build: rippled renamed ${BIN_NAME}")
+  target_compile_definitions(rippled PRIVATE RIPPLED_REPORTING)
+endif()
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
-  # any files that don't play well with unity should be added here
-  if (tests)
-    set_source_files_properties(
-      # these two seem to produce conflicts in beast teardown template methods
-      src/test/rpc/ValidatorRPC_test.cpp
-      src/test/rpc/ShardArchiveHandler_test.cpp
-      PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
-  endif () #tests
-endif ()
+# any files that don't play well with unity should be added here
+if (tests)
+  set_source_files_properties(
+    # these two seem to produce conflicts in beast teardown template methods
+    src/test/rpc/ValidatorRPC_test.cpp
+    src/test/rpc/ShardArchiveHandler_test.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
+endif () #tests
