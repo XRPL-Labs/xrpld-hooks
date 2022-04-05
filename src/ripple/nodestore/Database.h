@@ -156,7 +156,7 @@ public:
                 object is stored, used by the shard store.
         @param callback Callback function when read completes
     */
-    void
+    virtual void
     asyncFetch(
         uint256 const& hash,
         std::uint32_t ledgerSeq,
@@ -366,11 +366,8 @@ private:
             std::function<void(std::shared_ptr<NodeObject> const&)>>>>
         read_;
 
-    // last read
-    uint256 readLastHash_;
-
-    std::vector<std::thread> readThreads_;
-    bool readStopping_{false};
+    std::atomic<bool> readStopping_ = false;
+    std::atomic<int> readThreads_ = 0;
 
     virtual std::shared_ptr<NodeObject>
     fetchNodeObject(

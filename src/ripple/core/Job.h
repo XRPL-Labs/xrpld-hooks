@@ -20,6 +20,7 @@
 #ifndef RIPPLE_CORE_JOB_H_INCLUDED
 #define RIPPLE_CORE_JOB_H_INCLUDED
 
+#include <ripple/basics/CountedObject.h>
 #include <ripple/core/ClosureCounter.h>
 #include <ripple/core/LoadMonitor.h>
 #include <functional>
@@ -52,17 +53,18 @@ enum JobType {
     jtRPC,                // A websocket command from the client
     jtSWEEP,              // Sweep for stale structures
     jtVALIDATION_ut,      // A validation from an untrusted source
+    jtMANIFEST,           // A validator's manifest
     jtUPDATE_PF,          // Update pathfinding requests
     jtTRANSACTION_l,      // A local transaction
     jtREPLAY_REQ,         // Peer request a ledger delta or a skip list
     jtLEDGER_REQ,         // Peer request ledger/txnset data
     jtPROPOSAL_ut,        // A proposal from an untrusted source
     jtREPLAY_TASK,        // A Ledger replay task/subtask
-    jtLEDGER_DATA,        // Received data for a ledger we're acquiring
     jtTRANSACTION,        // A transaction received from the network
     jtMISSING_TXN,        // Request missing transactions
     jtREQUESTED_TXN,      // Reply with requested transactions
     jtBATCH,              // Apply batched transactions
+    jtLEDGER_DATA,        // Received data for a ledger we're acquiring
     jtADVANCE,            // Advance validated/acquired ledgers
     jtPUBLEDGER,          // Publish a fully-accepted ledger
     jtTXN_DATA,           // Fetch a proposed set
@@ -91,7 +93,7 @@ enum JobType {
     jtNS_WRITE,
 };
 
-class Job
+class Job : public CountedObject<Job>
 {
 public:
     using clock_type = std::chrono::steady_clock;
