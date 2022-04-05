@@ -158,31 +158,14 @@ closeChannel(
     }
     else if (view.rules().enabled(featurePaychanAndEscrowForTokens))
     {
-        // unlock the TL balance that was locked by this channel
-        auto& account = src;
-        auto issuerAccID = amount.getIssuer();
-        auto currency = amount.getCurrency();
-        auto sleSrcLine = view.peek(keylet::line(account, issuerAccID, currency));
-        bool isLow = account < issuerAccID;
-
-        STAmount priorLockedBalance = 
-            isLow ? (*sleSrcLine)[sfLockedBalance] : -(*sleSrcLine)[sfLockedBalance];
-
-        STAmount finalLockedBalance = priorLockedBalance - amount;
-        if (finalLockedBalance < beast::zero)
-        {
-            JLOG(j.warn())
-                << "Paychanel close would force locked balance below zero";
-            return tecINTERNAL;
-        }
-
-        if (finalLockedBalance == beast::zero)
-            sleSrcLine->makeFieldAbsent(sfLockedBalance);
-        else
-            sleSrcLine->setFieldAmount(sfLockedBalance, isLow ? finalLockedBalance : -finalLockedBalance); 
-
-        view.update(sleSrcLine);
-
+        auto line = view.peek(keylet::line(src, amount.getIssuer(), amount.getCurrency()));
+        TER result = 
+            trustAdjustLockedBalance(
+                view,
+                line,
+                -amount);
+        if (result != tesSUCCESS)
+            return result;
     }
     else
         return tefINTERNAL;
@@ -263,62 +246,39 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
     if (balance < reserve)
         return tecINSUFFICIENT_RESERVE;
 
+    auto const dst = ctx.tx[sfDestination];
+
     // Check reserve and funds availability
     if (isXRP(amount) && balance < reserve + ctx.tx[sfAmount])
         return tecUNFUNDED;
-    else if (ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
-    {
-        // find the user's trustline
-        auto const currency = amount.getCurrency();
-        auto const issuer = amount.getIssuer();
-
-        auto& view = ctx.view;
-        auto& j = ctx.j;
-
-        if (!view.read(keylet::account(issuer)))
-        {
-            JLOG(j.warn())
-                << "Issuer not found for paychan create source line";
-            return tecNO_ISSUER;
-        }
-
-        if (isGlobalFrozen(view, issuer))
-        {
-            JLOG(j.warn()) << "Creating paychan for frozen asset";
-            return tecFROZEN;
-        }
-
-        auto const sleLine = view.read(keylet::line(account, issuer, currency));
-
-        if (!sleLine)
-            return tecUNFUNDED_PAYMENT;
-
-        if (sleLine->isFlag(ctx.tx[sfDestination] > issuer ? lsfHighFreeze : lsfLowFreeze))
-        {
-            JLOG(j.warn()) << "Creating paychan for destination frozen trustline";
-            return tecFROZEN;
-        }
-
-        bool high = account > issuer;
-
-        STAmount balance = (*sleLine)[sfBalance];
-
-        STAmount lockedBalance {sfLockedBalance, amount.issue()};
-        if (sleLine->isFieldPresent(sfLockedBalance))
-            lockedBalance = (*sleLine)[sfLockedBalance];
-
-        auto spendableBalance = balance - lockedBalance;
-
-        if (high)
-            spendableBalance = -spendableBalance;
-
-        if (amount > spendableBalance)
-            return tecUNFUNDED;
-    }
     else
-        return tecINTERNAL;
+    {
+        if (!ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
+            return tecINTERNAL;
 
-    auto const dst = ctx.tx[sfDestination];
+        // check for any possible bars to a channel existing
+        // between these accounts for this asset
+        if (TER result = 
+                trustXferAllowed(
+                    ctx.view,
+                    {account, dst},
+                    amount.issue);
+            result != tesSUCCESS)
+                return result;
+
+        // check if the amount can be locked
+        auto sleLine = ctx.view.read(keylet::line(account, amount.issuer(), amount.currency()));
+        if (TER result = 
+                trustAdjustLockedBalance(
+                    ctx.view,
+                    sleLine,
+                    amount,
+                    true);
+            result != tesSUCCESS)
+            return result;
+
+        // all good!
+    }
 
     {
         // Check destination account
@@ -397,41 +357,28 @@ PayChanCreate::doApply()
     // Deduct owner's balance, increment owner count
     if (isXRP(amount))
         (*sle)[sfBalance] = (*sle)[sfBalance] - amount;
-    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    else
     {
-        // find the user's trustline
-        auto const currency = amount.getCurrency();
-        auto const issuer = amount.getIssuer();
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
 
-        auto& view = ctx_.view();
-        auto& j = ctx_.journal;
+        auto sleLine =
+            view.peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
 
-        auto sleLine = view.peek(keylet::line(account, issuer, currency));
         if (!sleLine)
             return tecUNFUNDED_PAYMENT;
 
-        bool high = account > issuer;
+        TER result = 
+            trustAdjustLockedBalance(
+                ctx_.view(),
+                sleLine,
+                amount,
+                false);
 
-        STAmount balance = (*sleLine)[sfBalance];
-
-        STAmount lockedBalance {sfLockedBalance, amount.issue()};
-        if (sleLine->isFieldPresent(sfLockedBalance))
-            lockedBalance = (*sleLine)[sfLockedBalance];
-
-        auto spendableBalance = balance - lockedBalance;
-
-        if (high)
-            spendableBalance = -spendableBalance;
-
-        if (amount > spendableBalance)
-            return tecUNFUNDED_PAYMENT;
-
-        lockedBalance += high ? -amount : amount;
-        sleLine->setFieldAmount(sfLockedBalance, lockedBalance);
-        ctx_.view().update(sleLine);
+        if (result != tesSUCCESS)
+            return tefINTERNAL;
     }
-    else
-        return tecINTERNAL;
+    
     adjustOwnerCount(ctx_.view(), sle, 1, ctx_.journal);
     ctx_.view().update(sle);
 
@@ -483,6 +430,7 @@ PayChanFund::preflight(PreflightContext const& ctx)
     return preflight2(ctx);
 }
 
+// RH UPTO
 TER
 PayChanFund::doApply()
 {

@@ -525,7 +525,6 @@ isFakeXRP(STAmount const& amount)
     return isFakeXRP(amount.issue().currency);
 }    
 
-
 // Since `canonicalize` does not have access to a ledger, this is needed to put
 // the low-level routine stAmountCanonicalize on an amendment switch. Only
 // transactions need to use this switchover. Outside of a transaction it's safe

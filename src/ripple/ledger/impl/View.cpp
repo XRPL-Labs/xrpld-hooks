@@ -962,9 +962,13 @@ bool isTrustDefault(
 TER
 trustXferAllowed(
     ReadView& view,
-    std::vector<AccountID> parties,
+    std::vector<AccountID const> const& parties,
     Issue const& issue)
 {
+
+    if (isFakeXRP(issue.currency))
+        return tecNO_PERMISSION;
+
     auto const sleIssuerAcc = view.peek(keylet::account(issue.account));
 
     bool lockedBalanceAllowed =
@@ -979,6 +983,7 @@ trustXferAllowed(
         return tecFROZEN;
 
     uint32_t issuerFlags = sleIssuerAcc->getFieldU32(sfFlags);
+
     bool requireAuth = issuerFlags & lsfRequireAuth;
 
     for (AccountID const& p: parties)
@@ -1056,17 +1061,46 @@ trustXferAllowed(
     return tesSUCCESS;
 }
 
+// Type juggling to allow dry runs of helper functions from preclaim
+// context, without forcing the caller to recast or change their view.
+// ApplyView is a subclass of ReadView so this logic works fine and
+// allows a helper to be called explicitly and without confusion.
+using ReadOrApplyView = 
+    std::variant<
+        std::reference_wrapper<ReadView const>,
+        std::reference_wrapper<ApplyView>>;
+
+inline ReadView const&
+forceReadView(ReadOrApplyView& view)
+{
+    return
+        *(std::holds_alternative<ReadViewRef>(view)
+            ? &(std::get<ReadViewRef>(view).get())
+            : std::reintrepret_cast<ReadView const*>(
+                &(std::get<ReadViewRef>(view).get())));
+}
+
 // Modify a locked trustline balance, creating one if none exists
 // or removing one if no longer needed. deltaAmt is in absolute terms
 // positive means increment locked balance and negative decrement.
 TER
-trustModifyLockedBalance(
-    ApplyView& view,
+trustAdjustLockedBalance(
+    ReadOrApplyView view_,
     std::shared_ptr<SLE>& sleLine,
-    STAmount const& deltaAmt)
+    STAmount const& deltaAmt,
+    bool dryRun = false /* don't actually update, just try the delta */)
 {
-    if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
+    bool bReadView = std::holds_alternative<ReadViewRef>(view_);
+
+    // dry runs are explicit in code, but really the view type determines
+    // what occurs here, so this combination is invalid.
+    if (bReadView && !dryRun)
         return tefINTERNAL;
+
+    ReadView const& view = forceReadView(view_);
+
+    if (!view.rules.enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
 
     if (!sleLine)
         return tecUNFUNDED_PAYMENT;
@@ -1081,13 +1115,17 @@ trustModifyLockedBalance(
     // issuer then the high side is the account.
     bool high =  lowLimit.issuer() == issuer;
 
+    std::vector<AccountID> parties 
+        {high ? sleLine->getFieldAmount(sfHighLimit).issuer(): lowLimit.issuer()}; 
+
     // check for freezes & auth
     if (TER result =
-            trustXferAllowed(view,
-                {high ? sleLine->getFieldAmount(sfHighLimit).issuer()
-                      : lowLimit.issuer()}, deltaAmt.issue());
-            result != tesSUCCESS)
-        return result;
+        trustXferAllowed(
+            view,
+            parties,
+            deltaAmt.issue())
+        result != tesSUCCESS)
+    return result;
 
     // pull the TL balance from the account's perspective
     STAmount balance =
@@ -1114,12 +1152,18 @@ trustModifyLockedBalance(
     if (lockedBalance < beast::zero)
         return tecINTERNAL;
 
+    // we won't update any SLEs if it is a dry run
+    if (dryRun)
+        return tesSUCCESS;
+
     if (lockedBalance == beast::zero)
         sleLine->makeFieldAbsent(sfLockedBalance);
     else
         sleLine->setFieldAmount(sfLockedBalance, high ? -lockedBalance : lockedBalance);
 
-    view.update(sleLine);
+    // dryRun must be true if we have a ReadView in the variant
+    // therefore this is safe to execute
+    std::get<std::reference_wrapper<ApplyView>>(view_).get().update(sleLine);
 
     return tesSUCCESS;
 }
@@ -1133,6 +1177,9 @@ trustXferLockedBalance(
     STAmount const& amount,     // issuer, currency are in this field
     Journal& j)
 {
+    if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
+        return tefINTERNAL;
+
     if (!sleSrcAcc || !sleDstAcc)
     {
         JLOG(j.warn())
