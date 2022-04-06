@@ -299,6 +299,111 @@ trustDelete(
     AccountID const& uHighAccountID,
     beast::Journal j);
 
+bool isTrustDefault(
+    std::shared_ptr<SLE> const& acc,
+    std::shared_ptr<SLE> const& line);
+
+[[nodiscard]] TER
+trustXferAllowed(
+    ReadView const& view,
+    std::vector<AccountID> const& parties,
+    Issue const& issue);
+
+template<class V, class S>
+[[nodiscard]] TER
+trustAdjustLockedBalance(
+    V& view,
+    S& sleLine,
+    STAmount const& deltaAmt,
+    bool dryRun)
+{
+
+    static_assert(
+        (std::is_same<V, ReadView const>::value && std::is_same<S, std::shared_ptr<SLE const>>::value) ||
+        (std::is_same<V, ApplyView>::value && std::is_same<S, std::shared_ptr<SLE>>::value));
+
+    constexpr bool bReadView = std::is_same<V, ReadView const>::value;
+
+    // dry runs are explicit in code, but really the view type determines
+    // what occurs here, so this combination is invalid.
+
+    if (bReadView && !dryRun)
+            return tefINTERNAL;
+
+    auto const currency = deltaAmt.getCurrency();
+    auto const issuer   = deltaAmt.getIssuer();
+
+    STAmount lowLimit  = sleLine->getFieldAmount(sfLowLimit);
+
+    // the account which is modifying the LockedBalance is always
+    // the side that isn't the issuer, so if the low side is the
+    // issuer then the high side is the account.
+    bool high =  lowLimit.getIssuer() == issuer;
+
+    std::vector<AccountID> parties 
+        {high ? sleLine->getFieldAmount(sfHighLimit).getIssuer(): lowLimit.getIssuer()}; 
+
+    // check for freezes & auth
+    if (TER result =
+        trustXferAllowed(
+            view,
+            parties,
+            deltaAmt.issue());
+        result != tesSUCCESS)
+    return result;
+
+    // pull the TL balance from the account's perspective
+    STAmount balance =
+        high ? -(*sleLine)[sfBalance] : (*sleLine)[sfBalance];
+
+    // this would mean somehow the issuer is trying to lock balance
+    if (balance < beast::zero)
+        return tecINTERNAL;
+
+    // can't lock or unlock a zero balance
+    if (balance == beast::zero)
+        return tecUNFUNDED_PAYMENT;
+
+    STAmount lockedBalance {sfLockedBalance, deltaAmt.issue()};
+    if (sleLine->isFieldPresent(sfLockedBalance))
+        lockedBalance = 
+            high ? -(*sleLine)[sfLockedBalance] : (*sleLine)[sfLockedBalance];
+
+    lockedBalance += deltaAmt;
+
+    if (lockedBalance > balance)
+        return tecUNFUNDED_PAYMENT;
+
+    if (lockedBalance < beast::zero)
+        return tecINTERNAL;
+
+    // we won't update any SLEs if it is a dry run
+    if (dryRun)
+        return tesSUCCESS;
+
+    if constexpr(std::is_same<V, ApplyView>::value && std::is_same<S, std::shared_ptr<SLE>>::value)
+    {
+        if (lockedBalance == beast::zero)
+            sleLine->makeFieldAbsent(sfLockedBalance);
+        else
+            sleLine->
+                setFieldAmount(sfLockedBalance, high ? -lockedBalance : lockedBalance);
+    
+        view.update(sleLine);
+    }
+
+    return tesSUCCESS;
+}
+
+[[nodiscard]] TER
+trustXferLockedBalance(
+    ApplyView& view,
+    AccountID const& actingAccID, // the account whose tx is actioning xfer
+    std::shared_ptr<SLE> const& sleSrcAcc,
+    std::shared_ptr<SLE> const& sleDstAcc,
+    STAmount const& amount,     // issuer, currency are in this field
+    beast::Journal const& j);
+
 /** Delete an offer.
 
     Requirements:

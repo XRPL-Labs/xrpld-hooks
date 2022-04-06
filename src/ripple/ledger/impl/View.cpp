@@ -913,19 +913,26 @@ trustDelete(
 }
 
 bool isTrustDefault(
-    std::shared_ptr<SLE> acc,
-    std::shared_ptr<SLE> line)
+    std::shared_ptr<SLE> const& acc,
+    std::shared_ptr<SLE> const& line)
 {
     assert(acc && line);
 
     uint32_t tlFlags = line->getFieldU32(sfFlags);
-    bool high = 
-        acc == line->getFieldAmount(sfHighLimit).issuer();
+
+    AccountID highAccID = line->getFieldAmount(sfHighLimit).issue().account;
+    AccountID lowAccID  = line->getFieldAmount(sfLowLimit ).issue().account;
+
+    AccountID accID = acc->getAccountID(sfAccount);
+
+    assert(accID == highAccID || accID == lowAccID);
+
+    bool high = accID == highAccID;
 
     uint32_t acFlags = line->getFieldU32(sfFlags);
 
-    const bool fNoRipple    {high ? lsfHighNoRipple : lsfLowNoRipple};
-    const bool fFreeze      {high ? lsfHighFreeze   : lsfLowFreeze};
+    const auto fNoRipple    {high ? lsfHighNoRipple : lsfLowNoRipple};
+    const auto fFreeze      {high ? lsfHighFreeze   : lsfLowFreeze};
 
     if (tlFlags & fFreeze)
         return false;
@@ -942,13 +949,13 @@ bool isTrustDefault(
     if (line->getFieldAmount(high ? sfHighLimit : sfLowLimit) != beast::zero)
         return false;
 
-    STAmount qualityIn  = line->getFieldAmount(high ? sfHighQualityIn  : sfLowQualityIn);
-    STAmount qualityOut = line->getFieldAmount(high ? sfHighQualityOut : sfLowQualityOut);
+    uint32_t qualityIn  = line->getFieldU32(high ? sfHighQualityIn  : sfLowQualityIn);
+    uint32_t qualityOut = line->getFieldU32(high ? sfHighQualityOut : sfLowQualityOut);
 
-    if (qualityIn  != beast::zero && qualityIn  != 1000000000)
+    if (qualityIn  && qualityIn  != QUALITY_ONE)
         return false;
 
-    if (qualityOut != beast::zero && qualityOut != 1000000000)
+    if (qualityOut && qualityOut != QUALITY_ONE)
         return false;
 
     return true;
@@ -961,15 +968,15 @@ bool isTrustDefault(
 // Part of featurePaychanAndEscrowForTokens, but can be callled without guard
 TER
 trustXferAllowed(
-    ReadView& view,
-    std::vector<AccountID const> const& parties,
+    ReadView const& view,
+    std::vector<AccountID> const& parties,
     Issue const& issue)
 {
 
     if (isFakeXRP(issue.currency))
         return tecNO_PERMISSION;
 
-    auto const sleIssuerAcc = view.peek(keylet::account(issue.account));
+    auto const sleIssuerAcc = view.read(keylet::account(issue.account));
 
     bool lockedBalanceAllowed =
         view.rules().enabled(featurePaychanAndEscrowForTokens);
@@ -1012,7 +1019,8 @@ trustXferAllowed(
         {
             // these "strange" old lines, if they even exist anymore are
             // always a bar to xfer
-            if (line->getFieldAccount(sfLowAccount) == line->getFieldAccount(sfHighAccount))
+            if (line->getFieldAmount(sfLowLimit).getIssuer() ==
+                    line->getFieldAmount(sfHighLimit).getIssuer())
                 return tecINTERNAL;
 
             if (line->isFieldPresent(sfLockedBalance))
@@ -1023,8 +1031,8 @@ trustXferAllowed(
                 STAmount lockedBalance = line->getFieldAmount(sfLockedBalance);
                 STAmount balance = line->getFieldAmount(sfBalance);
 
-                if (lockedBalance.issuer() != balance.issuer() ||
-                        lockedBalance.currency() != balance.currency())
+                if (lockedBalance.getIssuer() != balance.getIssuer() ||
+                        lockedBalance.getCurrency() != balance.getCurrency())
                     return tecINTERNAL;
             }
         }
@@ -1061,121 +1069,14 @@ trustXferAllowed(
     return tesSUCCESS;
 }
 
-// Type juggling to allow dry runs of helper functions from preclaim
-// context, without forcing the caller to recast or change their view.
-// ApplyView is a subclass of ReadView so this logic works fine and
-// allows a helper to be called explicitly and without confusion.
-using ReadOrApplyView = 
-    std::variant<
-        std::reference_wrapper<ReadView const>,
-        std::reference_wrapper<ApplyView>>;
-
-inline ReadView const&
-forceReadView(ReadOrApplyView& view)
-{
-    return
-        *(std::holds_alternative<ReadViewRef>(view)
-            ? &(std::get<ReadViewRef>(view).get())
-            : std::reintrepret_cast<ReadView const*>(
-                &(std::get<ReadViewRef>(view).get())));
-}
-
-// Modify a locked trustline balance, creating one if none exists
-// or removing one if no longer needed. deltaAmt is in absolute terms
-// positive means increment locked balance and negative decrement.
-TER
-trustAdjustLockedBalance(
-    ReadOrApplyView view_,
-    std::shared_ptr<SLE>& sleLine,
-    STAmount const& deltaAmt,
-    bool dryRun = false /* don't actually update, just try the delta */)
-{
-    bool bReadView = std::holds_alternative<ReadViewRef>(view_);
-
-    // dry runs are explicit in code, but really the view type determines
-    // what occurs here, so this combination is invalid.
-    if (bReadView && !dryRun)
-        return tefINTERNAL;
-
-    ReadView const& view = forceReadView(view_);
-
-    if (!view.rules.enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
-
-    if (!sleLine)
-        return tecUNFUNDED_PAYMENT;
-
-    auto const currency = deltaAmt.getCurrency();
-    auto const issuer   = deltaAmt.getIssuer();
-
-    STAmount lowLimit  = sleLine->getFieldAmount(sfLowLimit);
-
-    // the account which is modifying the LockedBalance is always
-    // the side that isn't the issuer, so if the low side is the
-    // issuer then the high side is the account.
-    bool high =  lowLimit.issuer() == issuer;
-
-    std::vector<AccountID> parties 
-        {high ? sleLine->getFieldAmount(sfHighLimit).issuer(): lowLimit.issuer()}; 
-
-    // check for freezes & auth
-    if (TER result =
-        trustXferAllowed(
-            view,
-            parties,
-            deltaAmt.issue())
-        result != tesSUCCESS)
-    return result;
-
-    // pull the TL balance from the account's perspective
-    STAmount balance =
-        high ? -(*sleLine)[sfBalance] : (*sleLine)[sfBalance];
-
-    // this would mean somehow the issuer is trying to lock balance
-    if (balance < beast::zero)
-        return tecINTERNAL;
-
-    // can't lock or unlock a zero balance
-    if (balance == beast::zero)
-        return tecUNFUNDED_PAYMENT;
-
-    STAmount lockedBalance {sfLockedBalance, deltaAmt.issue()};
-    if (sleLine->isFieldPresent(sfLockedBalance))
-        lockedBalance = 
-            high ? -(*sleLine)[sfLockedBalance] : (*sleLine)[sfLockedBalance];
-
-    lockedBalance += deltaAmt;
-
-    if (lockedBalance > balance
-        return tecUNFUNDED_PAYMENT;
-
-    if (lockedBalance < beast::zero)
-        return tecINTERNAL;
-
-    // we won't update any SLEs if it is a dry run
-    if (dryRun)
-        return tesSUCCESS;
-
-    if (lockedBalance == beast::zero)
-        sleLine->makeFieldAbsent(sfLockedBalance);
-    else
-        sleLine->setFieldAmount(sfLockedBalance, high ? -lockedBalance : lockedBalance);
-
-    // dryRun must be true if we have a ReadView in the variant
-    // therefore this is safe to execute
-    std::get<std::reference_wrapper<ApplyView>>(view_).get().update(sleLine);
-
-    return tesSUCCESS;
-}
-
 TER
 trustXferLockedBalance(
     ApplyView& view,
     AccountID const& actingAccID, // the account whose tx is actioning xfer
-    std::shared_ptr<SLE>& sleSrcAcc,
-    std::shared_ptr<SLE>& sleDstAcc,
+    std::shared_ptr<SLE> const& sleSrcAcc,
+    std::shared_ptr<SLE> const& sleDstAcc,
     STAmount const& amount,     // issuer, currency are in this field
-    Journal& j)
+    beast::Journal const& j)
 {
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
         return tefINTERNAL;
@@ -1196,11 +1097,11 @@ trustXferLockedBalance(
 
     auto issuerAccID = amount.getIssuer();
     auto currency = amount.getCurrency();
-    auto srcAccID = sleSrcAcc->getFieldAccount(sfAccount);
-    auto dstAccID = sleDstAcc->getFieldAccount(sfAccount);
+    auto srcAccID = sleSrcAcc->getAccountID(sfAccount);
+    auto dstAccID = sleDstAcc->getAccountID(sfAccount);
 
     bool srcHigh = srcAccID > issuerAccID;
-    bool dsthigh = dstAccID > issuerAccID;
+    bool dstHigh = dstAccID > issuerAccID;
 
     // check for freezing, auth, no ripple and TL sanity
     if (TER result =
@@ -1234,7 +1135,7 @@ trustXferLockedBalance(
             srcHigh ? -((*sleSrcLine)[sfBalance]) : (*sleSrcLine)[sfBalance];
 
         // ensure the currency/issuer in the locked balance matches the xfer amount
-        if (priorBalance.issuer() != issuerAccID || priorBalance.currency() != currency)
+        if (priorBalance.getIssuer() != issuerAccID || priorBalance.getCurrency() != currency)
             return tecNO_PERMISSION;
 
         STAmount finalBalance = priorBalance - amount;
@@ -1276,7 +1177,8 @@ trustXferLockedBalance(
             : multiplyRound(amount, xferRate, amount.issue(), true);
 
     // check for a destination line
-    auto sleDstLine = view.peek(keylet::line(dstAccID, issuerAccID, currency));
+    Keylet klDstLine = keylet::line(dstAccID, issuerAccID, currency);
+    auto sleDstLine = view.peek(klDstLine);
 
     if (!sleDstLine)
     {
@@ -1296,7 +1198,7 @@ trustXferLockedBalance(
         // clang-format off
         if (TER const ter = trustCreate(
                 view,
-                dstLow,                         // is dest low?
+                !dstHigh,                       // is dest low?
                 issuerAccID,                    // source
                 dstAccID,                       // destination
                 klDstLine.key,                  // ledger index
@@ -1305,7 +1207,7 @@ trustXferLockedBalance(
                 (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
                 false,                          // freeze trust line
                 flipDstAmt ? -dstAmt : dstAmt,  // initial balance
-                Issue(currency, account_),      // limit of zero
+                Issue(currency, dstAccID),      // limit of zero
                 0,                              // quality in
                 0,                              // quality out
                 j);                             // journal
@@ -1343,19 +1245,19 @@ trustXferLockedBalance(
             return tecPATH_DRY;
         }
 
-        sleDstLine->setFieldAmount(sfBalance, dstLow ? finalBalance : -finalBalance);
+        sleDstLine->setFieldAmount(sfBalance, dstHigh ? -finalBalance : finalBalance);
     }
 
     // check if source line ended up in default state and adjust owner count if it did
-    if (isTrustDefault(sleSrc, sleSrcLine))
+    if (isTrustDefault(sleSrcAcc, sleSrcLine))
     {
         uint32_t flags = sleSrcLine->getFieldU32(sfFlags);
-        const bool fReserve { srcHigh ? lsfHighReserve : lsfLowReserve };
+        uint32_t fReserve { srcHigh ? lsfHighReserve : lsfLowReserve };
         if (flags & fReserve)
         {
             sleSrcLine->setFieldU32(sfFlags, flags & ~fReserve);
-            adjustOwnerCount(view, sleSrc, -1, j); 
-            view.update(sleSrc);
+            adjustOwnerCount(view, sleSrcAcc, -1, j); 
+            view.update(sleSrcAcc);
         }
     }
 

@@ -233,19 +233,18 @@ EscrowCreate::doApply()
     // Check reserve and funds availability
     if (isXRP(amount) && balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
         return tecUNFUNDED;
-    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    else
     {
-        sleLine = view.peek(keylet::line(account, issuer, currency));
-        // RH TODO: does doing a dry run here add any value? it should be done in
-        // preclaim but there is no preclaim in escrow.
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
+
+        sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
 
         // perform the lock as a dry run first
         if (TER result = trustAdjustLockedBalance(ctx_.view(), sleLine, amount, true);
                 result != tesSUCCESS)
             return result;
     }
-    else
-        return tecINTERNAL;  // should never happen
 
     // Check destination account
     {
@@ -306,7 +305,7 @@ EscrowCreate::doApply()
     {
         // do the lock-up for real now
         TER result =
-            trustAdjustLockedBalance(ctx_.view(), sleLine, amount);
+            trustAdjustLockedBalance(ctx_.view(), sleLine, amount, true);
         if (result != tesSUCCESS)
             return result;
     }
@@ -619,6 +618,29 @@ EscrowCancel::doApply()
     }
 
     AccountID const account = (*slep)[sfAccount];
+    auto const sle = ctx_.view().peek(keylet::account(account));
+    auto amount = slep->getFieldAmount(sfAmount);
+
+    std::shared_ptr<SLE> sleLine;
+
+    if (!isXRP(amount))
+    {
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
+
+        sleLine =
+            ctx_.view().peek(
+                keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+
+        // dry run before we make any changes to ledger
+        if (TER result = trustAdjustLockedBalance(
+                ctx_.view(),
+                sleLine,
+                -amount,
+                true);
+            result != tesSUCCESS)
+            return result;
+    }
 
     // Remove escrow from owner directory
     {
@@ -645,20 +667,17 @@ EscrowCancel::doApply()
         }
     }
 
-    auto const sle = ctx_.view().peek(keylet::account(account));
-    auto amount = slep->getFieldAmount(sfAmount);
-
     // Transfer amount back to the owner (or unlock it in TL case)
     if (isXRP(amount))
         (*sle)[sfBalance] = (*sle)[sfBalance] + (*slep)[sfAmount];
     else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
     {
         // unlock previously locked tokens from source line
-        auto line = view.peek(keylet::line(account, issuerAccID, currency));
         TER result = trustAdjustLockedBalance(
                 ctx_.view(),
-                line,
-                -amount);
+                sleLine,
+                -amount,
+                false);
         if (result != tesSUCCESS)
             return result;
     }
