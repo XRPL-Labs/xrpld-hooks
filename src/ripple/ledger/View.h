@@ -34,11 +34,12 @@
 #include <ripple/protocol/Serializer.h>
 #include <ripple/protocol/TER.h>
 #include <ripple/protocol/Feature.h>
+#include <ripple/basics/Log.h>
 #include <functional>
 #include <map>
 #include <memory>
 #include <utility>
-
+#include <type_traits>
 #include <vector>
 
 namespace ripple {
@@ -314,13 +315,18 @@ trustAdjustLockedBalance(
 {
 
     static_assert(
-        (std::is_same<V, ReadView const>::value && std::is_same<S, std::shared_ptr<SLE const>>::value) ||
-        (std::is_same<V, ApplyView>::value && std::is_same<S, std::shared_ptr<SLE>>::value));
+        (std::is_same<V, ReadView const>::value &&
+         std::is_same<S, std::shared_ptr<SLE const>>::value) ||
+        (std::is_same<V, ApplyView>::value &&
+         std::is_same<S, std::shared_ptr<SLE>>::value));
 
     // dry runs are explicit in code, but really the view type determines
     // what occurs here, so this combination is invalid.
 
     assert(!(std::is_same<V, ReadView const>::value && !dryRun));
+
+    if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
+        return tefINTERNAL;
 
     auto const currency = deltaAmt.getCurrency();
     auto const issuer   = deltaAmt.getIssuer();
@@ -337,13 +343,13 @@ trustAdjustLockedBalance(
 
     // check for freezes & auth
     if (TER result =
-        trustXferAllowed(
+        trustTransferAllowed(
             view,
             parties,
             deltaAmt.issue());
         result != tesSUCCESS)
     {
-        printf("trustXferAllowed failed on trustAdjustLockedBalance\n");
+        printf("trustTransferAllowed failed on trustAdjustLockedBalance\n");
         return result;
     }
 
@@ -391,30 +397,6 @@ trustAdjustLockedBalance(
 }
 
 
-template<class V>
-ReadView const&
-forceReadView(V& view)
-{
-    static_assert(
-        std::is_same<V, std::shared_ptr<ReadView const>>::value ||
-        std::is_same<V, std::shared_ptr<ApplyView>>::value ||
-        std::is_same<V, ApplyView>::value ||
-        std::is_same<V, ReadView const>::value);
-
-    ReadView const* rv = NULL;
-
-    if constexpr (
-        std::is_same<V, std::shared_ptr<ReadView const>>::value ||
-        std::is_same<V, std::shared_ptr<ApplyView>>::value)
-        rv = dynamic_cast<ReadView const*>(&(*view));
-    else if constexpr(
-        std::is_same<V, ApplyView>::value ||
-        std::is_same<V, ReadView const>::value)
-        rv = dynamic_cast<ReadView const*>(&view);
-    
-    return *rv;
-}
-
 // Check if movement of a particular token between 1 or more accounts
 // (including unlocking) is forbidden by any flag or condition.
 // If parties contains 1 entry then noRipple is not a bar to xfer.
@@ -422,13 +404,20 @@ forceReadView(V& view)
 
 template<class V>
 [[nodiscard]]TER
-trustXferAllowed(
-    V& view_,
+trustTransferAllowed(
+    V& view,
     std::vector<AccountID> const& parties,
     Issue const& issue)
 {
+    static_assert(
+        std::is_same<V, ReadView const>::value ||
+        std::is_same<V, ApplyView>::value);
     
-    ReadView const& view = forceReadView(view_);
+    typedef typename std::conditional<
+        std::is_same<V, ApplyView>::value,
+        std::shared_ptr<SLE>,
+        std::shared_ptr<SLE const>>::type SLEPtr;
+
 
     if (isFakeXRP(issue.currency))
         return tecNO_PERMISSION;
@@ -452,7 +441,7 @@ trustXferAllowed(
 
     for (AccountID const& p: parties)
     {
-        auto line = view.read(keylet::line(p, issue.account, issue.currency));
+        auto const line = view.read(keylet::line(p, issue.account, issue.currency));
         if (!line)
         {
             if (requireAuth)
@@ -467,7 +456,7 @@ trustXferAllowed(
             // missing line is a line in default state, this is not
             // a general bar to xfer, however additional conditions
             // do attach to completing an xfer into a default line
-            // but these are checked in trustXferLockedBalance at
+            // but these are checked in trustTransferLockedBalance at
             // the point of transfer.
             continue;
         }
@@ -514,7 +503,7 @@ trustXferAllowed(
 
             if (flags & flagIssuerFreeze)
             {
-                printf("trustXferAllowed: issuerFreeze\n");
+                printf("trustTransferAllowed: issuerFreeze\n");
                 return tecFROZEN;
             }
 
@@ -523,7 +512,7 @@ trustXferAllowed(
             // blocks any possible xfer
             if (parties.size() > 1 && (flags & flagIssuerNoRipple))
             {
-                printf("trustXferAllowed: issuerNoRipple\n");
+                printf("trustTransferAllowed: issuerNoRipple\n");
                 return tecPATH_DRY;
             }
 
@@ -531,7 +520,7 @@ trustXferAllowed(
             // the issuer has specified lsfRequireAuth
             if (requireAuth && !(flags & flagIssuerAuth))
             {
-                printf("trustXferAllowed: issuerRequireAuth\n");
+                printf("trustTransferAllowed: issuerRequireAuth\n");
                 return tecNO_AUTH;
             }
         }
@@ -540,15 +529,242 @@ trustXferAllowed(
     return tesSUCCESS;
 }
 
+template <class V, class S>
 [[nodiscard]] TER
-trustXferLockedBalance(
-    ApplyView& view,
+trustTransferLockedBalance(
+    V& view,
     AccountID const& actingAccID, // the account whose tx is actioning xfer
-    std::shared_ptr<SLE> const& sleSrcAcc,
-    std::shared_ptr<SLE> const& sleDstAcc,
+    S& sleSrcAcc,
+    S& sleDstAcc,
     STAmount const& amount,     // issuer, currency are in this field
-    beast::Journal const& j);
+    beast::Journal const& j,
+    bool dryRun)
+{
+    
+    typedef typename std::conditional<
+        std::is_same<V, ApplyView>::value,
+        std::shared_ptr<SLE>,
+        std::shared_ptr<SLE const>>::type SLEPtr;
 
+    auto peek = [&](Keylet& k)
+    {
+        if constexpr (std::is_same<V, ApplyView>::value)
+            return const_cast<ApplyView&>(view).peek(k);
+        else
+            return view.read(k);
+    };
+
+    assert(!(std::is_same<V, ApplyView>::value && !dryRun));
+
+    if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
+        return tefINTERNAL;
+
+    if (!sleSrcAcc || !sleDstAcc)
+    {
+        JLOG(j.warn())
+            << "trustTransferLockedBalance without sleSrc/sleDst";
+        return tecINTERNAL;
+    }
+
+    if (amount <= beast::zero)
+    {
+        JLOG(j.warn())
+            << "trustTransferLockedBalance with non-positive amount";
+        return tecINTERNAL;
+    }
+
+    auto issuerAccID = amount.getIssuer();
+    auto currency = amount.getCurrency();
+    auto srcAccID = sleSrcAcc->getAccountID(sfAccount);
+    auto dstAccID = sleDstAcc->getAccountID(sfAccount);
+
+    bool srcHigh = srcAccID > issuerAccID;
+    bool dstHigh = dstAccID > issuerAccID;
+
+    // check for freezing, auth, no ripple and TL sanity
+    if (TER result =
+            trustTransferAllowed(view, {srcAccID, dstAccID}, {currency, issuerAccID});
+            result != tesSUCCESS)
+        return result;
+
+    // ensure source line exists
+    Keylet klSrcLine { keylet::line(srcAccID, issuerAccID, currency)};
+    SLEPtr sleSrcLine = peek(klSrcLine);
+
+    if (!sleSrcLine)
+        return tecNO_LINE;
+
+    // can't transfer a locked balance that does not exist
+    if (!sleSrcLine->isFieldPresent(sfLockedBalance))
+    {
+        JLOG(j.trace())
+            << "trustTransferLockedBalance could not find sfLockedBalance on source line";
+        return tecUNFUNDED_PAYMENT;
+    }
+
+    STAmount lockedBalance = sleSrcLine->getFieldAmount(sfLockedBalance);
+
+    // check they have sufficient funds
+    if (amount > lockedBalance)
+        return tecUNFUNDED_PAYMENT;
+
+    // decrement source balance
+    {
+        STAmount priorBalance =
+            srcHigh ? -((*sleSrcLine)[sfBalance]) : (*sleSrcLine)[sfBalance];
+
+        // ensure the currency/issuer in the locked balance matches the xfer amount
+        if (priorBalance.getIssuer() != issuerAccID || priorBalance.getCurrency() != currency)
+            return tecNO_PERMISSION;
+
+        STAmount finalBalance = priorBalance - amount;
+
+        STAmount priorLockedBalance =
+            srcHigh ? -((*sleSrcLine)[sfLockedBalance]) : (*sleSrcLine)[sfLockedBalance];
+
+        STAmount finalLockedBalance = priorLockedBalance - amount;
+
+        // this should never happen but defensively check it here before updating sle
+        if (finalBalance < beast::zero || finalLockedBalance < beast::zero)
+        {
+            JLOG(j.warn())
+                << "trustTransferLockedBalance results in a negative balance on source line";
+            return tecINTERNAL;
+        }
+
+        sleSrcLine->setFieldAmount(sfBalance, srcHigh ? -finalBalance : finalBalance);
+
+        if (finalLockedBalance == beast::zero)
+            sleSrcLine->makeFieldAbsent(sfLockedBalance);
+        else
+            sleSrcLine->setFieldAmount(sfLockedBalance, srcHigh ? -finalLockedBalance : finalLockedBalance);
+
+    }
+
+    // dstLow XNOR srcLow tells us if we need to flip the balance amount
+    // on the destination line
+    bool flipDstAmt = !((dstHigh && srcHigh) || (!dstHigh && !srcHigh));
+
+    // compute transfer fee, if any
+    auto xferRate = transferRate(view, issuerAccID);
+
+    // the destination will sometimes get less depending on xfer rate
+    // with any difference in tokens burned
+    auto dstAmt =
+        xferRate == parityRate
+            ? amount
+            : multiplyRound(amount, xferRate, amount.issue(), true);
+
+    // check for a destination line
+    Keylet klDstLine = keylet::line(dstAccID, issuerAccID, currency);
+    SLEPtr sleDstLine = peek(klDstLine);
+
+    if (!sleDstLine)
+    {
+        // in most circumstances a missing destination line is a deal breaker
+        if (actingAccID != dstAccID && srcAccID != dstAccID)
+            return tecNO_PERMISSION;
+
+        STAmount dstBalanceDrops = sleDstAcc->getFieldAmount(sfBalance);
+
+        // no dst line exists, we might be able to create one...
+        if (std::uint32_t const ownerCount = {sleDstAcc->at(sfOwnerCount)};
+            dstBalanceDrops < view.fees().accountReserve(ownerCount + 1))
+            return tecNO_LINE_INSUF_RESERVE;
+
+        // yes we can... we will 
+
+        if (!dryRun)
+        {
+            if constexpr(std::is_same<V, ApplyView>::value)
+            {
+
+                // clang-format off
+                if (TER const ter = trustCreate(
+                        view,
+                        !dstHigh,                       // is dest low?
+                        issuerAccID,                    // source
+                        dstAccID,                       // destination
+                        klDstLine.key,                  // ledger index
+                        sleDstAcc,                      // Account to add to
+                        false,                          // authorize account
+                        (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
+                        false,                          // freeze trust line
+                        flipDstAmt ? -dstAmt : dstAmt,  // initial balance
+                        Issue(currency, dstAccID),      // limit of zero
+                        0,                              // quality in
+                        0,                              // quality out
+                        j);                             // journal
+                    !isTesSuccess(ter))
+                {
+                    return ter;
+                }
+            }
+        }
+        // clang-format on
+    }
+    else
+    {
+        // the dst line does exist, and it would have been checked above
+        // in trustTransferAllowed for NoRipple and Freeze flags
+
+        // check the limit
+        STAmount dstLimit =
+            dstHigh ? (*sleDstLine)[sfHighLimit] : (*sleDstLine)[sfLowLimit];
+
+        STAmount priorBalance =
+            dstHigh ? -((*sleDstLine)[sfBalance]) : (*sleDstLine)[sfBalance];
+
+        STAmount finalBalance = priorBalance + (flipDstAmt ? -dstAmt : dstAmt);
+
+        if (finalBalance < priorBalance)
+        {
+            JLOG(j.warn())
+                << "trustTransferLockedBalance resulted in a lower final balance on dest line";
+            return tecINTERNAL;
+        }
+
+        if (finalBalance > dstLimit && actingAccID != dstAccID)
+        {
+            JLOG(j.trace())
+                << "trustTransferLockedBalance would increase dest line above limit without permission";
+            return tecPATH_DRY;
+        }
+
+        sleDstLine->setFieldAmount(sfBalance, dstHigh ? -finalBalance : finalBalance);
+    }
+
+    if (dryRun)
+        return tesSUCCESS;
+
+    static_assert(std::is_same<V, ApplyView>::value);
+
+    // check if source line ended up in default state and adjust owner count if it did
+    if (isTrustDefault(sleSrcAcc, sleSrcLine))
+    {
+        uint32_t flags = sleSrcLine->getFieldU32(sfFlags);
+        uint32_t fReserve { srcHigh ? lsfHighReserve : lsfLowReserve };
+        if (flags & fReserve)
+        {
+            sleSrcLine->setFieldU32(sfFlags, flags & ~fReserve);
+            if (!dryRun)
+            {
+                adjustOwnerCount(view, sleSrcAcc, -1, j); 
+                view.update(sleSrcAcc);
+            }
+        }
+    }
+
+    view.update(sleSrcLine);
+    
+    if (sleDstLine)
+    {
+        // a destination line already existed and was updated
+        view.update(sleDstLine);
+    }
+
+    return tesSUCCESS;
+}
 /** Delete an offer.
 
     Requirements:

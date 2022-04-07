@@ -243,7 +243,7 @@ EscrowCreate::doApply()
         // check if the escrow is capable of being
         // finished before we allow it to be created
         if (TER result = 
-            trustXferAllowed(
+            trustTransferAllowed(
                 ctx_.view(),
                 {account, ctx_.tx[sfDestination]},
                 amount.issue());
@@ -253,7 +253,12 @@ EscrowCreate::doApply()
         // perform the lock as a dry run before
         // we modify anything on-ledger
         sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
-        if (TER result = trustAdjustLockedBalance(ctx_.view(), sleLine, amount, true);
+        if (TER result = 
+                trustAdjustLockedBalance(
+                    ctx_.view(),
+                    sleLine,
+                    amount,
+                    true);
                 result != tesSUCCESS)
             return result;
     }
@@ -320,7 +325,12 @@ EscrowCreate::doApply()
 
         // do the lock-up for real now
         TER result =
-            trustAdjustLockedBalance(ctx_.view(), sleLine, amount, false);
+            trustAdjustLockedBalance(
+                ctx_.view(),
+                sleLine,
+                amount,
+                false);
+
         if (result != tesSUCCESS)
             return result;
     }
@@ -423,6 +433,10 @@ EscrowFinish::doApply()
     if (!slep)
         return tecNO_TARGET;
 
+    AccountID const account = (*slep)[sfAccount];
+    auto const sle = ctx_.view().peek(keylet::account(account));
+    auto amount = slep->getFieldAmount(sfAmount);
+
     // If a cancel time is present, a finish operation should only succeed prior
     // to that time. fix1571 corrects a logic error in the check that would make
     // a finish only succeed strictly after the cancel time.
@@ -523,7 +537,28 @@ EscrowFinish::doApply()
         }
     }
 
-    AccountID const account = (*slep)[sfAccount];
+    
+    if (!isXRP(amount))
+    {
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
+        
+        // perform a dry run of the transfer before we 
+        // change anything on-ledger
+        TER result = 
+            trustTransferLockedBalance(
+                ctx_.view(), 
+                account_,   // txn signing account
+                sle,        // src account
+                sled,       // dst account
+                amount,     // xfer amount
+                ctx_.journal,
+                true       // dry run
+            );
+
+        if (result != tesSUCCESS)
+            return result;
+    }
 
     // Remove escrow from owner directory
     {
@@ -547,28 +582,25 @@ EscrowFinish::doApply()
         }
     }
 
-    auto const sle = ctx_.view().peek(keylet::account(account));
 
-    auto amount = slep->getFieldAmount(sfAmount);
 
     if (isXRP(amount))
         (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
     else 
     {
-        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
-
         // all the significant complexity of checking the validity of this
         // transfer and ensuring the lines exist etc is hidden away in this
         // function, all we need to do is call it and return if unsuccessful.
         TER result = 
-            trustXferLockedBalance(
+            trustTransferLockedBalance(
                 ctx_.view(), 
                 account_,   // txn signing account
                 sle,        // src account
                 sled,       // dst account
                 amount,     // xfer amount
-                ctx_.journal);
+                ctx_.journal,
+                false       // wet run;
+            );
 
         if (result != tesSUCCESS)
             return result;
@@ -646,7 +678,8 @@ EscrowCancel::doApply()
                 keylet::line(account, amount.getIssuer(), amount.getCurrency()));
 
         // dry run before we make any changes to ledger
-        if (TER result = trustAdjustLockedBalance(
+        if (TER result = 
+            trustAdjustLockedBalance(
                 ctx_.view(),
                 sleLine,
                 -amount,
@@ -689,7 +722,8 @@ EscrowCancel::doApply()
             return tefINTERNAL;
 
         // unlock previously locked tokens from source line
-        TER result = trustAdjustLockedBalance(
+        TER result =
+            trustAdjustLockedBalance(
                 ctx_.view(),
                 sleLine,
                 -amount,

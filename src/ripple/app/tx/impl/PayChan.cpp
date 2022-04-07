@@ -261,7 +261,7 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
         // check for any possible bars to a channel existing
         // between these accounts for this asset
         if (TER result = 
-                trustXferAllowed(
+                trustTransferAllowed(
                     ctx.view,
                     {account, dst},
                     amount.issue());
@@ -269,10 +269,12 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
                 return result;
 
         // check if the amount can be locked
-        std::shared_ptr<SLE const> sleLine = 
-            ctx.view.read(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+        auto sleLine = 
+            ctx.view.read(
+                keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+
         if (TER result = 
-                trustAdjustLockedBalance<ReadView const, std::shared_ptr<SLE const>>(
+                trustAdjustLockedBalance(
                     ctx.view,
                     sleLine,
                     amount,
@@ -671,7 +673,7 @@ PayChanClaim::doApply()
             // nothing requested
             return tecUNFUNDED_PAYMENT;
 
-        auto const sled = ctx_.view().peek(keylet::account(dst));
+        auto sled = ctx_.view().peek(keylet::account(dst));
         if (!sled)
             return tecNO_DST;
 
@@ -710,13 +712,15 @@ PayChanClaim::doApply()
 
             auto sleSrcAcc = ctx_.view().peek(keylet::account(src));
             TER result =
-                trustXferLockedBalance(
+                trustTransferLockedBalance
+                (
                     ctx_.view(),
                     txAccount,
                     sleSrcAcc,
                     sled,
                     reqDelta,
-                    ctx_.journal);
+                    ctx_.journal,
+                    false);
 
             if (result != tesSUCCESS)
                 return result;
