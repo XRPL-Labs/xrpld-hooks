@@ -33,6 +33,7 @@
 #include <ripple/protocol/STTx.h>
 #include <ripple/protocol/Serializer.h>
 #include <ripple/protocol/TER.h>
+#include <ripple/protocol/Feature.h>
 #include <functional>
 #include <map>
 #include <memory>
@@ -303,12 +304,6 @@ bool isTrustDefault(
     std::shared_ptr<SLE> const& acc,
     std::shared_ptr<SLE> const& line);
 
-[[nodiscard]] TER
-trustXferAllowed(
-    ReadView const& view,
-    std::vector<AccountID> const& parties,
-    Issue const& issue);
-
 template<class V, class S>
 [[nodiscard]] TER
 trustAdjustLockedBalance(
@@ -322,13 +317,10 @@ trustAdjustLockedBalance(
         (std::is_same<V, ReadView const>::value && std::is_same<S, std::shared_ptr<SLE const>>::value) ||
         (std::is_same<V, ApplyView>::value && std::is_same<S, std::shared_ptr<SLE>>::value));
 
-    constexpr bool bReadView = std::is_same<V, ReadView const>::value;
-
     // dry runs are explicit in code, but really the view type determines
     // what occurs here, so this combination is invalid.
 
-    if (bReadView && !dryRun)
-            return tefINTERNAL;
+    assert(!(std::is_same<V, ReadView const>::value && !dryRun));
 
     auto const currency = deltaAmt.getCurrency();
     auto const issuer   = deltaAmt.getIssuer();
@@ -350,7 +342,10 @@ trustAdjustLockedBalance(
             parties,
             deltaAmt.issue());
         result != tesSUCCESS)
-    return result;
+    {
+        printf("trustXferAllowed failed on trustAdjustLockedBalance\n");
+        return result;
+    }
 
     // pull the TL balance from the account's perspective
     STAmount balance =
@@ -390,6 +385,156 @@ trustAdjustLockedBalance(
                 setFieldAmount(sfLockedBalance, high ? -lockedBalance : lockedBalance);
     
         view.update(sleLine);
+    }
+
+    return tesSUCCESS;
+}
+
+
+template<class V>
+ReadView const&
+forceReadView(V& view)
+{
+    static_assert(
+        std::is_same<V, std::shared_ptr<ReadView const>>::value ||
+        std::is_same<V, std::shared_ptr<ApplyView>>::value ||
+        std::is_same<V, ApplyView>::value ||
+        std::is_same<V, ReadView const>::value);
+
+    ReadView const* rv = NULL;
+
+    if constexpr (
+        std::is_same<V, std::shared_ptr<ReadView const>>::value ||
+        std::is_same<V, std::shared_ptr<ApplyView>>::value)
+        rv = dynamic_cast<ReadView const*>(&(*view));
+    else if constexpr(
+        std::is_same<V, ApplyView>::value ||
+        std::is_same<V, ReadView const>::value)
+        rv = dynamic_cast<ReadView const*>(&view);
+    
+    return *rv;
+}
+
+// Check if movement of a particular token between 1 or more accounts
+// (including unlocking) is forbidden by any flag or condition.
+// If parties contains 1 entry then noRipple is not a bar to xfer.
+// Part of featurePaychanAndEscrowForTokens, but can be callled without guard
+
+template<class V>
+[[nodiscard]]TER
+trustXferAllowed(
+    V& view_,
+    std::vector<AccountID> const& parties,
+    Issue const& issue)
+{
+    
+    ReadView const& view = forceReadView(view_);
+
+    if (isFakeXRP(issue.currency))
+        return tecNO_PERMISSION;
+
+    auto const sleIssuerAcc = view.read(keylet::account(issue.account));
+
+    bool lockedBalanceAllowed =
+        view.rules().enabled(featurePaychanAndEscrowForTokens);
+
+    // missing issuer is always a bar to xfer
+    if (!sleIssuerAcc)
+        return tecNO_ISSUER;
+
+    // issuer global freeze is always a bar to xfer
+    if (isGlobalFrozen(view, issue.account))
+        return tecFROZEN;
+
+    uint32_t issuerFlags = sleIssuerAcc->getFieldU32(sfFlags);
+
+    bool requireAuth = issuerFlags & lsfRequireAuth;
+
+    for (AccountID const& p: parties)
+    {
+        auto line = view.read(keylet::line(p, issue.account, issue.currency));
+        if (!line)
+        {
+            if (requireAuth)
+            {
+                // the line doesn't exist, i.e. it is in default state
+                // default state means the line has not been authed
+                // therefore if auth is required by issuer then
+                // this is now a bar to xfer
+                return tecNO_AUTH;
+            }
+
+            // missing line is a line in default state, this is not
+            // a general bar to xfer, however additional conditions
+            // do attach to completing an xfer into a default line
+            // but these are checked in trustXferLockedBalance at
+            // the point of transfer.
+            continue;
+        }
+
+        // sanity check the line, insane lines are a bar to xfer
+        {
+            // these "strange" old lines, if they even exist anymore are
+            // always a bar to xfer
+            if (line->getFieldAmount(sfLowLimit).getIssuer() ==
+                    line->getFieldAmount(sfHighLimit).getIssuer())
+                return tecINTERNAL;
+
+            if (line->isFieldPresent(sfLockedBalance))
+            {
+                if (!lockedBalanceAllowed)
+                {
+                    printf("lockedBalanceAllowed was false\n");
+                    return tecINTERNAL;
+                }
+
+                STAmount lockedBalance = line->getFieldAmount(sfLockedBalance);
+                STAmount balance = line->getFieldAmount(sfBalance);
+
+                if (lockedBalance.getCurrency() != balance.getCurrency())
+                {
+                    printf("lockedBalance issuer/currency did not match balance issuer/currency\n");
+                    return tecINTERNAL;
+                }
+            }
+        }
+
+        // check the bars to xfer ... these are:
+        // any TL in the set has noRipple on the issuer's side
+        // any TL in the set has a freeze on the issuer's side
+        // any TL in the set has RequireAuth and the TL lacks lsf*Auth
+        {
+            bool pHigh = p > issue.account;
+
+            auto const flagIssuerNoRipple { pHigh ? lsfLowNoRipple : lsfHighNoRipple };
+            auto const flagIssuerFreeze   { pHigh ? lsfLowFreeze   : lsfHighFreeze   };
+            auto const flagIssuerAuth     { pHigh ? lsfLowAuth     : lsfHighAuth     };
+
+            uint32_t flags = line->getFieldU32(sfFlags);
+
+            if (flags & flagIssuerFreeze)
+            {
+                printf("trustXferAllowed: issuerFreeze\n");
+                return tecFROZEN;
+            }
+
+            // if called with more than one party then any party
+            // that has a noripple on the issuer side of their tl
+            // blocks any possible xfer
+            if (parties.size() > 1 && (flags & flagIssuerNoRipple))
+            {
+                printf("trustXferAllowed: issuerNoRipple\n");
+                return tecPATH_DRY;
+            }
+
+            // every party involved must be on an authed trustline if
+            // the issuer has specified lsfRequireAuth
+            if (requireAuth && !(flags & flagIssuerAuth))
+            {
+                printf("trustXferAllowed: issuerRequireAuth\n");
+                return tecNO_AUTH;
+            }
+        }
     }
 
     return tesSUCCESS;

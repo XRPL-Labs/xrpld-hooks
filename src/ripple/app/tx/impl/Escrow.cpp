@@ -235,12 +235,24 @@ EscrowCreate::doApply()
         return tecUNFUNDED;
     else
     {
+        // preflight will prevent this ever firing, included
+        // defensively for completeness
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
             return tefINTERNAL;
 
-        sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+        // check if the escrow is capable of being
+        // finished before we allow it to be created
+        if (TER result = 
+            trustXferAllowed(
+                ctx_.view(),
+                {account, ctx_.tx[sfDestination]},
+                amount.issue());
+            result != tesSUCCESS)
+            return result;
 
-        // perform the lock as a dry run first
+        // perform the lock as a dry run before
+        // we modify anything on-ledger
+        sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
         if (TER result = trustAdjustLockedBalance(ctx_.view(), sleLine, amount, true);
                 result != tesSUCCESS)
             return result;
@@ -301,16 +313,17 @@ EscrowCreate::doApply()
     // Deduct owner's balance, increment owner count
     if (isXRP(amount))
         (*sle)[sfBalance] = (*sle)[sfBalance] - ctx_.tx[sfAmount];
-    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens) && sleLine)
+    else 
     {
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens) || !sleLine)
+            return tefINTERNAL;
+
         // do the lock-up for real now
         TER result =
-            trustAdjustLockedBalance(ctx_.view(), sleLine, amount, true);
+            trustAdjustLockedBalance(ctx_.view(), sleLine, amount, false);
         if (result != tesSUCCESS)
             return result;
     }
-    else
-        return tecINTERNAL;  // should never happen
 
     adjustOwnerCount(ctx_.view(), sle, 1, ctx_.journal);
     ctx_.view().update(sle);
@@ -540,8 +553,10 @@ EscrowFinish::doApply()
 
     if (isXRP(amount))
         (*sled)[sfBalance] = (*sled)[sfBalance] + (*slep)[sfAmount];
-    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    else 
     {
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
 
         // all the significant complexity of checking the validity of this
         // transfer and ensuring the lines exist etc is hidden away in this
@@ -558,8 +573,6 @@ EscrowFinish::doApply()
         if (result != tesSUCCESS)
             return result;
     }
-    else
-        return tecINTERNAL; // should never happen
 
     ctx_.view().update(sled);
 
@@ -670,8 +683,11 @@ EscrowCancel::doApply()
     // Transfer amount back to the owner (or unlock it in TL case)
     if (isXRP(amount))
         (*sle)[sfBalance] = (*sle)[sfBalance] + (*slep)[sfAmount];
-    else if (ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    else
     {
+        if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
+
         // unlock previously locked tokens from source line
         TER result = trustAdjustLockedBalance(
                 ctx_.view(),
@@ -681,8 +697,6 @@ EscrowCancel::doApply()
         if (result != tesSUCCESS)
             return result;
     }
-    else
-        return tecINTERNAL;
 
     // Decrement owner count
     adjustOwnerCount(ctx_.view(), sle, -1, ctx_.journal);
