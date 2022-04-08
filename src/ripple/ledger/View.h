@@ -398,6 +398,16 @@ struct RunType
     }
 };
 
+// allow party lists to be logged easily
+template <class T>
+std::ostream& operator<< (std::ostream& lhs, std::vector<T> const& rhs)
+{
+    lhs << "{";
+    for (int i = 0; i < rhs.size(); ++i)
+        lhs << rhs[i] << (i < rhs.size() - 1 ? ", " : "");
+    lhs << "}";
+    return lhs;
+}
 // Return true iff the acc side of line is in default state
 bool isTrustDefault(
     std::shared_ptr<SLE> const& acc,    // side to check
@@ -413,6 +423,7 @@ trustAdjustLockedBalance(
     V& view,
     S& sleLine,
     STAmount const& deltaAmt,
+    beast::Journal const& j,
     R dryRun)
 {
 
@@ -444,15 +455,20 @@ trustAdjustLockedBalance(
         {high ? sleLine->getFieldAmount(sfHighLimit).getIssuer(): lowLimit.getIssuer()}; 
 
     // check for freezes & auth
-    if (TER result =
-        trustTransferAllowed(
-            view,
-            parties,
-            deltaAmt.issue());
-        result != tesSUCCESS)
     {
-        printf("trustTransferAllowed failed on trustAdjustLockedBalance\n");
-        return result;
+        TER result =
+            trustTransferAllowed(
+                view,
+                parties,
+                deltaAmt.issue(),
+                j);
+        
+        JLOG(j.trace())
+            << "trustAdjustLockedBalance: trustTransferAllowed result="
+            << result;
+
+        if (!isTesSuccess(result))
+            return result;
     }
 
     // pull the TL balance from the account's perspective
@@ -463,9 +479,16 @@ trustAdjustLockedBalance(
     if (balance < beast::zero)
         return tecINTERNAL;
 
+    if (deltaAmt == beast::zero)
+        return tesSUCCESS;
+
     // can't lock or unlock a zero balance
     if (balance == beast::zero)
+    {
+        JLOG(j.trace())
+            << "trustAdjustLockedBalance failed, zero balance";
         return tecUNFUNDED_PAYMENT;
+    }
 
     STAmount lockedBalance {sfLockedBalance, deltaAmt.issue()};
     if (sleLine->isFieldPresent(sfLockedBalance))
@@ -476,7 +499,7 @@ trustAdjustLockedBalance(
 
     if (lockedBalance > balance)
     {
-        std::cout
+        JLOG(j.trace())
             << "trustAdjustLockedBalance: "
             << "lockedBalance("
             << lockedBalance
@@ -521,7 +544,8 @@ template<class V>
 trustTransferAllowed(
     V& view,
     std::vector<AccountID> const& parties,
-    Issue const& issue)
+    Issue const& issue,
+    beast::Journal const& j)
 {
     static_assert(
         std::is_same<V, ReadView const>::value ||
@@ -590,7 +614,9 @@ trustTransferAllowed(
             {
                 if (!lockedBalanceAllowed)
                 {
-                    printf("lockedBalanceAllowed was false\n");
+                    JLOG(j.warn())
+                        << "trustTransferAllowed: "
+                        << "sfLockedBalance found on line when amendment not enabled";
                     return tecINTERNAL;
                 }
 
@@ -599,7 +625,9 @@ trustTransferAllowed(
 
                 if (lockedBalance.getCurrency() != balance.getCurrency())
                 {
-                    printf("lockedBalance issuer/currency did not match balance issuer/currency\n");
+                    JLOG(j.warn())
+                        << "trustTansferAllowed: "
+                        << "lockedBalance currency did not match balance currency";
                     return tecINTERNAL;
                 }
             }
@@ -620,7 +648,11 @@ trustTransferAllowed(
 
             if (flags & flagIssuerFreeze)
             {
-                printf("trustTransferAllowed: issuerFreeze\n");
+                JLOG(j.trace())
+                    << "trustTransferAllowed: "
+                    << "parties=[" << parties << "], "
+                    << "issuer: " << issue.account << " "
+                    << "has freeze on party: " << p;
                 return tecFROZEN;
             }
 
@@ -629,7 +661,11 @@ trustTransferAllowed(
             // blocks any possible xfer
             if (parties.size() > 1 && (flags & flagIssuerNoRipple))
             {
-                printf("trustTransferAllowed: issuerNoRipple\n");
+                JLOG(j.trace())
+                    << "trustTransferAllowed: "
+                    << "parties=[" << parties << "], "
+                    << "issuer: " << issue.account << " "
+                    << "has noRipple on party: " << p;
                 return tecPATH_DRY;
             }
 
@@ -637,7 +673,13 @@ trustTransferAllowed(
             // the issuer has specified lsfRequireAuth
             if (requireAuth && !(flags & flagIssuerAuth))
             {
-                printf("trustTransferAllowed: issuerRequireAuth\n");
+                JLOG(j.trace())
+                    << "trustTransferAllowed: "
+                    << "parties=[" << parties << "], "
+                    << "issuer: " << issue.account << " "
+                    << "requires TL auth which "
+                    << "party: " << p << " "
+                    << "does not possess.";
                 return tecNO_AUTH;
             }
         }
@@ -705,11 +747,15 @@ trustTransferLockedBalance(
     // check for freezing, auth, no ripple and TL sanity
     {
         TER result =
-            trustTransferAllowed(view, {srcAccID, dstAccID}, {currency, issuerAccID});
-        std::cout
+            trustTransferAllowed(
+                view,
+                {srcAccID, dstAccID},
+                {currency, issuerAccID},
+                j);
+
+        JLOG(j.trace())
             << "trustTransferLockedBalance: trustTransferAlowed result="
-            << result
-            << "\n";
+            << result;
         if (!isTesSuccess(result))
             return result;
     }
@@ -733,7 +779,12 @@ trustTransferLockedBalance(
 
     // check they have sufficient funds
     if (amount > lockedBalance)
+    {
+        JLOG(j.trace())
+            << "trustTransferLockedBalance amount > lockedBalance: "
+            << "amount=" << amount << " lockedBalance=" << lockedBalance;
         return tecUNFUNDED_PAYMENT;
+    }
 
     // decrement source balance
     {

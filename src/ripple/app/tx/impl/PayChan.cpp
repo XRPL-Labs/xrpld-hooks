@@ -138,12 +138,12 @@ closeChannel(
                 view,
                 sleLine,
                 -amount,
+                j,
                 DryRun);
 
-        std::cout
+        JLOG(j.trace())
             << "closeChannel: trustAdjustLockedBalance(dry) result="
-            << result
-            << "\n";
+            << result;
 
         if (!isTesSuccess(result))
             return result;
@@ -189,12 +189,12 @@ closeChannel(
                 view,
                 sleLine,
                 -amount,
+                j,
                 WetRun);
 
-        std::cout
+        JLOG(j.trace())
             << "closeChannel: trustAdjustLockedBalance(wet) result="
-            << result
-            << "\n";
+            << result;
 
         if (!isTesSuccess(result))
             return result;
@@ -293,11 +293,12 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
                 trustTransferAllowed(
                     ctx.view,
                     {account, dst},
-                    amount.issue());
-            std::cout
+                    amount.issue(),
+                    ctx.j);
+            JLOG(ctx.j.trace())
                 << "PayChanCreate::preclaim trustTransferAllowed result="
-                << result
-                << "\n";
+                << result;
+
             if (!isTesSuccess(result))
                 return result;
         }
@@ -312,8 +313,10 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
                     ctx.view,
                     sleLine,
                     amount,
+                    ctx.j,
                     DryRun);
-            std::cout
+            
+            JLOG(ctx.j.trace())
                 << "PayChanCreate::preclaim trustAdjustLockedBalance(dry) result="
                 << result;
 
@@ -415,12 +418,12 @@ PayChanCreate::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                ctx_.journal,
                 WetRun);
 
-        std::cout
+        JLOG(ctx_.journal.trace())
             << "PayChanCreate::doApply trustAdjustLockedBalance(wet) result="
-            << result
-            << "\n";
+            << result;
 
         if (!isTesSuccess(result))
             return tefINTERNAL;
@@ -505,12 +508,13 @@ PayChanFund::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                ctx_.journal,
                 DryRun);
 
-        std::cout
+        JLOG(ctx_.journal.trace())
             << "PayChanFund::doApply trustAdjustLockedBalance(dry) result="
-            << result
-            << "\n";
+            << result;
+
         if (!isTesSuccess(result))
             return result;
     }
@@ -585,12 +589,12 @@ PayChanFund::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                ctx_.journal,
                 WetRun);
         
-        std::cout
+        JLOG(ctx_.journal.trace())
             << "PayChanFund::doApply trustAdjustLockedBalance(wet) result="
-            << result
-            << "\n";
+            << result;
 
         if (!isTesSuccess(result))
             return tefINTERNAL;
@@ -778,10 +782,9 @@ PayChanClaim::doApply()
                     ctx_.journal,
                     WetRun);
             
-            std::cout
+            JLOG(ctx_.journal.trace())
                 << "PayChanClaim::doApply trustTransferLockedBalance(wet) result="
-                << result
-                << "\n";
+                << result;
 
             if (!isTesSuccess(result))
                 return result;
