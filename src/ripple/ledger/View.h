@@ -301,17 +301,119 @@ trustDelete(
     AccountID const& uHighAccountID,
     beast::Journal j);
 
-bool isTrustDefault(
-    std::shared_ptr<SLE> const& acc,
-    std::shared_ptr<SLE> const& line);
 
-template<class V, class S>
+/** Delete an offer.
+
+    Requirements:
+        The passed `sle` be obtained from a prior
+        call to view.peek()
+*/
+// [[nodiscard]] // nodiscard commented out so Flow, BookTip and others compile.
+TER
+offerDelete(ApplyView& view, std::shared_ptr<SLE> const& sle, beast::Journal j);
+
+//------------------------------------------------------------------------------
+
+//
+// Money Transfers
+//
+
+// Direct send w/o fees:
+// - Redeeming IOUs and/or sending sender's own IOUs.
+// - Create trust line of needed.
+// --> bCheckIssuer : normally require issuer to be involved.
+// [[nodiscard]] // nodiscard commented out so DirectStep.cpp compiles.
+TER
+rippleCredit(
+    ApplyView& view,
+    AccountID const& uSenderID,
+    AccountID const& uReceiverID,
+    const STAmount& saAmount,
+    bool bCheckIssuer,
+    beast::Journal j);
+
+[[nodiscard]] TER
+accountSend(
+    ApplyView& view,
+    AccountID const& from,
+    AccountID const& to,
+    const STAmount& saAmount,
+    beast::Journal j);
+
+[[nodiscard]] TER
+issueIOU(
+    ApplyView& view,
+    AccountID const& account,
+    STAmount const& amount,
+    Issue const& issue,
+    beast::Journal j);
+
+[[nodiscard]] TER
+redeemIOU(
+    ApplyView& view,
+    AccountID const& account,
+    STAmount const& amount,
+    Issue const& issue,
+    beast::Journal j);
+
+[[nodiscard]] TER
+transferXRP(
+    ApplyView& view,
+    AccountID const& from,
+    AccountID const& to,
+    STAmount const& amount,
+    beast::Journal j);
+
+//------------------------------------------------------------------------------
+
+//
+// Trustline Locking and Transfer (PaychanAndEscrowForTokens)
+//
+
+// In functions white require a `RunType` 
+// pass DryRun (don't apply changes) or WetRun (do apply changes)
+// to allow compile time evaluation of which types and calls to use
+
+// For all functions below that take a Dry/Wet run parameter
+// View may be ReadView const or ApplyView for DryRuns.
+// View *must* be ApplyView for a WetRun.
+// Passed SLEs must be non-const for WetRun.
+#define DryRun RunType<bool, true>()
+#define WetRun RunType<bool, false>()
+template <class T, T V>
+struct RunType
+{
+    //see:
+    //http://alumni.media.mit.edu/~rahimi/compile-time-flags/
+    constexpr operator T() const 
+    { 
+        static_assert(std::is_same<bool, T>::value);
+        return V;
+    }
+
+    constexpr T operator!() const
+    {
+        static_assert(std::is_same<bool, T>::value);
+        return !(V);
+    }
+};
+
+// Return true iff the acc side of line is in default state
+bool isTrustDefault(
+    std::shared_ptr<SLE> const& acc,    // side to check
+    std::shared_ptr<SLE> const& line);  // line to check
+
+/** Lock or unlock a TrustLine balance.
+    If positive deltaAmt lock the amount.
+    If negative deltaAmt unlock the amount.
+*/
+template<class V, class S, class R>
 [[nodiscard]] TER
 trustAdjustLockedBalance(
     V& view,
     S& sleLine,
     STAmount const& deltaAmt,
-    bool dryRun)
+    R dryRun)
 {
 
     static_assert(
@@ -323,7 +425,7 @@ trustAdjustLockedBalance(
     // dry runs are explicit in code, but really the view type determines
     // what occurs here, so this combination is invalid.
 
-    assert(!(std::is_same<V, ReadView const>::value && !dryRun));
+    static_assert(!(std::is_same<V, ReadView const>::value && !dryRun));
 
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
         return tefINTERNAL;
@@ -373,7 +475,16 @@ trustAdjustLockedBalance(
     lockedBalance += deltaAmt;
 
     if (lockedBalance > balance)
+    {
+        std::cout
+            << "trustAdjustLockedBalance: "
+            << "lockedBalance("
+            << lockedBalance
+            << ") > balance("
+            << balance
+            << ") = true\n";
         return tecUNFUNDED_PAYMENT;
+    }
 
     if (lockedBalance < beast::zero)
         return tecINTERNAL;
@@ -397,11 +508,14 @@ trustAdjustLockedBalance(
 }
 
 
-// Check if movement of a particular token between 1 or more accounts
-// (including unlocking) is forbidden by any flag or condition.
-// If parties contains 1 entry then noRipple is not a bar to xfer.
-// Part of featurePaychanAndEscrowForTokens, but can be callled without guard
-
+/** Check if movement of a particular token between 1 or more accounts
+    Read only, does not change any ledger object.
+    May be called with ApplyView or ReadView.
+    (including unlocking) is forbidden by any flag or condition.
+    If parties contains 1 entry then noRipple is not a bar to xfer.
+    If parties contains more than 1 entry then any party with noRipple on issuer
+    side is a bar to xfer.
+*/
 template<class V>
 [[nodiscard]]TER
 trustTransferAllowed(
@@ -441,6 +555,9 @@ trustTransferAllowed(
 
     for (AccountID const& p: parties)
     {
+        if (p == issue.account)
+            continue;
+
         auto const line = view.read(keylet::line(p, issue.account, issue.currency));
         if (!line)
         {
@@ -529,7 +646,11 @@ trustTransferAllowed(
     return tesSUCCESS;
 }
 
-template <class V, class S>
+/** Transfer a locked balance from one TL to an unlocked balance on another
+    or create a line at the destination if the actingAcc has permission to.
+    Used for resolving payment instruments that use locked TL balances.
+*/
+template <class V, class S, class R>
 [[nodiscard]] TER
 trustTransferLockedBalance(
     V& view,
@@ -538,23 +659,23 @@ trustTransferLockedBalance(
     S& sleDstAcc,
     STAmount const& amount,     // issuer, currency are in this field
     beast::Journal const& j,
-    bool dryRun)
+    R dryRun)
 {
     
     typedef typename std::conditional<
-        std::is_same<V, ApplyView>::value,
+        std::is_same<V, ApplyView>::value && !dryRun,
         std::shared_ptr<SLE>,
         std::shared_ptr<SLE const>>::type SLEPtr;
 
     auto peek = [&](Keylet& k)
     {
-        if constexpr (std::is_same<V, ApplyView>::value)
+        if constexpr (std::is_same<V, ApplyView>::value && !dryRun)
             return const_cast<ApplyView&>(view).peek(k);
         else
             return view.read(k);
     };
 
-    assert(!(std::is_same<V, ApplyView>::value && !dryRun));
+    static_assert(std::is_same<V, ApplyView>::value || dryRun);
 
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
         return tefINTERNAL;
@@ -582,10 +703,16 @@ trustTransferLockedBalance(
     bool dstHigh = dstAccID > issuerAccID;
 
     // check for freezing, auth, no ripple and TL sanity
-    if (TER result =
+    {
+        TER result =
             trustTransferAllowed(view, {srcAccID, dstAccID}, {currency, issuerAccID});
-            result != tesSUCCESS)
-        return result;
+        std::cout
+            << "trustTransferLockedBalance: trustTransferAlowed result="
+            << result
+            << "\n";
+        if (!isTesSuccess(result))
+            return result;
+    }
 
     // ensure source line exists
     Keylet klSrcLine { keylet::line(srcAccID, issuerAccID, currency)};
@@ -632,12 +759,15 @@ trustTransferLockedBalance(
             return tecINTERNAL;
         }
 
-        sleSrcLine->setFieldAmount(sfBalance, srcHigh ? -finalBalance : finalBalance);
+        if constexpr(!dryRun)
+        {
+            sleSrcLine->setFieldAmount(sfBalance, srcHigh ? -finalBalance : finalBalance);
 
-        if (finalLockedBalance == beast::zero)
-            sleSrcLine->makeFieldAbsent(sfLockedBalance);
-        else
-            sleSrcLine->setFieldAmount(sfLockedBalance, srcHigh ? -finalLockedBalance : finalLockedBalance);
+            if (finalLockedBalance == beast::zero)
+                sleSrcLine->makeFieldAbsent(sfLockedBalance);
+            else
+                sleSrcLine->setFieldAmount(sfLockedBalance, srcHigh ? -finalLockedBalance : finalLockedBalance);
+        }
 
     }
 
@@ -674,31 +804,27 @@ trustTransferLockedBalance(
 
         // yes we can... we will 
 
-        if (!dryRun)
+        if constexpr(!dryRun)
         {
-            if constexpr(std::is_same<V, ApplyView>::value)
+            // clang-format off
+            if (TER const ter = trustCreate(
+                    view,
+                    !dstHigh,                       // is dest low?
+                    issuerAccID,                    // source
+                    dstAccID,                       // destination
+                    klDstLine.key,                  // ledger index
+                    sleDstAcc,                      // Account to add to
+                    false,                          // authorize account
+                    (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
+                    false,                          // freeze trust line
+                    flipDstAmt ? -dstAmt : dstAmt,  // initial balance
+                    Issue(currency, dstAccID),      // limit of zero
+                    0,                              // quality in
+                    0,                              // quality out
+                    j);                             // journal
+                !isTesSuccess(ter))
             {
-
-                // clang-format off
-                if (TER const ter = trustCreate(
-                        view,
-                        !dstHigh,                       // is dest low?
-                        issuerAccID,                    // source
-                        dstAccID,                       // destination
-                        klDstLine.key,                  // ledger index
-                        sleDstAcc,                      // Account to add to
-                        false,                          // authorize account
-                        (sleDstAcc->getFlags() & lsfDefaultRipple) == 0,
-                        false,                          // freeze trust line
-                        flipDstAmt ? -dstAmt : dstAmt,  // initial balance
-                        Issue(currency, dstAccID),      // limit of zero
-                        0,                              // quality in
-                        0,                              // quality out
-                        j);                             // journal
-                    !isTesSuccess(ter))
-                {
-                    return ter;
-                }
+                return ter;
             }
         }
         // clang-format on
@@ -731,102 +857,35 @@ trustTransferLockedBalance(
             return tecPATH_DRY;
         }
 
-        sleDstLine->setFieldAmount(sfBalance, dstHigh ? -finalBalance : finalBalance);
+        if constexpr(!dryRun)
+            sleDstLine->setFieldAmount(sfBalance, dstHigh ? -finalBalance : finalBalance);
     }
 
-    if (dryRun)
-        return tesSUCCESS;
-
-    static_assert(std::is_same<V, ApplyView>::value);
-
-    // check if source line ended up in default state and adjust owner count if it did
-    if (isTrustDefault(sleSrcAcc, sleSrcLine))
+    if constexpr (!dryRun)
     {
-        uint32_t flags = sleSrcLine->getFieldU32(sfFlags);
-        uint32_t fReserve { srcHigh ? lsfHighReserve : lsfLowReserve };
-        if (flags & fReserve)
+        static_assert(std::is_same<V, ApplyView>::value);
+
+        // check if source line ended up in default state and adjust owner count if it did
+        if (isTrustDefault(sleSrcAcc, sleSrcLine))
         {
-            sleSrcLine->setFieldU32(sfFlags, flags & ~fReserve);
-            if (!dryRun)
+            uint32_t flags = sleSrcLine->getFieldU32(sfFlags);
+            uint32_t fReserve { srcHigh ? lsfHighReserve : lsfLowReserve };
+            if (flags & fReserve)
             {
+                sleSrcLine->setFieldU32(sfFlags, flags & ~fReserve);
                 adjustOwnerCount(view, sleSrcAcc, -1, j); 
                 view.update(sleSrcAcc);
             }
         }
-    }
 
-    view.update(sleSrcLine);
-    
-    if (sleDstLine)
-    {
+        view.update(sleSrcLine);
+        
         // a destination line already existed and was updated
-        view.update(sleDstLine);
+        if (sleDstLine)
+            view.update(sleDstLine);
     }
-
     return tesSUCCESS;
 }
-/** Delete an offer.
-
-    Requirements:
-        The passed `sle` be obtained from a prior
-        call to view.peek()
-*/
-// [[nodiscard]] // nodiscard commented out so Flow, BookTip and others compile.
-TER
-offerDelete(ApplyView& view, std::shared_ptr<SLE> const& sle, beast::Journal j);
-
-//------------------------------------------------------------------------------
-
-//
-// Money Transfers
-//
-
-// Direct send w/o fees:
-// - Redeeming IOUs and/or sending sender's own IOUs.
-// - Create trust line of needed.
-// --> bCheckIssuer : normally require issuer to be involved.
-// [[nodiscard]] // nodiscard commented out so DirectStep.cpp compiles.
-TER
-rippleCredit(
-    ApplyView& view,
-    AccountID const& uSenderID,
-    AccountID const& uReceiverID,
-    const STAmount& saAmount,
-    bool bCheckIssuer,
-    beast::Journal j);
-
-[[nodiscard]] TER
-accountSend(
-    ApplyView& view,
-    AccountID const& from,
-    AccountID const& to,
-    const STAmount& saAmount,
-    beast::Journal j);
-
-[[nodiscard]] TER
-issueIOU(
-    ApplyView& view,
-    AccountID const& account,
-    STAmount const& amount,
-    Issue const& issue,
-    beast::Journal j);
-
-[[nodiscard]] TER
-redeemIOU(
-    ApplyView& view,
-    AccountID const& account,
-    STAmount const& amount,
-    Issue const& issue,
-    beast::Journal j);
-
-[[nodiscard]] TER
-transferXRP(
-    ApplyView& view,
-    AccountID const& from,
-    AccountID const& to,
-    STAmount const& amount,
-    beast::Journal j);
-
 }  // namespace ripple
 
 #endif

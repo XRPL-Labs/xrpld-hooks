@@ -242,25 +242,38 @@ EscrowCreate::doApply()
 
         // check if the escrow is capable of being
         // finished before we allow it to be created
-        if (TER result = 
-            trustTransferAllowed(
-                ctx_.view(),
-                {account, ctx_.tx[sfDestination]},
-                amount.issue());
-            result != tesSUCCESS)
-            return result;
+        {
+            TER result = 
+                trustTransferAllowed(
+                    ctx_.view(),
+                    {account, ctx_.tx[sfDestination]},
+                    amount.issue());
+            std::cout 
+                << "EscrowCreate::doApply trustTransferAllowed result="
+                << result
+                << "\n";
+            if (!isTesSuccess(result))
+                return result;
+        }
 
         // perform the lock as a dry run before
         // we modify anything on-ledger
         sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
-        if (TER result = 
+
+        {
+            TER result = 
                 trustAdjustLockedBalance(
                     ctx_.view(),
                     sleLine,
                     amount,
-                    true);
-                result != tesSUCCESS)
-            return result;
+                    DryRun);
+                std::cout 
+                    << "EscrowCreate::doApply trustAdjustLockedBalance (dry) result="
+                    << result
+                    << "\n";
+            if (!isTesSuccess(result))
+                return result;
+        }
     }
 
     // Check destination account
@@ -329,9 +342,14 @@ EscrowCreate::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
-                false);
+                WetRun);
+                
+        std::cout 
+            << "EscrowCreate::doApply trustAdjustLockedBalance (wet) result="
+            << result
+            << "\n";
 
-        if (result != tesSUCCESS)
+        if (!isTesSuccess(result))
             return result;
     }
 
@@ -553,10 +571,15 @@ EscrowFinish::doApply()
                 sled,       // dst account
                 amount,     // xfer amount
                 ctx_.journal,
-                true       // dry run
+                DryRun      // dry run
             );
 
-        if (result != tesSUCCESS)
+        std::cout
+            << "EscrowFinish::doApply trustTransferLockedBalance (dry) result="
+            << result
+            << "\n";
+
+        if (!isTesSuccess(result))
             return result;
     }
 
@@ -599,10 +622,15 @@ EscrowFinish::doApply()
                 sled,       // dst account
                 amount,     // xfer amount
                 ctx_.journal,
-                false       // wet run;
+                WetRun      // wet run;
             );
 
-        if (result != tesSUCCESS)
+        std::cout
+            << "EscrowFinish::doApply trustTransferLockedBalance (wet) result="
+            << result
+            << "\n";
+
+        if (isTesSuccess(result))
             return result;
     }
 
@@ -683,7 +711,7 @@ EscrowCancel::doApply()
                 ctx_.view(),
                 sleLine,
                 -amount,
-                true);
+                DryRun);
             result != tesSUCCESS)
             return result;
     }
@@ -727,8 +755,12 @@ EscrowCancel::doApply()
                 ctx_.view(),
                 sleLine,
                 -amount,
-                false);
-        if (result != tesSUCCESS)
+                WetRun);
+        std::cout 
+            << "EscrowCancel::doApply trustAdjustLockedBalance (wet) result="
+            << result
+            << "\n";
+        if (!isTesSuccess(result))
             return result;
     }
 

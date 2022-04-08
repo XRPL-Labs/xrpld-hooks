@@ -120,6 +120,35 @@ closeChannel(
     beast::Journal j)
 {
     AccountID const src = (*slep)[sfAccount];
+    auto const amount = (*slep)[sfAmount] - (*slep)[sfBalance];
+
+    std::shared_ptr<SLE> sleLine;
+
+    if (!isXRP(amount))
+    {
+        if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
+            return tefINTERNAL;
+
+        sleLine =
+            view.peek(keylet::line(src, amount.getIssuer(), amount.getCurrency()));
+    
+        // dry run
+        TER result = 
+            trustAdjustLockedBalance(
+                view,
+                sleLine,
+                -amount,
+                DryRun);
+
+        std::cout
+            << "closeChannel: trustAdjustLockedBalance(dry) result="
+            << result
+            << "\n";
+
+        if (!isTesSuccess(result))
+            return result;
+    }
+
     // Remove PayChan from owner directory
     {
         auto const page = (*slep)[sfOwnerNode];
@@ -150,25 +179,24 @@ closeChannel(
         return tefINTERNAL;
 
     assert((*slep)[sfAmount] >= (*slep)[sfBalance]);
-    auto const amount = (*slep)[sfAmount] - (*slep)[sfBalance];
 
     if (isXRP(amount))
-    {
         (*sle)[sfBalance] = (*sle)[sfBalance] + amount;
-    }
     else
     {
-        if (view.rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
-
-        auto line = view.peek(keylet::line(src, amount.getIssuer(), amount.getCurrency()));
         TER result = 
             trustAdjustLockedBalance(
                 view,
-                line,
+                sleLine,
                 -amount,
-                false);
-        if (result != tesSUCCESS)
+                WetRun);
+
+        std::cout
+            << "closeChannel: trustAdjustLockedBalance(wet) result="
+            << result
+            << "\n";
+
+        if (!isTesSuccess(result))
             return result;
     }
 
@@ -260,29 +288,38 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
 
         // check for any possible bars to a channel existing
         // between these accounts for this asset
-        if (TER result = 
+        {
+            TER result = 
                 trustTransferAllowed(
                     ctx.view,
                     {account, dst},
                     amount.issue());
-            result != tesSUCCESS)
+            std::cout
+                << "PayChanCreate::preclaim trustTransferAllowed result="
+                << result
+                << "\n";
+            if (!isTesSuccess(result))
                 return result;
+        }
 
         // check if the amount can be locked
-        auto sleLine = 
-            ctx.view.read(
-                keylet::line(account, amount.getIssuer(), amount.getCurrency()));
-
-        if (TER result = 
+        {
+            auto sleLine = 
+                ctx.view.read(
+                    keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+            TER result = 
                 trustAdjustLockedBalance(
                     ctx.view,
                     sleLine,
                     amount,
-                    true);
-            result != tesSUCCESS)
-            return result;
+                    DryRun);
+            std::cout
+                << "PayChanCreate::preclaim trustAdjustLockedBalance(dry) result="
+                << result;
 
-        // all good!
+            if (!isTesSuccess(result))
+                return result;
+        }
     }
 
     {
@@ -378,9 +415,14 @@ PayChanCreate::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
-                false);
+                WetRun);
 
-        if (result != tesSUCCESS)
+        std::cout
+            << "PayChanCreate::doApply trustAdjustLockedBalance(wet) result="
+            << result
+            << "\n";
+
+        if (!isTesSuccess(result))
             return tefINTERNAL;
     }
     
@@ -451,20 +493,27 @@ PayChanFund::doApply()
     // if this is a Fund operation on an IOU then perform a dry run here
     if (!isXRP(amount) &&
             ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
+    {
         sleLine = ctx_.view().peek(
             keylet::line(
                 (*slep)[sfAccount], 
                 amount.getIssuer(),
                 amount.getCurrency()));
 
-    if (TER result =
+        TER result =
             trustAdjustLockedBalance(
                 ctx_.view(),
                 sleLine,
                 amount,
-                true);
-        result != tesSUCCESS)
+                DryRun);
+
+        std::cout
+            << "PayChanFund::doApply trustAdjustLockedBalance(dry) result="
+            << result
+            << "\n";
+        if (!isTesSuccess(result))
             return result;
+    }
 
     AccountID const src = (*slep)[sfAccount];
     auto const txAccount = ctx_.tx[sfAccount];
@@ -536,8 +585,14 @@ PayChanFund::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
-                false);
-        if (result != tesSUCCESS)
+                WetRun);
+        
+        std::cout
+            << "PayChanFund::doApply trustAdjustLockedBalance(wet) result="
+            << result
+            << "\n";
+
+        if (!isTesSuccess(result))
             return tefINTERNAL;
     }
 
@@ -707,22 +762,28 @@ PayChanClaim::doApply()
         else 
         {
             // xfer locked tokens to satisfy claim
+            // RH NOTE: there's no ledger modification before this point so
+            // no reason to do a dry run first
             if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
                 return tefINTERNAL;
 
             auto sleSrcAcc = ctx_.view().peek(keylet::account(src));
             TER result =
-                trustTransferLockedBalance
-                (
+                trustTransferLockedBalance(
                     ctx_.view(),
                     txAccount,
                     sleSrcAcc,
                     sled,
                     reqDelta,
                     ctx_.journal,
-                    false);
+                    WetRun);
+            
+            std::cout
+                << "PayChanClaim::doApply trustTransferLockedBalance(wet) result="
+                << result
+                << "\n";
 
-            if (result != tesSUCCESS)
+            if (!isTesSuccess(result))
                 return result;
         }
 
