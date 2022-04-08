@@ -531,13 +531,13 @@ trustAdjustLockedBalance(
 }
 
 
-/** Check if movement of a particular token between 1 or more accounts
+/** Check if a set of accounts can freely exchange the specified token.
     Read only, does not change any ledger object.
     May be called with ApplyView or ReadView.
     (including unlocking) is forbidden by any flag or condition.
     If parties contains 1 entry then noRipple is not a bar to xfer.
-    If parties contains more than 1 entry then any party with noRipple on issuer
-    side is a bar to xfer.
+    If parties contains more than 1 entry then any party with noRipple
+    on issuer side is a bar to xfer.
 */
 template<class V>
 [[nodiscard]]TER
@@ -775,30 +775,29 @@ trustTransferLockedBalance(
         return tecUNFUNDED_PAYMENT;
     }
 
-    STAmount lockedBalance = sleSrcLine->getFieldAmount(sfLockedBalance);
-
-    // check they have sufficient funds
-    if (amount > lockedBalance)
-    {
-        JLOG(j.trace())
-            << "trustTransferLockedBalance amount > lockedBalance: "
-            << "amount=" << amount << " lockedBalance=" << lockedBalance;
-        return tecUNFUNDED_PAYMENT;
-    }
 
     // decrement source balance
     {
         STAmount priorBalance =
             srcHigh ? -((*sleSrcLine)[sfBalance]) : (*sleSrcLine)[sfBalance];
 
-        // ensure the currency/issuer in the locked balance matches the xfer amount
-        if (priorBalance.getIssuer() != issuerAccID || priorBalance.getCurrency() != currency)
-            return tecNO_PERMISSION;
-
-        STAmount finalBalance = priorBalance - amount;
-
         STAmount priorLockedBalance =
             srcHigh ? -((*sleSrcLine)[sfLockedBalance]) : (*sleSrcLine)[sfLockedBalance];
+
+        AccountID srcIssuerAccID = 
+                sleSrcLine->getFieldAmount(srcHigh ? sfLowLimit : sfHighLimit).getIssuer();
+
+        // check they have sufficient funds
+        if (amount > priorLockedBalance)
+        {
+            JLOG(j.trace())
+                << "trustTransferLockedBalance amount > lockedBalance: "
+                << "amount=" << amount << " lockedBalance=" 
+                << priorLockedBalance;
+            return tecUNFUNDED_PAYMENT;
+        }
+
+        STAmount finalBalance = priorBalance - amount;
 
         STAmount finalLockedBalance = priorLockedBalance - amount;
 

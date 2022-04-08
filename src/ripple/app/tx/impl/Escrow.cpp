@@ -632,7 +632,7 @@ EscrowFinish::doApply()
             << "EscrowFinish::doApply trustTransferLockedBalance (wet) result="
             << result;
 
-        if (isTesSuccess(result))
+        if (!isTesSuccess(result))
             return result;
     }
 
