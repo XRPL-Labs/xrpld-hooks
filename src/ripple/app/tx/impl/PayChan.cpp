@@ -674,7 +674,7 @@ PayChanClaim::preflight(PreflightContext const& ctx)
         if (isXRP(authAmt))
             serializePayChanAuthorization(msg, k.key, authAmt.xrp());
         else
-            serializePayChanAuthorization(msg, k.key, authAmt.iou());
+            serializePayChanAuthorization(msg, k.key, authAmt.iou(), authAmt.getCurrency(), authAmt.getIssuer());
 
         if (!verify(pk, msg.slice(), *sig, /*canonical*/ true))
             return temBAD_SIGNATURE;

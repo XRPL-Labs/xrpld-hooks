@@ -42,7 +42,9 @@ inline void
 serializePayChanAuthorization(
     Serializer& msg,
     uint256 const& key,
-    IOUAmount const& amt)
+    IOUAmount const& amt,
+    Currency const& cur,
+    AccountID const& iss)
 {
     msg.add32(HashPrefix::paymentChannelClaim);
     msg.addBitString(key);
@@ -57,6 +59,8 @@ serializePayChanAuthorization(
             amt.mantissa() |
             (static_cast<std::uint64_t>(amt.exponent() + 512 + 256 + 97)
              << (64 - 10)));
+    msg.addBitString(cur);
+    msg.addBitString(iss);
 }
 
 }  // namespace ripple
