@@ -223,8 +223,7 @@ PayChanCreate::preflight(PreflightContext const& ctx)
     if (ctx.rules.enabled(fix1543) && ctx.tx.getFlags() & tfUniversalMask)
         return temINVALID_FLAG;
 
-    auto const ret = preflight1(ctx);
-    if (!isTesSuccess(ret))
+    if (auto const ret = preflight1(ctx); !isTesSuccess(ret))
         return ret;
 
     STAmount const amount {ctx.tx[sfAmount]};
@@ -450,8 +449,7 @@ PayChanFund::preflight(PreflightContext const& ctx)
     if (ctx.rules.enabled(fix1543) && ctx.tx.getFlags() & tfUniversalMask)
         return temINVALID_FLAG;
 
-    auto const ret = preflight1(ctx);
-    if (!isTesSuccess(ret))
+    if (auto const ret = preflight1(ctx); !isTesSuccess(ret))
         return ret;
 
     STAmount const amount {ctx.tx[sfAmount]};
@@ -611,8 +609,7 @@ PayChanFund::doApply()
 NotTEC
 PayChanClaim::preflight(PreflightContext const& ctx)
 {
-    auto const ret = preflight1(ctx);
-    if (!isTesSuccess(ret))
+    if (auto const ret = preflight1(ctx); !isTesSuccess(ret))
         return ret;
 
     auto const bal = ctx.tx[~sfBalance];
