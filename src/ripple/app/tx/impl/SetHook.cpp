@@ -43,7 +43,7 @@
 #include <tuple>
 #include <optional>
 
-#define DEBUG_GUARD_CHECK 0
+#define DEBUG_GUARD_CHECK 1
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
 
 namespace ripple {
@@ -902,6 +902,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
 
         if (section_type == 1) // type section
         {
+            printf("section_type==1 type section\n");
             int type_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             for (int j = 0; j < type_count; ++j)
             { 
@@ -964,7 +965,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
 
                 // this can only ever be 1 in production, but in testing it may also be 0 or >1
                 // so for completeness this loop is here but can be taken out in prod
-                for (int j = 0; j < result_count; ++j)
+                for (int k = 0; k < result_count; ++k)
                 {
                     int result_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                     if (result_type == 0x7F || result_type == 0x7E ||
@@ -992,7 +993,10 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     {
                         JLOG(ctx.j.trace())
                             << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
-                            << "hook and cbak function definition must have exactly one int64_t return type.";
+                            << (j == hook_type_idx ? "hook" : "cbak") << " j=" << j << " "
+                            << " function definition must have exactly one int64_t return type. "
+                            << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
+                            << "paramcount=" << param_count;
                         return {false, 0};
                     }
                 }
