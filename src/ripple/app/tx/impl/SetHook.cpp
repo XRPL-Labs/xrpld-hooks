@@ -626,7 +626,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     if (byteCount < 10)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: "
+            << "HookSet(" << hook::log::WASM_TOO_SMALL << ")[" << HS_ACC() << "]: "
             << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
         return {false, 0};
     }
@@ -638,7 +638,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         if (hook[i] != header[i])
         {
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC() << "]: "
+                << "HookSet(" << hook::log::WASM_BAD_MAGIC << ")[" << HS_ACC() << "]: "
                 << "Malformed transaction: Hook was not valid webassembly binary. "
                 << "Missing magic number or version.";
             return {false, 0};
@@ -667,7 +667,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             // if the loop iterates twice with the same value for i then
             // it's an infinite loop edge case
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC() << "]: Malformed transaction: Hook is invalid WASM binary.";
+                << "HookSet(" << hook::log::WASM_PARSE_LOOP << ")[" << HS_ACC() 
+                << "]: Malformed transaction: Hook is invalid WASM binary.";
             return {false, 0};
         }
 
@@ -691,9 +692,9 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             if (import_count <= 0)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "HookSet(" << hook::log::IMPORTS_MISSING << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import any functions... "
-                    << "required at least guard(uint32_t, uint32_t) and accept, reject or rollback";
+                    << "required at least guard(uint32_t, uint32_t) and accept or rollback";
                 return {false, 0};
             }
 
@@ -706,7 +707,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (mod_length < 1 || mod_length > (hook.size() - i))
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "HookSet(" << hook::log::IMPORT_MODULE_BAD << ")[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import module";
                     return {false, 0};
                 }
@@ -714,7 +715,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "HookSet(" << hook::log::IMPORT_MODULE_ENV << ")[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify import module other than 'env'";
                     return {false, 0};
                 }
@@ -726,7 +727,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (name_length < 1 || name_length > (hook.size() - i))
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "HookSet(" << hook::log::IMPORT_NAME_BAD << ")[" 
+                        << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import name";
                     return {false, 0};
                 }
@@ -757,7 +759,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 } else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "HookSet(" << hook::log::IMPORT_ILLEGAL << ")[" 
+                        << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to import a function that does not "
                         << "appear in the hook_api function set: `" << import_name << "`";
                     return {false, 0};
@@ -768,7 +771,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             if (guard_import_number == -1)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "HookSet(" << hook::log::GUARD_IMPORT << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import _g (guard) function";
                 return {false, 0};
             }
@@ -789,7 +792,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             if (export_count <= 0)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "HookSet(" << hook::log::EXPORTS_MISSING << ")["
+                    << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not export any functions... "
                     << "required hook(int64_t), callback(int64_t).";
                 return {false, 0};
@@ -807,7 +811,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         if (hook[i] != 0)
                         {
                             JLOG(ctx.j.trace())
-                                << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                                << "HookSet(" << hook::log::EXPORT_HOOK_FUNC << ")["
+                                << HS_ACC() << "]: Malformed transaction. "
                                 << "Hook did not export: A valid int64_t hook(uint32_t)";
                             return {false, 0};
                         }
@@ -823,7 +828,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         if (hook[i] != 0)
                         {
                             JLOG(ctx.j.trace())
-                                << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                                << "HookSet(" << hook::log::EXPORT_CBAK_FUNC << ")["
+                                << HS_ACC() << "]: Malformed transaction. "
                                 << "Hook did not export: A valid int64_t cbak(uint32_t)";
                             return {false, 0};
                         }
@@ -841,7 +847,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             if (!(hook_func_idx && cbak_func_idx))
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "HookSet(" << hook::log::EXPORT_MISSING << ")["
+                    << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not export: " <<
                     ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" ) <<
                     ( !cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" );
@@ -854,7 +861,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             if (function_count <= 0)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                    << "HookSet(" << hook::log::FUNCS_MISSING 
+                    << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not establish any functions... "
                     << "required hook(int64_t), callback(int64_t).";
                 return {false, 0};
@@ -882,7 +890,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         func_type_map.find(*cbak_func_idx) == func_type_map.end())
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+            << "HookSet(" << hook::log::FUNC_TYPELESS << ")["
+            << HS_ACC() << "]: Malformed transaction. "
             << "hook or cbak functions did not have a corresponding type in WASM binary.";
         return {false, 0};
     }
@@ -909,7 +918,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (hook[i++] != 0x60)
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Invalid function type. "
+                        << "HookSet(" << hook::log::FUNC_TYPE_INVALID << ")[" 
+                        << HS_ACC() << "]: Invalid function type. "
                         << "Codesec: " << section_type << " "
                         << "Local: " << j << " "
                         << "Offset: " << i;
@@ -929,7 +939,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     else
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Invalid parameter type in function type. "
+                            << "HookSet(" << hook::log::FUNC_PARAM_INVALID << ")["
+                            << HS_ACC() << "]: Invalid parameter type in function type. "
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
                             << "Offset: " << i;
@@ -945,7 +956,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         (param_count != 1 || param_type != 0x7F /* i32 */ ))
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                            << "HookSet(" << hook::log::PARAM_HOOK_CBAK << ")["
+                            << HS_ACC() << "]: Malformed transaction. "
                             << "hook and cbak function definition must have exactly one uint32_t parameter.";
                         return {false, 0};
                     }
@@ -958,7 +970,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 if (0 && result_count != 1)
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                        << "HookSet(" << hook::log::FUNC_RETURN_COUNT << ")["
+                        << HS_ACC() << "]: Malformed transaction. "
                         << "Hook declares a function type that returns fewer or more than one value.";
                     return {false, 0};
                 }
@@ -976,7 +989,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     else
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Invalid return type in function type. "
+                            << "HookSet(" << hook::log::FUNC_RETURN_INVALID << ")["
+                            << HS_ACC() << "]: Invalid return type in function type. "
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
                             << "Offset: " << i;
@@ -992,7 +1006,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         (result_count != 1 || result_type != 0x7E /* i64 */ ))
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Malformed transaction. "
+                            << "HookSet(" << hook::log::RETURN_HOOK_CBAK << ")["
+                            << HS_ACC() << "]: Malformed transaction. "
                             << (j == hook_type_idx ? "hook" : "cbak") << " j=" << j << " "
                             << " function definition must have exactly one int64_t return type. "
                             << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
@@ -1022,7 +1037,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     if (!(hook[i] >= 0x7C && hook[i] <= 0x7F))
                     {
                         JLOG(ctx.j.trace())
-                            << "HookSet[" << HS_ACC() << "]: Invalid local type. "
+                            << "HookSet(" << hook::log::TYPE_INVALID << ")["
+                            << HS_ACC() << "]: Invalid local type. "
                             << "Codesec: " << j << " "
                             << "Local: " << k << " "
                             << "Offset: " << i;
@@ -1056,7 +1072,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     // execution to here means guards are installed correctly
 
     JLOG(ctx.j.trace())
-        << "HookSet[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
+        << "HookSet(" << hook::log::WASM_SMOKE_TEST << ")[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
         << "size = " <<  hook.size();
 
     std::optional<std::string> result = 
@@ -1065,7 +1081,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     if (result)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: "
+            << "HookSet(" << hook::log::WASM_TEST_FAILURE << ")[" << HS_ACC() << "]: "
             << "Tried to set a hook with invalid code. VM error: " << *result;
         return {false, 0};
     }
@@ -1326,7 +1342,7 @@ SetHook::preclaim(ripple::PreclaimContext const& ctx)
             if (!ctx.view.exists(keylet::hookDefinition(hash)))
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
+                    << "HookSet(" << hook::log::HOOK_DEF_MISSING << ")[" << HS_ACC()
                     << "]: Malformed transaction: No hook exists with the specified hash.";
                 return terNO_HOOK;
             }
@@ -1342,7 +1358,9 @@ SetHook::preflight(PreflightContext const& ctx)
 
     if (!ctx.rules.enabled(featureHooks))
     {
-        JLOG(ctx.j.warn()) << "HookSet[" << HS_ACC() << "]: Hooks Amendment not enabled!";
+        JLOG(ctx.j.warn())
+            << "HookSet[(" << hook::log::AMENDMENT_DISABLED << ")"
+            << HS_ACC() << "]: Hooks Amendment not enabled!";
         return temDISABLED;
     }
 
@@ -1353,7 +1371,8 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!ctx.tx.isFieldPresent(sfHooks))
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC() << "]: Malformed transaction: SetHook lacked sfHooks array.";
+            << "HookSet(" << hook::log::HOOKS_ARRAY_MISSING << ")["
+            << HS_ACC() << "]: Malformed transaction: SetHook lacked sfHooks array.";
         return temMALFORMED;
     }
 
@@ -1362,7 +1381,7 @@ SetHook::preflight(PreflightContext const& ctx)
     if (hookSets.size() < 1)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
+            << "HookSet(" << hook::log::HOOKS_ARRAY_EMPTY << ")[" << HS_ACC()
             << "]: Malformed transaction: SetHook sfHooks empty.";
         return temMALFORMED;
     }
@@ -1370,7 +1389,7 @@ SetHook::preflight(PreflightContext const& ctx)
     if (hookSets.size() > hook::maxHookChainLength())
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
+            << "HookSet(" << hook::log::HOOKS_ARRAY_TOO_BIG << ")[" << HS_ACC()
             << "]: Malformed transaction: SetHook sfHooks contains more than " << hook::maxHookChainLength()
             << " entries.";
         return temMALFORMED;
@@ -1393,7 +1412,8 @@ SetHook::preflight(PreflightContext const& ctx)
         if (!hookSetObj || (hookSetObj->getFName() != sfHook))
         {
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC()
+                << "HookSet(" << hook::log::HOOKS_ARRAY_BAD << ")[" 
+                << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHooks contains obj other than sfHook.";
             return temMALFORMED;
         }
@@ -1417,7 +1437,7 @@ SetHook::preflight(PreflightContext const& ctx)
                 name != sfFlags)
             {
                 JLOG(ctx.j.trace())
-                    << "HookSet[" << HS_ACC()
+                    << "HookSet(" << hook::log::HOOK_INVALID_FIELD << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHook contains invalid field.";
                 return temMALFORMED;
             }
@@ -1437,7 +1457,8 @@ SetHook::preflight(PreflightContext const& ctx)
         catch (std::exception& e)
         {
             JLOG(ctx.j.trace())
-                << "HookSet[" << HS_ACC() << "]: Exception: " << e.what();
+                << "HookSet(" << hook::log::WASM_VALIDATION
+                << ")[" << HS_ACC() << "]: Exception: " << e.what();
             return temMALFORMED;
         }
     }
@@ -1445,7 +1466,8 @@ SetHook::preflight(PreflightContext const& ctx)
     if (allBlank)
     {
         JLOG(ctx.j.trace())
-            << "HookSet[" << HS_ACC()
+            << "HookSet(" << hook::log::HOOKS_ARRAY_BLANK << ")["
+            << HS_ACC()
             << "]: Malformed transaction: SetHook sfHooks must contain at least one non-blank sfHook.";
         return temMALFORMED;
     }
@@ -1477,7 +1499,7 @@ SetHook::destroyNamespace(
     uint256 ns
 ) {
     JLOG(ctx.j.trace())
-        << "HookSet[" << HS_ACC() << "]: DeleteState "
+        << "HookSet(" << hook::log::NSDELETE << ")[" << HS_ACC() << "]: DeleteState "
         << "Destroying Hook Namespace for " << account << " namespace " << ns;
 
     Keylet dirKeylet = keylet::hookStateDir(account, ns);
@@ -1495,7 +1517,8 @@ SetHook::destroyNamespace(
     if (!sleAccount)
     {
         JLOG(ctx.j.fatal())
-            << "HookSet[" << HS_ACC() << "]: Account does not exist to destroy namespace from";
+            << "HookSet(" << hook::log::NSDELETE_ACCOUNT
+            << ")[" << HS_ACC() << "]: Account does not exist to destroy namespace from";
         return tefBAD_LEDGER;
     }
 
@@ -1507,7 +1530,7 @@ SetHook::destroyNamespace(
             uDirEntry,
             dirEntry)) {
             JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "HookSet(" << hook::log::NSDELETE_DIRECTORY << ")[" << HS_ACC() << "]: DeleteState "
                 << "directory missing ";
         return tefINTERNAL;
     }
@@ -1526,7 +1549,7 @@ SetHook::destroyNamespace(
         {
             // Directory node has an invalid index.  Bail out.
             JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "HookSet(" << hook::log::NSDELETE_DIR_ENTRY << ")[" << HS_ACC() << "]: DeleteState "
                 << "directory node in ledger " << view.seq() << " "
                 << "has index to object that is missing: "
                 << to_string(dirEntry);
@@ -1538,7 +1561,7 @@ SetHook::destroyNamespace(
         if (nodeType != ltHOOK_STATE)
         {
             JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "HookSet(" << hook::log::NSDELETE_NONSTATE << ")[" << HS_ACC() << "]: DeleteState "
                 << "directory node in ledger " << view.seq() << " "
                 << "has non-ltHOOK_STATE entry " << to_string(dirEntry);
             return tefBAD_LEDGER;
@@ -1549,7 +1572,6 @@ SetHook::destroyNamespace(
 
     } while (cdirNext(view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry));
 
-
     // delete it!
     for (auto const& itemKey: toDelete)
     {
@@ -1559,7 +1581,8 @@ SetHook::destroyNamespace(
         if (!sleItem)
         {
             JLOG(ctx.j.warn())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "HookSet(" << hook::log::NSDELETE_ENTRY
+                << ")[" << HS_ACC() << "]: DeleteState "
                 << "Namespace ltHOOK_STATE entry was not found in ledger: "
                 << itemKey;
             continue;
@@ -1569,7 +1592,8 @@ SetHook::destroyNamespace(
         if (!view.dirRemove(dirKeylet, hint, itemKey, false))
         {
             JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC() << "]: DeleteState "
+                << "HookSet(" << hook::log::NSDELETE_DIR
+                << ")[" << HS_ACC() << "]: DeleteState "
                 << "directory node in ledger " << view.seq() << " "
                 << "could not be deleted.";
             return tefBAD_LEDGER;
@@ -1581,7 +1605,7 @@ SetHook::destroyNamespace(
     if (stateCount > oldStateCount)
     {
         JLOG(ctx.j.fatal())
-            << "HookSet[" << HS_ACC() << "]: DeleteState "
+            << "HookSet(" << hook::log::NSDELETE_COUNT << ")[" << HS_ACC() << "]: DeleteState "
             << "stateCount less than zero (overflow)";
 
         return tefBAD_LEDGER;
@@ -1637,38 +1661,6 @@ void incrementReferenceCount(std::shared_ptr<STLedgerEntry>& sle)
         sle->setFieldU64(sfReferenceCount, sle->getFieldU64(sfReferenceCount) + 1);
 }
 
-// increment or create namespace directory
-/*
-TER
-SetHook::
-createOrReuseNamespace(ripple::Keylet& newDirKeylet)
-{
-    auto& sle = view().peek(newDirKeylet);
-    if (sle)
-    {
-        incrementReferenceCount(sle);
-        return tesSUCCESS;
-    }
-
-    sle = std::make_shared<SLE>(newDirKeylet);
-    
-    auto const page = view().dirInsert(
-        keylet::ownerDir(account_),
-        newDirKeylet->key,
-        describeOwnerDir(account_));
-    JLOG(ctx.j.trace()) << "Create state dir for account " << toBase58(account_)
-                     << ": " << (page ? "success" : "failure");
-    if (!page)
-        return tecDIR_FULL;
-    sle->setFieldU64(sfOwnerNode, *page);
-    sle->setFieldU64(sfReferenceCount, 1);
-    view().insert(sle);
-    return tesSUSCCESS;
-}
-        //if (oldDirSLE)
-        //    reduceReferenceCount(oldDirSLE, (flag & hsoNSDELETE) ? namespacesToDestroy : std::nullopt);
-*/
-
 TER
 updateHookParameters(
         SetHookCtx& ctx,
@@ -1709,7 +1701,7 @@ updateHookParameters(
     if (parameterCount > 16)
     {
         JLOG(ctx.j.fatal())
-            << "HookSet[" << HS_ACC()
+            << "HookSet(" << hook::log::HOOK_PARAMS_COUNT << ")[" << HS_ACC()
             << "]: Malformed transaction: Txn would result in too many parameters on hook";
         return tecINTERNAL;
     }
@@ -1720,7 +1712,7 @@ updateHookParameters(
         if (parameterName.size() > paramKeyMax || parameterValue.size() > paramValueMax)
         {
             JLOG(ctx.j.fatal())
-                << "HookSet[" << HS_ACC()
+                << "HookSet(" << hook::log::HOOK_PARAM_SIZE << ")[" << HS_ACC()
                 << "]: Malformed transaction: Txn would result in a too large parameter name/value on hook";
             return tecINTERNAL;
         }
@@ -1916,7 +1908,7 @@ SetHook::setHook()
             else
             {
                 JLOG(ctx.j.warn())
-                    << "HookSet[" << HS_ACC()
+                    << "HookSet(" << hook::log::NSDELETE_NOTHING << ")[" << HS_ACC()
                     << "]: SetHook hsoNSDELETE specified but nothing to delete";
             }
         }
@@ -1952,7 +1944,7 @@ SetHook::setHook()
                 if (!(flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::DELETE_FLAG << ")[" << HS_ACC()
                         << "]: SetHook delete operation requires hsfOVERRIDE flag";
                     return tecREQUIRES_FLAG;
                 }
@@ -1963,7 +1955,7 @@ SetHook::setHook()
                 if (!oldHook)
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::DELETE_NOTHING << ")[" << HS_ACC()
                         << "]: SetHook delete operation deletes non-existent hook";
 
                     continue;
@@ -2012,7 +2004,7 @@ SetHook::setHook()
                 if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::CREATE_FLAG << ")[" << HS_ACC()
                         << "]: SetHook create operation would override but hsfOVERRIDE flag wasn't specified";
                     return tecREQUIRES_FLAG;
                 }
@@ -2023,7 +2015,7 @@ SetHook::setHook()
                 if (wasmBytes.size() > blobMax)
                 {
                     JLOG(ctx.j.warn())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::WASM_TOO_BIG << ")[" << HS_ACC()
                         << "]: Malformed transaction: SetHook operation would create blob larger than max";
                     return tecINTERNAL;
                 }
@@ -2057,7 +2049,7 @@ SetHook::setHook()
                         if (!valid)
                         {
                             JLOG(ctx.j.warn())
-                                << "HookSet[" << HS_ACC()
+                                << "HookSet(" << hook::log::WASM_INVALID << ")[" << HS_ACC()
                                 << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
                             return tecINTERNAL;
                         }
@@ -2065,7 +2057,7 @@ SetHook::setHook()
                     catch (std::exception& e)
                     {
                         JLOG(ctx.j.warn())
-                            << "HookSet[" << HS_ACC()
+                            << "HookSet(" << hook::log::WASM_INVALID << ")[" << HS_ACC()
                             << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
                         return tecINTERNAL;
                     }
@@ -2108,7 +2100,7 @@ SetHook::setHook()
                 if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::INSTALL_FLAG << ")[" << HS_ACC()
                         << "]: SetHook install operation would override but hsfOVERRIDE flag wasn't specified";
                     return tecREQUIRES_FLAG;
                 }
@@ -2117,7 +2109,7 @@ SetHook::setHook()
                 if (!newDefSLE)
                 {
                     JLOG(ctx.j.trace())
-                        << "HookSet[" << HS_ACC()
+                        << "HookSet(" << hook::log::INSTALL_MISSING << ")[" << HS_ACC()
                         << "]: SetHook install operation specified HookHash which does not exist on ledger";
                     return tecNO_ENTRY;
                 }
@@ -2174,8 +2166,8 @@ SetHook::setHook()
             default:
             {
                 JLOG(ctx.j.warn())
-                    << "HookSet[" << HS_ACC()
-                    << "]: Malformed transaction: sethook could not find a namespace to place hook state into.";
+                    << "HookSet(" << hook::log::OPERATION_INVALID << ")[" << HS_ACC()
+                    << "]: Malformed transaction: sethook could not understand the desired operation.";
                 return tecCLAIM;
             }
         }

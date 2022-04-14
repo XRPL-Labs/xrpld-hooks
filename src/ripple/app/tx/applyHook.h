@@ -125,7 +125,65 @@ namespace hook
             OVERRIDE_MISSING    =  23,  // HookSet object was trying to update or delete a hook but lacked hsfOVERRIDE
             FLAGS_INVALID       =  24,  // HookSet flags were invalid for specified operation
             NSDELETE_FIELD      =  25,
-            NSDELETE_FLAGS      =  26
+            NSDELETE_FLAGS      =  26,
+            WASM_TOO_SMALL      =  27,
+            WASM_BAD_MAGIC      =  28,  // wasm magic number missing or not wasm
+            WASM_PARSE_LOOP     =  29,  // wasm section parsing resulted in an infinite loop
+            IMPORTS_MISSING     =  30,  // hook must import guard, and accept/rollback
+            IMPORT_MODULE_BAD   =  31,  // hook attempted to specify no or a bad import module
+            IMPORT_MODULE_ENV   =  32,  // hook attempted to specify import module not named env
+            IMPORT_NAME_BAD     =  33,  // import name was too short or too long
+            IMPORT_ILLEGAL      =  34,  // attempted import of a non-whitelisted function
+            GUARD_IMPORT        =  35,  // guard import is missing
+            EXPORTS_MISSING     =  36,  // hook did not export *any* functions (should be cbak, hook)
+            EXPORT_HOOK_FUNC    =  37,  // hook did not export correct func def int64_t hook(uint32_t)
+            EXPORT_CBAK_FUNC    =  38,  // hook did not export correct func def int64_t cbak(uint32_t)
+            EXPORT_MISSING      =  39,  // distinct from export*S*_missing, either hook or cbak is missing
+            FUNCS_MISSING       =  40,  // hook did not include function code for any functions
+            FUNC_TYPELESS       =  41,  // hook defined hook/cbak but their type is not defined in wasm
+            FUNC_TYPE_INVALID   =  42,  // malformed and illegal wasm in the func type section
+            FUNC_PARAM_INVALID  =  43,  // parameter types may only be i32 i64 u32 u64
+            PARAM_HOOK_CBAK     =  44,  // hook and cbak must take exactly one u32 parameter
+            FUNC_RETURN_COUNT   =  45,  // a function type is defined in the wasm which returns > 1 return value
+            FUNC_RETURN_INVALID =  46,  // a function type does not return i32 i64 u32 or u64
+            RETURN_HOOK_CBAK    =  47,  // hook and cbak must retunr i64
+            TYPE_INVALID        =  48,  // malformed and illegal wasm specifying an illegal local var type
+            WASM_SMOKE_TEST     =  49,  // Informational: first attempt to load wasm into wasm runtime
+            WASM_TEST_FAILURE   =  50,  // the smoke test failed
+            HOOK_DEF_MISSING    =  51,  // attempt to reference a hook definition (by hash) that is not on ledger
+            AMENDMENT_DISABLED  =  52,  // attempt to HookSet when amendment is not yet enabled.
+            HOOKS_ARRAY_MISSING =  53,  // attempt to HookSet without a Hooks array
+            HOOKS_ARRAY_EMPTY   =  54,  // attempt to HookSet with an empty Hooks array
+            HOOKS_ARRAY_TOO_BIG =  55,  // attempt to HookSet with a Hooks array beyond the chain size limit
+            HOOKS_ARRAY_BAD     =  56,  // attempt to HookSet with a Hooks array containing a non-Hook obj
+            HOOK_INVALID_FIELD  =  57,  // HookSetObj contained an illegal/unexpected field
+            WASM_VALIDATION     =  58,  // a generic error while parsing wasm, usually leb128 overflow
+            HOOKS_ARRAY_BLANK   =  59,  // all hook set objs were blank
+            NSDELETE            =  60,  // Informational: a namespace is being deleted
+            NSDELETE_ACCOUNT    =  61,  // nsdelete tried to delete ns from a non-existing account
+            NSDELETE_DIRECTORY  =  62,  // nsdelete operation failed to delete ns directory
+            NSDELETE_DIR_ENTRY  =  63,  // nsdelete operation failed due to bad entry in ns directory
+            NSDELETE_NONSTATE   =  64,  // nsdelete operation failed due to the presence of a non-hookstate obj
+            NSDELETE_ENTRY      =  65,  // nsdelete operation failed due to missing hook state entry
+            NSDELETE_DIR        =  66,  // could not delete directory node in ledger
+            NSDELETE_COUNT      =  67,  // namespace state count less than 0 / overflow
+            HOOK_PARAMS_COUNT   =  68,  // hookset obj would create too many hook parameters
+            HOOK_PARAM_SIZE     =  69,  // hookset obj sets a parameter or value that exceeds max allowable size
+            NSDELETE_NOTHING    =  70,  // hsfNSDELETE provided but nothing to delete
+            DELETE_FLAG         =  71,  // delete operation requires hsfOVERRIDE flag
+            DELETE_NOTHING      =  72,  // delete operation would delete nothing
+            CREATE_FLAG         =  73,  // create operation requires hsfOVERRIDE flag
+            WASM_TOO_BIG        =  74,  // set hook would exceed maximum hook size
+            WASM_INVALID        =  75,  // set hook operation would set invalid wasm
+            INSTALL_FLAG        =  76,  // install operation requires hsoOVERRIDE
+            INSTALL_MISSING     =  77,  // install operation specifies hookhash which doesn't exist on the ledger
+            OPERATION_INVALID   =  78   // could not deduce an operation from the provided hookset obj
+
+
+
+
+
+
             //RH UPTO
 
         };
