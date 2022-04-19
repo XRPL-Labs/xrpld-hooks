@@ -479,6 +479,7 @@ extern SF_AMOUNT const sfMinimumOffer;
 extern SF_AMOUNT const sfRippleEscrow;
 extern SF_AMOUNT const sfDeliveredAmount;
 extern SF_AMOUNT const sfBrokerFee;
+extern SF_AMOUNT const sfHookCallbackFee;
 
 // variable length (common)
 extern SF_VL const sfPublicKey;

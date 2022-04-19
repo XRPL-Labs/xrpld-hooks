@@ -30,7 +30,7 @@ InnerObjectFormats::InnerObjectFormats()
             {sfEmitBurden,      soeREQUIRED},
             {sfEmitParentTxnID, soeREQUIRED},
             {sfEmitNonce,       soeREQUIRED},
-            {sfEmitCallback,    soeREQUIRED},
+            {sfEmitCallback,    soeOPTIONAL},
             {sfEmitHookHash,    soeREQUIRED}
         });
 

@@ -228,16 +228,16 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
         // if the txn is NOT an emitted txn then we process the sending account's hook chain 
         if (tx.isFieldPresent(sfEmitDetails))
         {
-        
             STObject const& emitDetails = 
                 const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
-            
+         
             uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
 
             std::shared_ptr<SLE const> hookDef = view.read(keylet::hookDefinition(callbackHookHash));
-            
-            if (hookDef)
-                hookExecutionFee += FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())};
+
+            if (hookDef && hookDef->isFieldPresent(sfHookCallbackFee))
+                hookExecutionFee +=
+                    FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfHookCallbackFee).xrp().drops())};
         }
         else
             hookExecutionFee +=
@@ -896,7 +896,7 @@ static __inline__ unsigned long long rdtsc(void)
     return ( (unsigned long long)lo)|( ((unsigned long long)hi)<<32 );
 }
 
-bool /* error = true */
+bool /* retval of true means an error */
 gatherHookParameters(
         std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
         ripple::STObject const* hookObj,
@@ -933,7 +933,7 @@ gatherHookParameters(
     return false;
 }
 
-bool /* error = true */
+bool /* retval of true means an error */
 executeHookChain(
         std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
         std::shared_ptr<hook::HookStateMap>& stateMap,
@@ -1095,12 +1095,12 @@ Transactor::operator()()
         // and any associated chains which are executed during this transaction also
         std::shared_ptr<hook::HookStateMap> stateMap = std::make_shared<hook::HookStateMap>();
 
-        auto const& ledger = ctx_.view();
+        auto& view = ctx_.view();
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
         std::vector<hook::HookResult> sendResults;
         std::vector<hook::HookResult> recvResults;
 
-        auto const& hooksSending = ledger.read(keylet::hook(accountID));
+        auto const& hooksSending = view.read(keylet::hook(accountID));
 
         // First check if the Sending account has any hooks that can be fired
         if (hooksSending && hooksSending->isFieldPresent(sfHooks) && !ctx_.emitted())
@@ -1111,23 +1111,91 @@ Transactor::operator()()
         if (!rollback)
         {
             std::vector<std::pair<AccountID, bool>> tsh = 
-                hook::getTransactionalStakeHolders(ctx_.tx, ledger);
+                hook::getTransactionalStakeHolders(ctx_.tx, view);
 
             for (auto& [tshAccountID, canRollback] : tsh)
             {
-                auto const& hooksReceiving = ledger.read(keylet::hook(tshAccountID));
-                if (hooksReceiving && hooksReceiving->isFieldPresent(sfHooks))
+                auto klTshHook = keylet::hook(tshAccountID);
+
+                auto tshHook = view.read(klTshHook);
+                if (!(tshHook && tshHook->isFieldPresent(sfHooks)))
+                    continue;
+
+                // scoping here allows tshAcc to leave scope before
+                // hook execution, which is probably safer
                 {
-                    bool tshRollback =
-                        executeHookChain(hooksReceiving, stateMap,
-                            recvResults, executedHookCount, tshAccountID, ctx_, j_, result);
-                    if (canRollback && tshRollback)
+                    // check if the TSH exists and/or has any hooks
+                    auto tshAcc = view.peek(keylet::account(tshAccountID));
+                    if (!tshAcc)
+                        continue;
+
+
+                    // compute and deduct fees for the TSH if applicable
+                    FeeUnit64 tshFee =
+                        calculateHookChainFee(view, ctx_.tx, klTshHook);
+
+                    // no hooks to execute, skip tsh
+                    if (tshFee == 0)
+                        continue;
+                        
+                    XRPAmount tshFeeDrops = view.fees().toDrops(tshFee);
+                    assert(tshFeeDrops >= beast::zero);
+
+                    STAmount priorBalance = tshAcc->getFieldAmount(sfBalance);
+
+                    if (canRollback)
                     {
-                        rollback = true;
-                        break;
+                        // this is not a collect call so we will force the tsh's fee to 0
+                        // the otxn paid the fee for this tsh chain execution already.
+                        tshFeeDrops = 0;
+                    }
+                    else
+                    {
+                        // this is a collect call so first check if the tsh can accept
+                        uint32_t tshFlags = tshAcc->getFieldU32(sfFlags);
+                        if (!canRollback && !(tshFlags & lsfTshCollect))
+                        {
+                            // this TSH doesn't allow collect calls, skip
+                            JLOG(j_.trace())
+                                << "HookInfo[" << accountID << "]: TSH acc " << tshAccountID << " "
+                                << "hook chain execution skipped due to lack of lsfTshCollect flag.";
+                            continue;
+                        }
+
+                        // now check if they can afford this collect call
+                        auto const uOwnerCount = tshAcc->getFieldU32(sfOwnerCount);
+                        auto const reserve = view.fees().accountReserve(uOwnerCount);
+
+                        if (tshFeeDrops + reserve > priorBalance)
+                        {
+                            JLOG(j_.trace())
+                                << "HookInfo[" << accountID << "]: TSH acc " << tshAccountID << " "
+                                << "hook chain execution skipped due to lack of TSH acc funds.";
+                            continue;
+                        }
                     }
 
-                    //RH TODO: charge non-rollback tsh executions a fee here
+                    if (tshFeeDrops > beast::zero)
+                    {
+                        STAmount finalBalance = priorBalance -= tshFeeDrops;
+                        assert(finalBalance >= beast::zero);
+                        assert(finalBalance < priorBalance);
+
+                        tshAcc->setFieldAmount(sfBalance, finalBalance);
+
+                        view.update(tshAcc);
+                    }
+                }
+
+                // execution to here means we can run the TSH's hook chain
+                bool tshRollback =
+                    executeHookChain(tshHook, stateMap,
+                        recvResults, executedHookCount, tshAccountID, ctx_, j_, result);
+
+                if (canRollback && tshRollback)
+                {
+                    rollback = true;
+                    break;
                 }
             }
         }
@@ -1153,23 +1221,28 @@ Transactor::operator()()
                 auto const& emitDetails =
                     const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
 
+                // callbacks are optional so if there isn't a callback then skip
                 if (!emitDetails.isFieldPresent(sfEmitCallback))
-                {
-                    JLOG(j_.fatal())
-                        << "HookError[]: Callback Processing: Failure: sfEmitCallback missing";
                     break;
-                }
 
                 AccountID const& callbackAccountID = emitDetails.getAccountID(sfEmitCallback);
                 uint256 const& callbackHookHash = emitDetails.getFieldH256(sfEmitHookHash);
 
                 
-                auto const& hooksCallback = view().peek(keylet::hook(callbackAccountID));
-                auto const& hookDef = view().peek(keylet::hookDefinition(callbackHookHash));
+                auto const& hooksCallback = view.peek(keylet::hook(callbackAccountID));
+                auto const& hookDef = view.peek(keylet::hookDefinition(callbackHookHash));
                 if (!hookDef)
                 {
                     JLOG(j_.warn())
                         << "HookError[]: Hook def missing on callback";
+                    break;
+                }
+
+                if (!hookDef->isFieldPresent(sfHookCallbackFee))
+                {
+                    JLOG(j_.trace())
+                        << "HookInfo[" << callbackAccountID << "]: Callback specified by emitted txn "
+                        << "but hook lacks a cbak function, skipping.";
                     break;
                 }
 
@@ -1232,7 +1305,6 @@ Transactor::operator()()
                                 callbackHookHash,
                                 ns,
                                 hookDef->getFieldVL(sfCreateCode),
-                                // params
                                 parameters,
                                 {},
                                 stateMap,
@@ -1273,7 +1345,8 @@ Transactor::operator()()
                 if (!found)
                 {
                     JLOG(j_.warn())
-                        << "HookError[]: Hookhash not found on callback account";
+                        << "HookError[" << callbackAccountID << "]: Hookhash "
+                        << callbackHookHash << " not found on callback account";
                 }
             }
         }

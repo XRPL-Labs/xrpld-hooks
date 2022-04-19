@@ -231,6 +231,7 @@ CONSTRUCT_TYPED_SFIELD(sfMinimumOffer,          "MinimumOffer",         AMOUNT, 
 CONSTRUCT_TYPED_SFIELD(sfRippleEscrow,          "RippleEscrow",         AMOUNT,    17);
 CONSTRUCT_TYPED_SFIELD(sfDeliveredAmount,       "DeliveredAmount",      AMOUNT,    18);
 CONSTRUCT_TYPED_SFIELD(sfBrokerFee,             "BrokerFee",            AMOUNT,    19);
+CONSTRUCT_TYPED_SFIELD(sfHookCallbackFee,       "HookCallbackFee",      AMOUNT,    20);
 
 // variable length (common)
 CONSTRUCT_TYPED_SFIELD(sfPublicKey,             "PublicKey",            VL,         1);

@@ -42,6 +42,7 @@
 #include <exception>
 #include <tuple>
 #include <optional>
+#include <variant>
 
 #define DEBUG_GUARD_CHECK 1
 #define HS_ACC() ctx.tx.getAccountID(sfAccount) << "-" << ctx.tx.getTransactionID()
@@ -87,15 +88,15 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
         JLOG(ctx.j.trace())\
             << "HookSet(" << hook::log::SHORT_HOOK << ")[" << HS_ACC() << "]: "\
             << "Malformed transaction: Hook truncated or otherwise invalid\n";\
-        return {false, 0};\
+        return {};\
     }\
 }
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
-// returns {valid, worst case instruction count}
+// returns {worst case instruction count} if valid or {} if invalid
 // may throw overflow_error
-std::pair<bool, uint64_t>
+std::optional<uint64_t>
 check_guard(
         SetHookCtx& ctx,
         ripple::Blob& hook, int codesec,
@@ -149,7 +150,7 @@ check_guard(
                     << "HookSet(" << hook::log::CALL_ILLEGAL << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Hook calls a function outside of the whitelisted imports "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return {false, 0};
+                return {};
             }
 
             if (callee_idx == guard_func_idx)
@@ -164,7 +165,7 @@ check_guard(
                             << "HookSet(" << hook::log::GUARD_PARAMETERS << ")[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return {false, 0};
+                        return {};
                     }
 
                     uint64_t a = stack.top();
@@ -182,7 +183,7 @@ check_guard(
                             << "[" << HS_ACC() << "]: GuardCheck "
                             << "_g() called but could not detect constant parameters "
                             << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return {false, 0};
+                        return {};
                     }
 
                     // update the instruction count for this block depth to the largest possible guard
@@ -213,7 +214,7 @@ check_guard(
             JLOG(ctx.j.trace()) << "HookSet(" << hook::log::CALL_INDIRECT << ")[" << HS_ACC() << "]: GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
                 << "codesec: " << codesec << " hook byte offset: " << i;
-            return {false, 0};
+            return {};
             /*
             if (DEBUG_GUARD_CHECK)
                 printf("%d - call_indirect instruction at %d\n", mode, i);
@@ -240,7 +241,7 @@ check_guard(
                     << "[" << HS_ACC() << "]: GuardCheck "
                     << "_g() did not occur at start of function or loop statement "
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return {false, 0};
+                return {};
             }
 
             // execution to here means we are in 'search mode' for loop instructions
@@ -384,7 +385,7 @@ check_guard(
                     << "HookSet(" << hook::log::MEMORY_GROW << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Memory.grow instruction not allowed at "
                     << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                return {false, 0};
+                return {};
             }
             continue;
         }
@@ -454,7 +455,7 @@ check_guard(
                     << "HookSet(" << hook::log::BLOCK_ILLEGAL << ")[" << HS_ACC() << "]: GuardCheck "
                     << "Unexpected 0x0B instruction, malformed"
                     << "codesec: " << codesec << " hook byte offset: " << i;
-                return {false, 0};
+                return {};
             }
 
             // perform the instruction count * guard accounting
@@ -475,19 +476,18 @@ check_guard(
             << "HookSet(" << hook::log::INSTRUCTION_EXCESS << ")[" << HS_ACC() << "]: GuardCheck "
             << "Maximum possible instructions exceed 1048575, please make your hook smaller "
             << "or check your guards!";
-        return {false, 0};
+        return {};
     }
 
     // if we reach the end of the code looking for another trigger the guards are installed correctly
     if (mode == 1)
-        return {true, instruction_count[0].second};
+        return instruction_count[0].second;
 
     JLOG(ctx.j.trace())
         << "HookSet(" << hook::log::GUARD_MISSING << ")[" << HS_ACC() << "]: GuardCheck "
         << "Guard did not occur before end of loop / function. "
         << "Codesec: " << codesec;
-    return {false, 0};
-
+    return {};
 }
 
 bool
@@ -611,14 +611,20 @@ HookSetOperation inferOperation(STObject const& hookSetObj)
 
 
 // may throw overflow_error
-std::pair<bool, uint64_t>
+std::optional<  // unpopulated means invalid
+std::pair<
+    uint64_t,   // max instruction count for hook()
+    uint64_t    // max instruction count for cbak()
+>>
 validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
 {
 
     if (!hookSetObj.isFieldPresent(sfCreateCode))
-        return { false, 0 };
+        return {};
 
-    uint64_t maxInstrCount = 0;
+    uint64_t maxInstrCountHook = 0;
+    uint64_t maxInstrCountCbak = 0;
+
     Blob hook = hookSetObj.getFieldVL(sfCreateCode);
     uint64_t byteCount = hook.size();
 
@@ -628,7 +634,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet(" << hook::log::WASM_TOO_SMALL << ")[" << HS_ACC() << "]: "
             << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
-        return {false, 0};
+        return {};
     }
 
     // check header, magic number
@@ -641,7 +647,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 << "HookSet(" << hook::log::WASM_BAD_MAGIC << ")[" << HS_ACC() << "]: "
                 << "Malformed transaction: Hook was not valid webassembly binary. "
                 << "Missing magic number or version.";
-            return {false, 0};
+            return {};
         }
     }
 
@@ -669,7 +675,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet(" << hook::log::WASM_PARSE_LOOP << ")[" << HS_ACC() 
                 << "]: Malformed transaction: Hook is invalid WASM binary.";
-            return {false, 0};
+            return {};
         }
 
         j = i;
@@ -695,7 +701,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "HookSet(" << hook::log::IMPORTS_MISSING << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import any functions... "
                     << "required at least guard(uint32_t, uint32_t) and accept or rollback";
-                return {false, 0};
+                return {};
             }
 
             // process each import one by one
@@ -709,7 +715,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     JLOG(ctx.j.trace())
                         << "HookSet(" << hook::log::IMPORT_MODULE_BAD << ")[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import module";
-                    return {false, 0};
+                    return {};
                 }
 
                 if (std::string_view( (const char*)(hook.data() + i), (size_t)mod_length ) != "env")
@@ -717,7 +723,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     JLOG(ctx.j.trace())
                         << "HookSet(" << hook::log::IMPORT_MODULE_ENV << ")[" << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify import module other than 'env'";
-                    return {false, 0};
+                    return {};
                 }
 
                 i += mod_length; CHECK_SHORT_HOOK();
@@ -730,7 +736,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         << "HookSet(" << hook::log::IMPORT_NAME_BAD << ")[" 
                         << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import name";
-                    return {false, 0};
+                    return {};
                 }
 
                 std::string import_name { (const char*)(hook.data() + i), (size_t)name_length };
@@ -763,7 +769,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         << HS_ACC() << "]: Malformed transaction. "
                         << "Hook attempted to import a function that does not "
                         << "appear in the hook_api function set: `" << import_name << "`";
-                    return {false, 0};
+                    return {};
                 }
                 func_upto++;
             }
@@ -773,7 +779,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::GUARD_IMPORT << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not import _g (guard) function";
-                return {false, 0};
+                return {};
             }
 
             last_import_number = func_upto - 1;
@@ -796,7 +802,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not export any functions... "
                     << "required hook(int64_t), callback(int64_t).";
-                return {false, 0};
+                return {};
             }
 
             for (int j = 0; j < export_count; ++j)
@@ -814,7 +820,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                                 << "HookSet(" << hook::log::EXPORT_HOOK_FUNC << ")["
                                 << HS_ACC() << "]: Malformed transaction. "
                                 << "Hook did not export: A valid int64_t hook(uint32_t)";
-                            return {false, 0};
+                            return {};
                         }
 
                         i++; CHECK_SHORT_HOOK();
@@ -831,7 +837,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                                 << "HookSet(" << hook::log::EXPORT_CBAK_FUNC << ")["
                                 << HS_ACC() << "]: Malformed transaction. "
                                 << "Hook did not export: A valid int64_t cbak(uint32_t)";
-                            return {false, 0};
+                            return {};
                         }
                         i++; CHECK_SHORT_HOOK();
                         cbak_func_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
@@ -844,15 +850,14 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
             }
 
             // execution to here means export section was parsed
-            if (!(hook_func_idx && cbak_func_idx))
+            if (!hook_func_idx)
             {
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::EXPORT_MISSING << ")["
                     << HS_ACC() << "]: Malformed transaction. "
-                    << "Hook did not export: " <<
-                    ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" ) <<
-                    ( !cbak_func_idx ? "int64_t cbak(uint32_t);"  : "" );
-                return {false, 0};
+                    << "Hook did not export: "
+                    << ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" );
+                return {};
             }
         }
         else if (section_type == 3) // function section
@@ -865,7 +870,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                     << ")[" << HS_ACC() << "]: Malformed transaction. "
                     << "Hook did not establish any functions... "
                     << "required hook(int64_t), callback(int64_t).";
-                return {false, 0};
+                return {};
             }
 
             for (int j = 0; j < function_count; ++j)
@@ -884,20 +889,26 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     // look them up in the functions section. this is a rule of the webassembly spec
     // note that at this point in execution we are guarenteed these are populated
     *hook_func_idx -= import_count;
-    *cbak_func_idx -= import_count;
+
+    if (cbak_func_idx)
+        *cbak_func_idx -= import_count;
 
     if (func_type_map.find(*hook_func_idx) == func_type_map.end() ||
-        func_type_map.find(*cbak_func_idx) == func_type_map.end())
+        (cbak_func_idx && func_type_map.find(*cbak_func_idx) == func_type_map.end()))
     {
         JLOG(ctx.j.trace())
             << "HookSet(" << hook::log::FUNC_TYPELESS << ")["
             << HS_ACC() << "]: Malformed transaction. "
             << "hook or cbak functions did not have a corresponding type in WASM binary.";
-        return {false, 0};
+        return {};
     }
 
     int hook_type_idx = func_type_map[*hook_func_idx];
-    int cbak_type_idx = func_type_map[*cbak_func_idx];
+
+    // cbak function is optional so if it exists it has a type otherwise it is skipped in checks
+    std::optional<int> cbak_type_idx;
+    if (cbak_func_idx)
+        cbak_type_idx = func_type_map[*cbak_func_idx];
 
     // second pass... where we check all the guard function calls follow the guard rules
     // minimal other validation in this pass because first pass caught most of it
@@ -923,7 +934,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         << "Codesec: " << section_type << " "
                         << "Local: " << j << " "
                         << "Offset: " << i;
-                    return {false, 0};
+                    return {};
                 }
                 CHECK_SHORT_HOOK();
                 
@@ -944,7 +955,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
                             << "Offset: " << i;
-                        return {false, 0};
+                        return {};
                     }
 
                     printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
@@ -952,14 +963,14 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                            j, *hook_func_idx, *cbak_func_idx, param_count, param_type);
 
                     // hook and cbak parameter check here
-                    if ((j == hook_type_idx || j == cbak_type_idx) && 
+                    if ((j == hook_type_idx || (cbak_type_idx && j == cbak_type_idx)) && 
                         (param_count != 1 || param_type != 0x7F /* i32 */ ))
                     {
                         JLOG(ctx.j.trace())
                             << "HookSet(" << hook::log::PARAM_HOOK_CBAK << ")["
                             << HS_ACC() << "]: Malformed transaction. "
                             << "hook and cbak function definition must have exactly one uint32_t parameter.";
-                        return {false, 0};
+                        return {};
                     }
                 }
 
@@ -973,7 +984,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                         << "HookSet(" << hook::log::FUNC_RETURN_COUNT << ")["
                         << HS_ACC() << "]: Malformed transaction. "
                         << "Hook declares a function type that returns fewer or more than one value.";
-                    return {false, 0};
+                    return {};
                 }
 
                 // this can only ever be 1 in production, but in testing it may also be 0 or >1
@@ -994,7 +1005,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
                             << "Offset: " << i;
-                        return {false, 0};
+                        return {};
                     }
                     
                     printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
@@ -1002,7 +1013,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                            j, *hook_func_idx, *cbak_func_idx, result_count, result_type);
                         
                     // hook and cbak return type check here
-                    if ((j == hook_type_idx || j == cbak_type_idx) && 
+                    if ((j == hook_type_idx || (cbak_type_idx && j == cbak_type_idx)) && 
                         (result_count != 1 || result_type != 0x7E /* i64 */ ))
                     {
                         JLOG(ctx.j.trace())
@@ -1012,7 +1023,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                             << " function definition must have exactly one int64_t return type. "
                             << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
                             << "paramcount=" << param_count;
-                        return {false, 0};
+                        return {};
                     }
                 }
             }
@@ -1042,7 +1053,7 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                             << "Codesec: " << j << " "
                             << "Local: " << k << " "
                             << "Offset: " << i;
-                        return {false, 0};
+                        return {};
                     }
                     i++; CHECK_SHORT_HOOK();
                 }
@@ -1052,15 +1063,18 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
 
                 // execution to here means we are up to the actual expr for the codesec/function
 
-                auto [valid, instruction_count] =
+                auto valid =
                     check_guard(ctx, hook, j, i, code_end, guard_import_number, last_import_number);
 
                 if (!valid)
-                    return {false, 0};
+                    return {};
 
-                // the worst case execution is the fee, this includes the worst case between cbak and hook
-                if (instruction_count > maxInstrCount)
-                    maxInstrCount = instruction_count;
+                if (hook_func_idx && *hook_func_idx == j)
+                    maxInstrCountHook = *valid;
+                else if (cbak_func_idx && *cbak_func_idx == j)
+                    maxInstrCountCbak = *valid;
+                else
+                    assert(false);
 
                 i = code_end;
 
@@ -1072,7 +1086,9 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
     // execution to here means guards are installed correctly
 
     JLOG(ctx.j.trace())
-        << "HookSet(" << hook::log::WASM_SMOKE_TEST << ")[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
+        << "HookSet(" 
+        << hook::log::WASM_SMOKE_TEST 
+        << ")[" << HS_ACC() << "]: Trying to wasm instantiate proposed hook "
         << "size = " <<  hook.size();
 
     std::optional<std::string> result = 
@@ -1083,19 +1099,24 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
         JLOG(ctx.j.trace())
             << "HookSet(" << hook::log::WASM_TEST_FAILURE << ")[" << HS_ACC() << "]: "
             << "Tried to set a hook with invalid code. VM error: " << *result;
-        return {false, 0};
+        return {};
     }
 
-    return {true, maxInstrCount};
+    return std::pair<uint64_t, uint64_t>{maxInstrCountHook, maxInstrCountCbak};
 }
 
 // This is a context-free validation, it does not take into account the current state of the ledger
 // returns  < valid, instruction count >
 // may throw overflow_error
-std::pair<bool, uint64_t>
+std::variant<
+    bool,           // true = valid
+    std::pair<      // if set implicitly valid, and return instruction counts (hsoCREATE only)
+        uint64_t,   // max instruction count for hook
+        uint64_t    // max instruction count for cbak
+    >
+>
 validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 {
-
     uint32_t flags = hookSetObj.isFieldPresent(sfFlags) ? hookSetObj.getFieldU32(sfFlags) : 0;
 
 
@@ -1103,7 +1124,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
     {
         case hsoNOOP:
         {
-            return {true, 0};
+            return true;
         }
 
         case hsoNSDELETE:
@@ -1120,7 +1141,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "HookSet(" << hook::log::NSDELETE_FIELD << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook nsdelete operation should contain only "
                     << "sfHookNamespace & sfFlags";
-                return {false, 0};
+                return false;
             }
 
             if (flags != hsfNSDELETE)
@@ -1128,10 +1149,10 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::NSDELETE_FLAGS << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook nsdelete operation should only specify hsfNSDELETE";
-                return {false, 0};
+                return false;
             }
 
-            return {true, 0};
+            return true;
         }
 
         case hsoDELETE:
@@ -1146,7 +1167,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::DELETE_FIELD << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook delete operation should contain only sfCreateCode & sfFlags";
-                return {false, 0};
+                return false;
             }
 
             if (!(flags & hsfOVERRIDE))
@@ -1154,7 +1175,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::OVERRIDE_MISSING << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook delete operation was missing the hsfOVERRIDE flag";
-                return {false, 0};
+                return false;
             }
 
 
@@ -1163,10 +1184,10 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::FLAGS_INVALID << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook delete operation specified invalid flags";
-                return {false, 0};
+                return false;
             }
 
-            return {true, 0};
+            return true;
         }
 
         case hsoINSTALL:
@@ -1174,12 +1195,12 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             // validate hook params structure, if any
             if (hookSetObj.isFieldPresent(sfHookParameters) &&
                 !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
-                return {false, 0};
+                return false;
 
             // validate hook grants structure, if any
             if (hookSetObj.isFieldPresent(sfHookGrants) &&
                 !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
-                return {false, 0};
+                return false;
             
             // api version not allowed in update
             if (hookSetObj.isFieldPresent(sfHookApiVersion))
@@ -1187,14 +1208,14 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::API_ILLEGAL << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook install operation sfHookApiVersion must not be included.";
-                return {false, 0};
+                return false;
             }
     
             // namespace may be valid, if the user so chooses
             // hookon may be present if the user so chooses
             // flags may be present if the user so chooses
 
-            return {true, 0};
+            return true;
         }
 
         case hsoUPDATE:
@@ -1207,18 +1228,18 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "HookSet(" << hook::log::FLAGS_INVALID << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook update operation only hsfNSDELETE may be specified and "
                     << "only if a new HookNamespace is also specified.";
-                return {false, 0};
+                return false;
             }
 
             // validate hook params structure
             if (hookSetObj.isFieldPresent(sfHookParameters) &&
                 !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
-                return {false, 0};
+                return false;
 
             // validate hook grants structure
             if (hookSetObj.isFieldPresent(sfHookGrants) &&
                 !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
-                return {false, 0};
+                return false;
             
             // api version not allowed in update
             if (hookSetObj.isFieldPresent(sfHookApiVersion))
@@ -1226,14 +1247,14 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::API_ILLEGAL << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook update operation sfHookApiVersion must not be included.";
-                return {false, 0};
+                return false;
             }
 
             // namespace may be valid, if the user so chooses
             // hookon may be present if the user so chooses
             // flags may be present if the user so chooses
 
-            return {true, 0};
+            return true;
         }
 
         case hsoCREATE:
@@ -1241,12 +1262,12 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             // validate hook params structure
             if (hookSetObj.isFieldPresent(sfHookParameters) &&
                 !validateHookParams(ctx, hookSetObj.getFieldArray(sfHookParameters)))
-                return {false, 0};
+                return false;
 
             // validate hook grants structure
             if (hookSetObj.isFieldPresent(sfHookGrants) &&
                 !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
-                return {false, 0};
+                return false;
 
 
             // ensure hooknamespace is present
@@ -1255,7 +1276,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::NAMESPACE_MISSING << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHookDefinition must contain sfHookNamespace.";
-                return {false, 0};
+                return false;
             }
 
             // validate api version, if provided
@@ -1264,7 +1285,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::API_MISSING << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
-                return {false, 0};
+                return false;
             }
                 
             auto version = hookSetObj.getFieldU16(sfHookApiVersion);
@@ -1274,7 +1295,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::API_INVALID << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook sfHook->sfHookApiVersion invalid. (Try 0).";
-                return {false, 0};
+                return false;
             }
 
             // validate sfHookOn
@@ -1283,11 +1304,16 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::HOOKON_MISSING << ")[" << HS_ACC()
                     << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
-                return {false, 0};
+                return false;
             }
             
             // finally validate web assembly byte code
-            return validateCreateCode(ctx, hookSetObj);            
+            {
+                auto result = validateCreateCode(ctx, hookSetObj);
+                if (!result)
+                    return false;
+                return *result;
+            }
         }
         
         case hsoINVALID:
@@ -1296,7 +1322,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             JLOG(ctx.j.trace())
                 << "HookSet(" << hook::log::HASH_OR_CODE << ")[" << HS_ACC()
                 << "]: Malformed transaction: SetHook must provide only one of sfCreateCode or sfHookHash.";
-            return {false, 0};
+            return false;
         }
     }
 }
@@ -1447,12 +1473,12 @@ SetHook::preflight(PreflightContext const& ctx)
         {
 
             // may throw if leb128 overflow is detected
-            [[maybe_unused]]
-            auto [valid,  _] =
+            auto valid =
                 validateHookSetEntry(shCtx, *hookSetObj);
 
-            if (!valid)
-                    return temMALFORMED;
+            if (std::holds_alternative<bool>(valid) && !std::get<bool>(valid))
+                return temMALFORMED;
+
         }
         catch (std::exception& e)
         {
@@ -2036,23 +2062,34 @@ SetHook::setHook()
                 }
                 else
                 {
-                    uint64_t maxInstrCount = 0;
+                    uint64_t maxInstrCountHook = 0;
+                    uint64_t maxInstrCountCbak = 0;
                     bool valid = false;
 
                     // create hook definition SLE
                     try
                     {
 
-                        std::tie(valid, maxInstrCount) =
+                        auto valid =
                             validateHookSetEntry(ctx, hookSetObj->get());
 
-                        if (!valid)
+                        // if invalid return an error
+                        if (std::holds_alternative<bool>(valid))
                         {
-                            JLOG(ctx.j.warn())
-                                << "HookSet(" << hook::log::WASM_INVALID << ")[" << HS_ACC()
-                                << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
-                            return tecINTERNAL;
+                            if (!std::get<bool>(valid))
+                            {
+                                JLOG(ctx.j.warn())
+                                    << "HookSet(" << hook::log::WASM_INVALID << ")[" << HS_ACC()
+                                    << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
+                                return tecINTERNAL;
+                            }
+                            else
+                                assert(false); // should never happen
                         }
+
+                        // otherwise assign instruction counts
+                        std::tie(maxInstrCountHook, maxInstrCountCbak) =
+                            std::get<std::pair<uint64_t, uint64_t>>(valid);
                     }
                     catch (std::exception& e)
                     {
@@ -2084,7 +2121,11 @@ SetHook::setHook()
                     newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
                     newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
-                    newHookDef->setFieldAmount(sfFee,  XRPAmount {hook::computeExecutionFee(maxInstrCount)} );
+                    newHookDef->setFieldAmount(sfFee,  
+                            XRPAmount {hook::computeExecutionFee(maxInstrCountHook)});
+                    if (maxInstrCountCbak > 0)
+                    newHookDef->setFieldAmount(sfHookCallbackFee,
+                            XRPAmount {hook::computeExecutionFee(maxInstrCountCbak)});
                     view().insert(newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));

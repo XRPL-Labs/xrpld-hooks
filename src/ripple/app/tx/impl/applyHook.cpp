@@ -77,9 +77,6 @@ namespace hook
             case ttTICKET_CREATE:
             case ttHOOK_SET:
             case ttOFFER_CREATE: // this is handled seperately
-            //case ttCONTRACT:        // not used
-            //case ttSPINAL_TAP:      // not used
-            //case ttNICKNAME_SET:    // not used
             {
                 break;
             }

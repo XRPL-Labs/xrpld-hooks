@@ -203,7 +203,8 @@ LedgerFormats::LedgerFormats()
             {sfCreateCode, soeREQUIRED},
             {sfHookSetTxnID, soeREQUIRED},
             {sfReferenceCount, soeREQUIRED},
-            {sfFee, soeREQUIRED}
+            {sfFee, soeREQUIRED},
+            {sfHookCallbackFee, soeOPTIONAL}
         },
         commonFields);
 
