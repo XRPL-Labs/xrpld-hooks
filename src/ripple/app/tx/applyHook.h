@@ -63,12 +63,9 @@ namespace hook
         {ttACCOUNT_SET,         tshNONE     },
         {ttESCROW_CANCEL,       tshCOLLECT  },
         {ttREGULAR_KEY_SET,     tshNONE     },
-//        {ttNICKNAME_SET,        tshNONE     },
         {ttOFFER_CREATE,        tshCOLLECT  },
         {ttOFFER_CANCEL,        tshNONE     },
-//        {ttCONTRACT,            tshNONE     },
         {ttTICKET_CREATE,       tshNONE     },
-//        {ttSPINAL_TAP,          tshNONE     },
         {ttSIGNER_LIST_SET,     tshROLLBACK },
         {ttPAYCHAN_CREATE,      tshROLLBACK },
         {ttPAYCHAN_FUND,        tshCOLLECT  },
@@ -99,93 +96,88 @@ namespace hook
         enum hook_log_code : uint16_t
         {
             /* HookSet log-codes */
-            SHORT_HOOK          =   0,  // web assembly byte code ended abruptly
-            CALL_ILLEGAL        =   1,  // wasm tries to call a non-whitelisted function
-            GUARD_PARAMETERS    =   2,  // guard called but did not use constant expressions for params
-            CALL_INDIRECT       =   3,  // wasm used call indirect instruction which is disallowed
-            GUARD_MISSING       =   4,  // guard call missing at top of loop
-            MEMORY_GROW         =   5,  // memory.grow instruction is present but disallowed
-            BLOCK_ILLEGAL       =   6,  // a block end instruction moves execution below depth 0 {{}}`}` <= like this
-            INSTRUCTION_COUNT   =   7,  // worst case execution instruction count as computed by HookSet
-            INSTRUCTION_EXCESS  =   8,  // worst case execution instruction count was too large
-            PARAMETERS_ILLEGAL  =   9,  // HookParameters contained something other than a HookParameter
-            PARAMETERS_FIELD    =  10,  // HookParameters contained a HookParameter with an invalid key in it
-            PARAMETERS_NAME     =  11,  // HookParameters contained a HookParameter which lacked ParameterName field
-            HASH_OR_CODE        =  12,  // HookSet object can contain only one of CreateCode and HookHash
-            GRANTS_EMPTY        =  13,  // HookSet object contained an empty grants array (you should remove it)
-            GRANTS_EXCESS       =  14,  // HookSet object cotnained a grants array with too many grants
-            GRANTS_ILLEGAL      =  15,  // Hookset object contained grants array which contained a non Grant object
-            GRANTS_FIELD        =  16,  // HookSet object contained a grant without Authorize or HookHash
-            API_ILLEGAL         =  17,  // HookSet object contained HookApiVersion for existing HookDefinition
-            NAMESPACE_MISSING   =  18,  // HookSet object lacked HookNamespace
-            API_MISSING         =  19,  // HookSet object did not contain HookApiVersion but should have
-            API_INVALID         =  20,  // HookSet object contained HookApiVersion for unrecognised hook API
-            HOOKON_MISSING      =  21,  // HookSet object did not contain HookOn but should have
-            DELETE_FIELD        =  22,  // 
-            OVERRIDE_MISSING    =  23,  // HookSet object was trying to update or delete a hook but lacked hsfOVERRIDE
-            FLAGS_INVALID       =  24,  // HookSet flags were invalid for specified operation
-            NSDELETE_FIELD      =  25,
-            NSDELETE_FLAGS      =  26,
-            WASM_TOO_SMALL      =  27,
-            WASM_BAD_MAGIC      =  28,  // wasm magic number missing or not wasm
-            WASM_PARSE_LOOP     =  29,  // wasm section parsing resulted in an infinite loop
-            IMPORTS_MISSING     =  30,  // hook must import guard, and accept/rollback
-            IMPORT_MODULE_BAD   =  31,  // hook attempted to specify no or a bad import module
-            IMPORT_MODULE_ENV   =  32,  // hook attempted to specify import module not named env
-            IMPORT_NAME_BAD     =  33,  // import name was too short or too long
-            IMPORT_ILLEGAL      =  34,  // attempted import of a non-whitelisted function
-            GUARD_IMPORT        =  35,  // guard import is missing
-            EXPORTS_MISSING     =  36,  // hook did not export *any* functions (should be cbak, hook)
-            EXPORT_HOOK_FUNC    =  37,  // hook did not export correct func def int64_t hook(uint32_t)
-            EXPORT_CBAK_FUNC    =  38,  // hook did not export correct func def int64_t cbak(uint32_t)
-            EXPORT_MISSING      =  39,  // distinct from export*S*_missing, either hook or cbak is missing
-            FUNCS_MISSING       =  40,  // hook did not include function code for any functions
-            FUNC_TYPELESS       =  41,  // hook defined hook/cbak but their type is not defined in wasm
-            FUNC_TYPE_INVALID   =  42,  // malformed and illegal wasm in the func type section
-            FUNC_PARAM_INVALID  =  43,  // parameter types may only be i32 i64 u32 u64
-            PARAM_HOOK_CBAK     =  44,  // hook and cbak must take exactly one u32 parameter
-            FUNC_RETURN_COUNT   =  45,  // a function type is defined in the wasm which returns > 1 return value
-            FUNC_RETURN_INVALID =  46,  // a function type does not return i32 i64 u32 or u64
-            RETURN_HOOK_CBAK    =  47,  // hook and cbak must retunr i64
-            TYPE_INVALID        =  48,  // malformed and illegal wasm specifying an illegal local var type
-            WASM_SMOKE_TEST     =  49,  // Informational: first attempt to load wasm into wasm runtime
-            WASM_TEST_FAILURE   =  50,  // the smoke test failed
-            HOOK_DEF_MISSING    =  51,  // attempt to reference a hook definition (by hash) that is not on ledger
-            AMENDMENT_DISABLED  =  52,  // attempt to HookSet when amendment is not yet enabled.
-            HOOKS_ARRAY_MISSING =  53,  // attempt to HookSet without a Hooks array
-            HOOKS_ARRAY_EMPTY   =  54,  // attempt to HookSet with an empty Hooks array
-            HOOKS_ARRAY_TOO_BIG =  55,  // attempt to HookSet with a Hooks array beyond the chain size limit
-            HOOKS_ARRAY_BAD     =  56,  // attempt to HookSet with a Hooks array containing a non-Hook obj
-            HOOK_INVALID_FIELD  =  57,  // HookSetObj contained an illegal/unexpected field
-            WASM_VALIDATION     =  58,  // a generic error while parsing wasm, usually leb128 overflow
-            HOOKS_ARRAY_BLANK   =  59,  // all hook set objs were blank
-            NSDELETE            =  60,  // Informational: a namespace is being deleted
-            NSDELETE_ACCOUNT    =  61,  // nsdelete tried to delete ns from a non-existing account
-            NSDELETE_DIRECTORY  =  62,  // nsdelete operation failed to delete ns directory
-            NSDELETE_DIR_ENTRY  =  63,  // nsdelete operation failed due to bad entry in ns directory
-            NSDELETE_NONSTATE   =  64,  // nsdelete operation failed due to the presence of a non-hookstate obj
-            NSDELETE_ENTRY      =  65,  // nsdelete operation failed due to missing hook state entry
-            NSDELETE_DIR        =  66,  // could not delete directory node in ledger
-            NSDELETE_COUNT      =  67,  // namespace state count less than 0 / overflow
-            HOOK_PARAMS_COUNT   =  68,  // hookset obj would create too many hook parameters
-            HOOK_PARAM_SIZE     =  69,  // hookset obj sets a parameter or value that exceeds max allowable size
-            NSDELETE_NOTHING    =  70,  // hsfNSDELETE provided but nothing to delete
-            DELETE_FLAG         =  71,  // delete operation requires hsfOVERRIDE flag
-            DELETE_NOTHING      =  72,  // delete operation would delete nothing
-            CREATE_FLAG         =  73,  // create operation requires hsfOVERRIDE flag
-            WASM_TOO_BIG        =  74,  // set hook would exceed maximum hook size
-            WASM_INVALID        =  75,  // set hook operation would set invalid wasm
-            INSTALL_FLAG        =  76,  // install operation requires hsoOVERRIDE
-            INSTALL_MISSING     =  77,  // install operation specifies hookhash which doesn't exist on the ledger
-            OPERATION_INVALID   =  78   // could not deduce an operation from the provided hookset obj
-
-
-
-
-
-
-            //RH UPTO
-
+            AMENDMENT_DISABLED   = 1,  // attempt to HookSet when amendment is not yet enabled.                       
+            API_ILLEGAL          = 2,  // HookSet object contained HookApiVersion for existing HookDefinition         
+            API_INVALID          = 3,  // HookSet object contained HookApiVersion for unrecognised hook API           
+            API_MISSING          = 4,  // HookSet object did not contain HookApiVersion but should have               
+            BLOCK_ILLEGAL        = 5,  // a block end instruction moves execution below depth 0 {{}}`}` <= like this  
+            CALL_ILLEGAL         = 6,  // wasm tries to call a non-whitelisted function                               
+            CALL_INDIRECT        = 7,  // wasm used call indirect instruction which is disallowed                     
+            CREATE_FLAG          = 8,  // create operation requires hsfOVERRIDE flag                                  
+            DELETE_FIELD         = 9,  //                                                                             
+            DELETE_FLAG          = 10,  // delete operation requires hsfOVERRIDE flag                                  
+            DELETE_NOTHING       = 11,  // delete operation would delete nothing                                       
+            EXPORTS_MISSING      = 12,  // hook did not export *any* functions (should be cbak, hook)                  
+            EXPORT_CBAK_FUNC     = 13,  // hook did not export correct func def int64_t cbak(uint32_t)                 
+            EXPORT_HOOK_FUNC     = 14,  // hook did not export correct func def int64_t hook(uint32_t)                 
+            EXPORT_MISSING       = 15,  // distinct from export*S*_missing, either hook or cbak is missing             
+            FLAGS_INVALID        = 16,  // HookSet flags were invalid for specified operation                          
+            FUNCS_MISSING        = 17,  // hook did not include function code for any functions                        
+            FUNC_PARAM_INVALID   = 18,  // parameter types may only be i32 i64 u32 u64                                 
+            FUNC_RETURN_COUNT    = 19,  // a function type is defined in the wasm which returns > 1 return value       
+            FUNC_RETURN_INVALID  = 20,  // a function type does not return i32 i64 u32 or u64                          
+            FUNC_TYPELESS        = 21,  // hook defined hook/cbak but their type is not defined in wasm                
+            FUNC_TYPE_INVALID    = 22,  // malformed and illegal wasm in the func type section                         
+            GRANTS_EMPTY         = 23,  // HookSet object contained an empty grants array (you should remove it)       
+            GRANTS_EXCESS        = 24,  // HookSet object cotnained a grants array with too many grants                
+            GRANTS_FIELD         = 25,  // HookSet object contained a grant without Authorize or HookHash              
+            GRANTS_ILLEGAL       = 26,  // Hookset object contained grants array which contained a non Grant object    
+            GUARD_IMPORT         = 27,  // guard import is missing                                                     
+            GUARD_MISSING        = 28,  // guard call missing at top of loop                                           
+            GUARD_PARAMETERS     = 29,  // guard called but did not use constant expressions for params                
+            HASH_OR_CODE         = 30,  // HookSet object can contain only one of CreateCode and HookHash              
+            HOOKON_MISSING       = 31,  // HookSet object did not contain HookOn but should have                       
+            HOOKS_ARRAY_BAD      = 32,  // attempt to HookSet with a Hooks array containing a non-Hook obj             
+            HOOKS_ARRAY_BLANK    = 33,  // all hook set objs were blank                                                
+            HOOKS_ARRAY_EMPTY    = 34,  // attempt to HookSet with an empty Hooks array                                
+            HOOKS_ARRAY_MISSING  = 35,  // attempt to HookSet without a Hooks array                                    
+            HOOKS_ARRAY_TOO_BIG  = 36,  // attempt to HookSet with a Hooks array beyond the chain size limit           
+            HOOK_ADD             = 37,  // Informational: adding ltHook to directory                                   
+            HOOK_DEF_MISSING     = 38,  // attempt to reference a hook definition (by hash) that is not on ledger      
+            HOOK_DELETE          = 39,  // unable to delete ltHook from owner                                          
+            HOOK_INVALID_FIELD   = 40,  // HookSetObj contained an illegal/unexpected field                            
+            HOOK_PARAMS_COUNT    = 41,  // hookset obj would create too many hook parameters                           
+            HOOK_PARAM_SIZE      = 42,  // hookset obj sets a parameter or value that exceeds max allowable size       
+            IMPORTS_MISSING      = 43,  // hook must import guard, and accept/rollback                                 
+            IMPORT_ILLEGAL       = 44,  // attempted import of a non-whitelisted function                              
+            IMPORT_MODULE_BAD    = 45,  // hook attempted to specify no or a bad import module                         
+            IMPORT_MODULE_ENV    = 46,  // hook attempted to specify import module not named env                       
+            IMPORT_NAME_BAD      = 47,  // import name was too short or too long                                       
+            INSTALL_FLAG         = 48,  // install operation requires hsoOVERRIDE                                      
+            INSTALL_MISSING      = 49,  // install operation specifies hookhash which doesn't exist on the ledger      
+            INSTRUCTION_COUNT    = 50,  // worst case execution instruction count as computed by HookSet               
+            INSTRUCTION_EXCESS   = 51,  // worst case execution instruction count was too large                        
+            MEMORY_GROW          = 52,  // memory.grow instruction is present but disallowed                           
+            NAMESPACE_MISSING    = 53,  // HookSet object lacked HookNamespace                                         
+            NSDELETE             = 54,  // Informational: a namespace is being deleted                                 
+            NSDELETE_ACCOUNT     = 55,  // nsdelete tried to delete ns from a non-existing account                     
+            NSDELETE_COUNT       = 56,  // namespace state count less than 0 / overflow                                
+            NSDELETE_DIR         = 57,  // could not delete directory node in ledger                                   
+            NSDELETE_DIRECTORY   = 58,  // nsdelete operation failed to delete ns directory                            
+            NSDELETE_DIR_ENTRY   = 59,  // nsdelete operation failed due to bad entry in ns directory                  
+            NSDELETE_ENTRY       = 60,  // nsdelete operation failed due to missing hook state entry                   
+            NSDELETE_FIELD       = 61,                                                                                 
+            NSDELETE_FLAGS       = 62,                                                                                 
+            NSDELETE_NONSTATE    = 63,  // nsdelete operation failed due to the presence of a non-hookstate obj        
+            NSDELETE_NOTHING     = 64,  // hsfNSDELETE provided but nothing to delete                                  
+            OPERATION_INVALID    = 65,  // could not deduce an operation from the provided hookset obj                 
+            OVERRIDE_MISSING     = 66,  // HookSet object was trying to update or delete a hook but lacked hsfOVERRIDE 
+            PARAMETERS_FIELD     = 67,  // HookParameters contained a HookParameter with an invalid key in it          
+            PARAMETERS_ILLEGAL   = 68,  // HookParameters contained something other than a HookParameter               
+            PARAMETERS_NAME      = 69,  // HookParameters contained a HookParameter which lacked ParameterName field   
+            PARAM_HOOK_CBAK      = 70,  // hook and cbak must take exactly one u32 parameter                           
+            RETURN_HOOK_CBAK     = 71,  // hook and cbak must retunr i64                                               
+            SHORT_HOOK           = 72,  // web assembly byte code ended abruptly                                       
+            TYPE_INVALID         = 73,  // malformed and illegal wasm specifying an illegal local var type             
+            WASM_BAD_MAGIC       = 74,  // wasm magic number missing or not wasm                                       
+            WASM_INVALID         = 75,  // set hook operation would set invalid wasm                                   
+            WASM_PARSE_LOOP      = 76,  // wasm section parsing resulted in an infinite loop                           
+            WASM_SMOKE_TEST      = 77,  // Informational: first attempt to load wasm into wasm runtime                 
+            WASM_TEST_FAILURE    = 78,  // the smoke test failed                                                       
+            WASM_TOO_BIG         = 79,  // set hook would exceed maximum hook size                                     
+            WASM_TOO_SMALL       = 80,                                                                                 
+            WASM_VALIDATION      = 81,  // a generic error while parsing wasm, usually leb128 overflow        
+            // RH NOTE: only HookSet msgs got log codes, possibly all Hook log lines should get a code? 
         };
     };
     

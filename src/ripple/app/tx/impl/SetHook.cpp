@@ -1359,7 +1359,7 @@ SetHook::preflight(PreflightContext const& ctx)
     if (!ctx.rules.enabled(featureHooks))
     {
         JLOG(ctx.j.warn())
-            << "HookSet[(" << hook::log::AMENDMENT_DISABLED << ")"
+            << "HookSet(" << hook::log::AMENDMENT_DISABLED << ")["
             << HS_ACC() << "]: Hooks Amendment not enabled!";
         return temDISABLED;
     }
@@ -2218,7 +2218,9 @@ SetHook::setHook()
                         keylet::ownerDir(account_),
                         hint, hookKeylet.key, false))
             {
-                JLOG(j_.fatal()) << "Unable to delete ltHOOK from owner.";
+                JLOG(j_.fatal())
+                    << "HookSet(" << hook::log::HOOK_DELETE << ")[" << HS_ACC()
+                    << "]: Unable to delete ltHOOK from owner";
                 return tefBAD_LEDGER;
             }
 
@@ -2242,9 +2244,11 @@ SetHook::setHook()
                 hookKeylet,
                 describeOwnerDir(account_));
             
-            JLOG(j_.trace()) << "Adding ltHook to account directory "
-                             << to_string(hookKeylet.key) << ": "
-                             << (page ? "success" : "failure");
+            JLOG(j_.trace())
+                << "HookSet(" << hook::log::HOOK_ADD << ")[" << HS_ACC()
+                << "]: Adding ltHook to account directory "
+                << to_string(hookKeylet.key) << ": "
+                << (page ? "success" : "failure");
 
             if (!page)
                 return tecDIR_FULL;
