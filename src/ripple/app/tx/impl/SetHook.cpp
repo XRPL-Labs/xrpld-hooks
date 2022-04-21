@@ -1074,7 +1074,11 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
                 else if (cbak_func_idx && *cbak_func_idx == j)
                     maxInstrCountCbak = *valid;
                 else
-                    assert(false);
+                {
+                    printf("code section: %d not hook_func_idx: %d or cbak_func_idx: %d\n",
+                            j, *hook_func_idx, (cbak_func_idx ? *cbak_func_idx : -1));
+                    //   assert(false);
+                }
 
                 i = code_end;
 
