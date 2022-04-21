@@ -20,10 +20,13 @@
 #ifndef RIPPLE_APP_TX_TRANSACTOR_H_INCLUDED
 #define RIPPLE_APP_TX_TRANSACTOR_H_INCLUDED
 
+#include <ripple/app/tx/applyHook.h> 
 #include <ripple/app/tx/applySteps.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/beast/utility/Journal.h>
+#include <ripple/ledger/PaymentSandbox.h>
+#include <ripple/ledger/detail/ApplyViewBase.h>
 
 namespace hook {
     // RH TODO: fix applyHook.h so this prototype isn't needed
@@ -107,7 +110,7 @@ protected:
 
 public:
     enum ConsequencesFactoryType { Normal, Blocker, Custom };
-    
+
     /** Process the transaction. */
     std::pair<TER, bool>
     operator()();
@@ -150,9 +153,6 @@ public:
     // Returns the fee in fee units, not scaled for load.
     static FeeUnit64
     calculateBaseFee(ReadView const& view, STTx const& tx);
-    
-    static FeeUnit64
-    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
 
 
     // Returns a list of zero or more accounts which are
@@ -182,7 +182,42 @@ public:
         uint256 const& ticketIndex,
         beast::Journal j);
 
+
+    // Hooks
+
+    static FeeUnit64
+    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
+
 protected:
+
+    void
+    doHookCallback();
+
+    TER
+    doTSH(
+        bool strong,                                // only do strong TSH iff true, otheriwse only weak
+        hook::HookStateMap& stateMap,
+        std::vector<hook::HookResult>& results);
+
+    TER
+    executeHookChain(
+        std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
+        hook::HookStateMap& stateMap,
+        std::vector<hook::HookResult>& results,
+        ripple::AccountID const& account);
+    
+    void
+    addWeakTSHFromSandbox(ApplyViewBase& pv); 
+    
+    // hooks amendment fields, these are unpopulated and unused unless featureHooks is enabled
+    int executedHookCount_ = 0;              // record how many hooks have executed across the whole transactor
+    std::set<AccountID> additionalWeakTSH_;  // any TSH that needs weak hook execution at the end
+                                             // of the transactor, who isn't able to be deduced until after apply
+                                             // i.e. pathing participants, crossed offers
+
+    ///////////////////////////////////////////////////
+
+
     TER
     apply();
 

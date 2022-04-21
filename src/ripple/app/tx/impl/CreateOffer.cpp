@@ -1227,7 +1227,10 @@ CreateOffer::doApply()
 
     auto const result = applyGuts(sb, sbCancel);
     if (result.second)
+    {
         sb.apply(ctx_.rawView());
+        addWeakTSHFromSandbox(sb);
+    }
     else
         sbCancel.apply(ctx_.rawView());
     return result.first;

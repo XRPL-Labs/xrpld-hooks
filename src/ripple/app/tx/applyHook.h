@@ -511,7 +511,7 @@ namespace hook
                 std::vector<uint8_t>,
                 std::vector<uint8_t>
             >> const& hookParamOverrides,
-        std::shared_ptr<HookStateMap>& stateMap,
+        HookStateMap& stateMap,
         ripple::ApplyContext& applyCtx,
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
         bool callback = false,
@@ -620,7 +620,7 @@ namespace hook
     // write state map to ledger
     ripple::TER
     finalizeHookState(
-        std::shared_ptr<HookStateMap>&,
+        HookStateMap const&,
         ripple::ApplyContext&,
         ripple::uint256 const&);
 
@@ -629,6 +629,13 @@ namespace hook
     removeEmissionEntry(
         ripple::ApplyContext& applyCtx);
     
+    bool /* retval of true means an error */
+    gatherHookParameters(
+            std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
+            ripple::STObject const* hookObj,
+            std::map<std::vector<uint8_t>, std::vector<uint8_t>>& parameters,
+            beast::Journal const& j_);
+
     // RH TODO: call destruct for these on rippled shutdown
     #define ADD_HOOK_FUNCTION(F, ctx)\
     {\

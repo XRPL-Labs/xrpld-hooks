@@ -1079,7 +1079,7 @@ DEFINE_HOOK_FUNCTION(
 ripple::TER
 hook::
 finalizeHookState(
-        std::shared_ptr<HookStateMap>& stateMap,
+        HookStateMap const& stateMap,
         ripple::ApplyContext& applyCtx,
         ripple::uint256 const& txnID)
 {
@@ -1132,6 +1132,45 @@ finalizeHookState(
     return tesSUCCESS;
 }
 
+
+bool /* retval of true means an error */
+hook::
+gatherHookParameters(
+        std::shared_ptr<ripple::STLedgerEntry> const& hookDef,
+        ripple::STObject const* hookObj,
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>>& parameters,
+        beast::Journal const& j_)
+{
+    if (!hookDef->isFieldPresent(sfHookParameters))
+    {
+        JLOG(j_.fatal())
+            << "HookError[]: Failure: hook def missing parameters (send)";
+        return true;
+    }
+
+    // first defaults
+    auto const& defaultParameters = hookDef->getFieldArray(sfHookParameters);
+    for (auto const& hookParameter : defaultParameters)
+    {
+        auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+        parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+            hookParameterObj->getFieldVL(sfHookParameterValue);
+    } 
+
+    // and then custom
+    if (hookObj->isFieldPresent(sfHookParameters))
+    {
+        auto const& hookParameters = hookObj->getFieldArray(sfHookParameters);
+        for (auto const& hookParameter : hookParameters)
+        {
+            auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+            parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
+                hookParameterObj->getFieldVL(sfHookParameterValue);
+        } 
+    }
+    return false;
+}
+
 ripple::TER
 hook::
 removeEmissionEntry(ripple::ApplyContext& applyCtx)
@@ -1167,9 +1206,9 @@ removeEmissionEntry(ripple::ApplyContext& applyCtx)
 TER
 hook::
 finalizeHookResult(
-        hook::HookResult& hookResult,
-        ripple::ApplyContext& applyCtx,
-        bool doEmit)
+    hook::HookResult& hookResult,
+    ripple::ApplyContext& applyCtx,
+    bool doEmit)
 {
 
     auto const& j = applyCtx.app.journal("View");
