@@ -543,7 +543,7 @@ namespace hook
         ripple::uint256     const&      hookNamespace;
 
         std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
-        std::shared_ptr<HookStateMap> stateMap;
+        HookStateMap& stateMap;
         uint16_t changedStateCount = 0;
         std::map<
             ripple::uint256,                    // hook hash

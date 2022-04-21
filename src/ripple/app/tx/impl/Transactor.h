@@ -207,7 +207,7 @@ protected:
         ripple::AccountID const& account);
     
     void
-    addWeakTSHFromSandbox(ApplyViewBase& pv); 
+    addWeakTSHFromSandbox(detail::ApplyViewBase const& pv); 
     
     // hooks amendment fields, these are unpopulated and unused unless featureHooks is enabled
     int executedHookCount_ = 0;              // record how many hooks have executed across the whole transactor

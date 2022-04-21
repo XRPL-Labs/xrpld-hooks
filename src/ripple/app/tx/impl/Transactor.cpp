@@ -34,6 +34,7 @@
 #include <ripple/protocol/STAccount.h>
 #include <ripple/protocol/UintTypes.h>
 #include <ripple/ledger/PaymentSandbox.h>
+#include <ripple/ledger/detail/ApplyViewBase.h>
 #include <limits>
 #include <set>
 
@@ -1142,7 +1143,7 @@ Transactor::doHookCallback()
 
 void
 Transactor::
-addWeakTSHFromSandbox(ApplyViewBase const& pv)
+addWeakTSHFromSandbox(detail::ApplyViewBase const& pv)
 {
     // If Hooks are enabled then non-issuers who have their TL balance
     // modified by the execution of the path have the opportunity to have their
@@ -1321,8 +1322,7 @@ Transactor::operator()()
 
     auto result = ctx_.preclaimResult;
     
-    bool const hooksEnabled =
-        ctx_.view().rules().enabled(featureHooks);
+    bool const hooksEnabled = view().rules().enabled(featureHooks);
 
     // Pre-application (Strong TSH) Hooks are executed here
     // These TSH have the right to rollback.
@@ -1334,14 +1334,11 @@ Transactor::operator()()
         // this map can get large so 
         hook::HookStateMap stateMap;
 
-        bool rollback = false;
-
-        auto& view = ctx_.view();
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
         std::vector<hook::HookResult> orgResults;
         std::vector<hook::HookResult> tshResults;
 
-        auto const& hooksOriginator = view.read(keylet::hook(accountID));
+        auto const& hooksOriginator = view().read(keylet::hook(accountID));
 
         // First check if the Sending account has any hooks that can be fired
         if (hooksOriginator && hooksOriginator->isFieldPresent(sfHooks) && !ctx_.emitted())

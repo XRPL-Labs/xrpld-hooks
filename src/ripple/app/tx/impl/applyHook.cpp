@@ -669,7 +669,7 @@ hook::apply(
             std::vector<uint8_t>,
             std::vector<uint8_t>
         >> const& hookParamOverrides,
-    std::shared_ptr<HookStateMap>& stateMap,
+    HookStateMap& stateMap,
     ApplyContext& applyCtx,
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
     bool callback,
@@ -827,7 +827,7 @@ lookup_state_cache(
         ripple::uint256 const& key)
 {
     std::cout << "Lookup_state_cache: acc: " << acc << " ns: " << ns << " key: " << key << "\n";
-    auto& stateMap = *(hookCtx.result.stateMap);
+    auto& stateMap = hookCtx.result.stateMap;
     if (stateMap.find(acc) == stateMap.end())
         return std::nullopt;
 
@@ -864,7 +864,7 @@ set_state_cache(
         bool modified)
 {
 
-    auto& stateMap = *(hookCtx.result.stateMap);
+    auto& stateMap = hookCtx.result.stateMap;
     if (stateMap.find(acc) == stateMap.end())
     {
         stateMap[acc] =
@@ -1088,7 +1088,7 @@ finalizeHookState(
     uint16_t changeCount = 0;
 
     // write all changes to state, if in "apply" mode
-    for (const auto& accEntry : *(stateMap))
+    for (const auto& accEntry : stateMap)
     {
         const auto& acc = accEntry.first;
         for (const auto& nsEntry : accEntry.second)
