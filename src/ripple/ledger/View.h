@@ -475,6 +475,7 @@ trustAdjustLockedBalance(
     V& view,
     S& sleLine,
     STAmount const& deltaAmt,
+    int deltaLockCount,                // if +1 lockCount is increased, -1 is decreased, 0 unchanged
     beast::Journal const& j,
     R dryRun)
 {
@@ -542,26 +543,43 @@ trustAdjustLockedBalance(
         return tecUNFUNDED_PAYMENT;
     }
 
-    STAmount lockedBalance {sfLockedBalance, deltaAmt.issue()};
+    STAmount priorLockedBalance {sfLockedBalance, deltaAmt.issue()};
     if (sleLine->isFieldPresent(sfLockedBalance))
-        lockedBalance = 
+        priorLockedBalance = 
             high ? -(*sleLine)[sfLockedBalance] : (*sleLine)[sfLockedBalance];
 
-    lockedBalance += deltaAmt;
+    uint32_t priorLockCount = 0;
+    if (sleLine->isFieldPresent(sfLockCount))
+        priorLockCount = sleLine->getFieldU32(sfLockCount);
 
-    if (lockedBalance > balance)
+    uint32_t finalLockCount = priorLockCount + deltaLockCount;
+    STAmount finalLockedBalance = priorLockedBalance + deltaAmt;
+
+    if (finalLockedBalance > balance)
     {
         JLOG(j.trace())
             << "trustAdjustLockedBalance: "
             << "lockedBalance("
-            << lockedBalance
+            << finalLockedBalance
             << ") > balance("
             << balance
             << ") = true\n";
         return tecUNFUNDED_PAYMENT;
     }
 
-    if (lockedBalance < beast::zero)
+    if (finalLockedBalance < beast::zero)
+        return tecINTERNAL;
+   
+    // check if there is significant precision loss
+    if (!isAddable(balance, deltaAmt) ||
+        !isAddable(priorLockedBalance, deltaAmt) ||
+        !isAddable(finalLockedBalance, balance))
+        return tecPRECISION_LOSS;
+
+    // sanity check possible overflows on the lock counter
+    if ((deltaLockCount > 0 && priorLockCount > finalLockCount) ||
+        (deltaLockCount < 0 && priorLockCount < finalLockCount) ||
+        (deltaLockCount == 0 && priorLockCount != finalLockCount))
         return tecINTERNAL;
 
     // we won't update any SLEs if it is a dry run
@@ -570,11 +588,17 @@ trustAdjustLockedBalance(
 
     if constexpr(std::is_same<V, ApplyView>::value && std::is_same<S, std::shared_ptr<SLE>>::value)
     {
-        if (lockedBalance == beast::zero)
+        if (finalLockedBalance == beast::zero || finalLockCount == 0)
+        {
             sleLine->makeFieldAbsent(sfLockedBalance);
+            sleLine->makeFieldAbsent(sfLockCount);
+        }
         else
+        {
             sleLine->
-                setFieldAmount(sfLockedBalance, high ? -lockedBalance : lockedBalance);
+                setFieldAmount(sfLockedBalance, high ? -finalLockedBalance : finalLockedBalance);
+            sleLine->setFieldU32(sfLockCount, finalLockCount);
+        }
     
         view.update(sleLine);
     }
@@ -752,6 +776,7 @@ trustTransferLockedBalance(
     S& sleSrcAcc,
     S& sleDstAcc,
     STAmount const& amount,     // issuer, currency are in this field
+    int deltaLockCount,         // -1 decrement, +1 increment, 0 unchanged
     beast::Journal const& j,
     R dryRun)
 {
@@ -820,10 +845,10 @@ trustTransferLockedBalance(
         return tecNO_LINE;
 
     // can't transfer a locked balance that does not exist
-    if (!sleSrcLine->isFieldPresent(sfLockedBalance))
+    if (!sleSrcLine->isFieldPresent(sfLockedBalance) || !sleSrcLine->isFieldPresent(sfLockCount))
     {
         JLOG(j.trace())
-            << "trustTransferLockedBalance could not find sfLockedBalance on source line";
+            << "trustTransferLockedBalance could not find sfLockedBalance/sfLockCount on source line";
         return tecUNFUNDED_PAYMENT;
     }
 
@@ -835,6 +860,8 @@ trustTransferLockedBalance(
 
         STAmount priorLockedBalance =
             srcHigh ? -((*sleSrcLine)[sfLockedBalance]) : (*sleSrcLine)[sfLockedBalance];
+
+        uint32_t priorLockCount = (*sleSrcLine)[sfLockCount];
 
         AccountID srcIssuerAccID = 
                 sleSrcLine->getFieldAmount(srcHigh ? sfLowLimit : sfHighLimit).getIssuer();
@@ -853,6 +880,19 @@ trustTransferLockedBalance(
 
         STAmount finalLockedBalance = priorLockedBalance - amount;
 
+        uint32_t finalLockCount = priorLockCount + deltaLockCount;
+
+        // check if there is significant precision loss
+        if (!isAddable(priorBalance, amount) ||
+            !isAddable(priorLockedBalance, amount))
+            return tecPRECISION_LOSS;
+
+        // sanity check possible overflows on the lock counter
+        if ((deltaLockCount > 0 && priorLockCount > finalLockCount) ||
+            (deltaLockCount < 0 && priorLockCount < finalLockCount) ||
+            (deltaLockCount == 0 && priorLockCount != finalLockCount))
+            return tecINTERNAL;
+        
         // this should never happen but defensively check it here before updating sle
         if (finalBalance < beast::zero || finalLockedBalance < beast::zero)
         {
@@ -865,10 +905,16 @@ trustTransferLockedBalance(
         {
             sleSrcLine->setFieldAmount(sfBalance, srcHigh ? -finalBalance : finalBalance);
 
-            if (finalLockedBalance == beast::zero)
+            if (finalLockedBalance == beast::zero || finalLockCount == 0)
+            {
                 sleSrcLine->makeFieldAbsent(sfLockedBalance);
+                sleSrcLine->makeFieldAbsent(sfLockCount);
+            }
             else
+            {
                 sleSrcLine->setFieldAmount(sfLockedBalance, srcHigh ? -finalLockedBalance : finalLockedBalance);
+                sleSrcLine->setFieldU32(sfLockCount, finalLockCount);
+            }
         }
 
     }
@@ -958,6 +1004,10 @@ trustTransferLockedBalance(
                 << "trustTransferLockedBalance would increase dest line above limit without permission";
             return tecPATH_DRY;
         }
+        
+        // check if there is significant precision loss
+        if (!isAddable(priorBalance, dstAmt))
+            return tecPRECISION_LOSS;
 
         if constexpr(!dryRun)
             sleDstLine->setFieldAmount(sfBalance, dstHigh ? -finalBalance : finalBalance);

@@ -526,6 +526,29 @@ isFakeXRP(STAmount const& amount)
     return isFakeXRP(amount.issue().currency);
 }    
 
+/** returns true iff adding or subtracting results in less than or equal to 0.01% precision loss **/
+inline bool
+isAddable(STAmount const& amt1, STAmount const& amt2)
+{
+    if (amt1 == beast::zero || amt2 == beast::zero)
+        return true;
+
+    static const STAmount one {IOUAmount{1, 0}, noIssue()};
+    static const STAmount maxLoss {IOUAmount{1, -4}, noIssue()};
+
+    STAmount A = amt1;
+    STAmount B = amt2;
+
+    A.setIssue(noIssue());
+    B.setIssue(noIssue());
+
+    STAmount lhs = divide((A - B) + B, A, noIssue()) - one;
+    STAmount rhs = divide((B - A) + A, B, noIssue()) - one;
+
+    return ((rhs.negative() ? -rhs : rhs) + (lhs.negative() ? -lhs : lhs)) <= maxLoss;
+}
+
+
 // Since `canonicalize` does not have access to a ledger, this is needed to put
 // the low-level routine stAmountCanonicalize on an amendment switch. Only
 // transactions need to use this switchover. Outside of a transaction it's safe

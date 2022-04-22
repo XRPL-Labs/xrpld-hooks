@@ -138,6 +138,7 @@ closeChannel(
                 view,
                 sleLine,
                 -amount,
+                -1,
                 j,
                 DryRun);
 
@@ -189,6 +190,7 @@ closeChannel(
                 view,
                 sleLine,
                 -amount,
+                -1,
                 j,
                 WetRun);
 
@@ -312,6 +314,7 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
                     ctx.view,
                     sleLine,
                     amount,
+                    1,
                     ctx.j,
                     DryRun);
             
@@ -417,6 +420,7 @@ PayChanCreate::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                1,
                 ctx_.journal,
                 WetRun);
 
@@ -506,6 +510,7 @@ PayChanFund::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                1,
                 ctx_.journal,
                 DryRun);
 
@@ -587,6 +592,7 @@ PayChanFund::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                1,
                 ctx_.journal,
                 WetRun);
         
@@ -776,6 +782,7 @@ PayChanClaim::doApply()
                     sleSrcAcc,
                     sled,
                     reqDelta,
+                    0,
                     ctx_.journal,
                     WetRun);
             

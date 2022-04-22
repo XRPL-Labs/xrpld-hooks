@@ -267,6 +267,7 @@ EscrowCreate::doApply()
                     ctx_.view(),
                     sleLine,
                     amount,
+                    1,
                     ctx_.journal,
                     DryRun);
             
@@ -345,6 +346,7 @@ EscrowCreate::doApply()
                 ctx_.view(),
                 sleLine,
                 amount,
+                1,
                 ctx_.journal,
                 WetRun);
                 
@@ -570,6 +572,7 @@ EscrowFinish::doApply()
                 sle,        // src account
                 sled,       // dst account
                 amount,     // xfer amount
+                -1,
                 j_,
                 DryRun      // dry run
             );
@@ -620,6 +623,7 @@ EscrowFinish::doApply()
                 sle,        // src account
                 sled,       // dst account
                 amount,     // xfer amount
+                -1,
                 j_,
                 WetRun      // wet run;
             );
@@ -708,6 +712,7 @@ EscrowCancel::doApply()
                 ctx_.view(),
                 sleLine,
                 -amount,
+                -1,
                 ctx_.journal,
                 DryRun);
             result != tesSUCCESS)
@@ -753,6 +758,7 @@ EscrowCancel::doApply()
                 ctx_.view(),
                 sleLine,
                 -amount,
+                -1,
                 ctx_.journal,
                 WetRun);
 
