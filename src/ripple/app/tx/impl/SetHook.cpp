@@ -87,7 +87,8 @@ parseLeb128(std::vector<unsigned char>& buf, int start_offset, int* end_offset)
     {\
         JLOG(ctx.j.trace())\
             << "HookSet(" << hook::log::SHORT_HOOK << ")[" << HS_ACC() << "]: "\
-            << "Malformed transaction: Hook truncated or otherwise invalid\n";\
+            << "Malformed transaction: Hook truncated or otherwise invalid. "\
+            << "SetHook.cpp:" << __LINE__;\
         return {};\
     }\
 }
@@ -102,6 +103,11 @@ check_guard(
         ripple::Blob& hook, int codesec,
         int start_offset, int end_offset, int guard_func_idx, int last_import_idx)
 {
+
+    if (DEBUG_GUARD_CHECK)
+        printf("\ncheck_guard called with "
+               "codesec=%d start_offset=%d end_offset=%d guard_func_idx=%d last_import_idx=%d\n",
+               codesec, start_offset, end_offset, guard_func_idx, last_import_idx);
 
     if (end_offset <= 0) end_offset = hook.size();
     int block_depth = 0;
@@ -134,7 +140,9 @@ check_guard(
             printf("\n");
         }
 
-        int instr = hook[i++]; CHECK_SHORT_HOOK();
+        CHECK_SHORT_HOOK();
+        int instr = hook[i++];
+
         instruction_count[block_depth].second++;
 
         if (instr == 0x10) // call instr
