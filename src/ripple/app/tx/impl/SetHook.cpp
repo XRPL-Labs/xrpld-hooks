@@ -243,18 +243,17 @@ check_guard(
         // branch loop block instructions
         if ((instr >= 0x02 && instr <= 0x0F) || instr == 0x11)
         {
-            if (mode == 0)
+            if (mode == 0 && instr >= 0x03)
             {
                 JLOG(ctx.j.trace()) << "HookSet(" << hook::log::GUARD_MISSING << ")"
                     << "[" << HS_ACC() << "]: GuardCheck "
-                    << "_g() did not occur at start of function or loop statement "
+                    << "_g() did not occur at start of loop statement "
                     << "codesec: " << codesec << " hook byte offset: " << i;
                 return {};
             }
 
-            // execution to here means we are in 'search mode' for loop instructions
-
             // block instruction
+            // RH NOTE: block instructions *are* allowed between a loop and a guard
             if (instr == 0x02)
             {
                 if (DEBUG_GUARD_CHECK)
@@ -265,6 +264,8 @@ check_guard(
                 instruction_count[block_depth] = {1, 0};
                 continue;
             }
+            
+            // execution to here means we are in 'search mode' for loop instructions
 
             // loop instruction
             if (instr == 0x03)
@@ -792,10 +793,8 @@ validateCreateCode(SetHookCtx& ctx, STObject const& hookSetObj)
 
             last_import_number = func_upto - 1;
 
-            // we have an imported guard function, so now we need to enforce the guard rules
-            // which are:
-            // 1. all functions must start with a guard call before any branching [ RH TODO ]
-            // 2. all loops must start with a guard call before any branching
+            // we have an imported guard function, so now we need to enforce the guard rule:
+            // all loops must start with a guard call before any branching
             // to enforce these rules we must do a second pass of the wasm in case the function
             // section was placed in this wasm binary before the import section
 
