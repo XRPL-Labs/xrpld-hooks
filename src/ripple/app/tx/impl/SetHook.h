@@ -33,7 +33,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <vector>
-#include <ripple/app/tx/applyHook.h>
+#include <ripple/app/hook/applyHook.h>
 
 namespace ripple {
 
@@ -44,6 +44,24 @@ struct SetHookCtx
     STTx const& tx;
     Application& app;
 };
+
+enum HookSetOperation : int8_t
+{
+    hsoINVALID  = -1,
+    hsoNOOP     = 0,
+    hsoCREATE   = 1,
+    hsoINSTALL  = 2,
+    hsoDELETE   = 3,
+    hsoNSDELETE = 4,
+    hsoUPDATE   = 5
+};
+    
+enum HookSetFlags : uint8_t
+{
+    hsfOVERRIDE = (1U << 0U),       // override or delete hook
+    hsfNSDELETE = (1U << 1U),       // delete namespace
+};
+
 
 class SetHook : public Transactor
 {

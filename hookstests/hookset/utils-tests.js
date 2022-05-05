@@ -57,7 +57,9 @@ module.exports = {
 
                 const wasm = (x) =>
                 {
-                    return fs.readFileSync('wasm/' + x).toString('hex').toUpperCase();
+                    if (x.slice(0,1) != '/')
+                        x = 'wasm/' + x;
+                    return fs.readFileSync( x).toString('hex').toUpperCase();
                 }
 
                 const genesisseed = 'snoPBrXtMeMyMHUVTgbuqAfg1SUTb';

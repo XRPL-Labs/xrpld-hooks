@@ -1,4 +1,4 @@
-#include <ripple/app/tx/applyHook.h>
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/Slice.h>
 #include <ripple/app/misc/Transaction.h>

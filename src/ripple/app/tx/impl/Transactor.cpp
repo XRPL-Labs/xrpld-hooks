@@ -17,7 +17,7 @@
 */
 //==============================================================================
 
-#include <ripple/app/tx/applyHook.h>
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/app/main/Application.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/tx/apply.h>

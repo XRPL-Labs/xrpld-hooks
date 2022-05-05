@@ -42,7 +42,7 @@
 #include <ripple/app/rdb/backend/RelationalDBInterfaceSqlite.h>
 #include <ripple/app/reporting/ReportingETL.h>
 #include <ripple/app/tx/apply.h>
-#include <ripple/app/tx/applyHook.h>
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/basics/PerfLog.h>
 #include <ripple/basics/UptimeClock.h>
 #include <ripple/basics/mulDiv.h>

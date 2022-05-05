@@ -5,8 +5,10 @@ if (process.argv.length < 3)
     process.exit(1);
 }
 
+//const server = 'ws://localhost:6005'
+const server = 'ws://tn4:6005'
 
-require('../utils-tests.js').TestRig('ws://localhost:6005').then(t=>
+require('../utils-tests.js').TestRig(server).then(t=>
 {
     let wasm = t.findWasm();
     if (wasm.length != 1)

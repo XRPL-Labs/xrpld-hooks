@@ -25,7 +25,7 @@
 #include <ripple/protocol/Feature.h>
 #include <ripple/rpc/Context.h>
 #include <ripple/rpc/GRPCHandlers.h>
-#include <ripple/app/tx/applyHook.h>
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/app/tx/impl/Transactor.h>
 #include <ripple/basics/FeeUnits.h>
 
