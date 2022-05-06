@@ -385,36 +385,27 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 // RH NOTE: validateGuards has a generic non-rippled specific interface so it can be
                 // used in other projects (i.e. tooling). As such the calling here is a bit convoluted.
                 
-                std::optional<std::tuple<GuardLogFuncPtr, std::string_view, void*>> logger;
-
-                std::string hsacc;
+                std::optional<std::reference_wrapper<std::basic_ostream<char>>> logger;
+                std::ostringstream loggerStream;
+                std::string hsacc {""};
                 if (ctx.j.trace())
                 {
+                    logger = loggerStream;
                     std::stringstream ss;
                     ss << HS_ACC();
                     hsacc = ss.str();
-                    logger = 
-                        std::tuple<GuardLogFuncPtr, std::string_view, void*>
-                        {
-                            [](uint16_t code, std::string_view acc, void* data) -> std::basic_ostream<char>&
-                            {
-                                SetHookCtx* shc =
-                                    reinterpret_cast<SetHookCtx*>(data);
-                                return shc->j.trace()
-                                    << "HookSet(" << code << ")[" << acc << "]: ";
-                            }, 
-                            hsacc,
-                            reinterpret_cast<void*>(&ctx)
-                        };
                 }
-
 
                 auto result =
                     validateGuards(
                         hook,   // wasm to verify
                         true,   // strict (should have gone through hook cleaner!)
-                        logger
+                        logger,
+                        hsacc 
                     );
+
+                JLOG(ctx.j.trace())
+                   << loggerStream.str();
 
                 if (!result)
                     return false;

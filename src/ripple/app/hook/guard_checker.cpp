@@ -10,16 +10,6 @@
 #include <sys/stat.h>
 #include <fcntl.h>
 
-std::basic_ostream<char>&
-guard_logger(
-    uint16_t code,
-    std::string_view accID,
-    void* )
-{
-    return (std::cout << "\nSetHook(" << code << ")[]: ");
-    
-}
-
 int main(int argc, char** argv)
 {
     if (argc != 2)
@@ -51,9 +41,8 @@ int main(int argc, char** argv)
 
     close(fd);
 
-    auto logger = std::tuple<GuardLogFuncPtr, std::string_view, void*>{guard_logger, {}, 0};
     auto result = 
-        validateGuards(hook, true, logger);
+        validateGuards(hook, true, std::cout, "");
 
     if (!result)
     {

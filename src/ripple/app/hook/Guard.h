@@ -3,31 +3,13 @@
 #include <string_view>
 #include <utility>
 #include <iostream>
+#include <ostream>
 #include <stack>
+#include <string>
+#include <functional>
 #include "Enum.h"
 
-// Rather than pass around heavy capturing lambdas for something as simple as logging, use this 
-// somewhat convoluted convention:
-// std::basic_ostream<char> myLogFunc(uint8_t code, std::string_view accountID, void* otherData)
-// {
-//      return std::cout GUARDLOG(code  << accountID << "]: ";
-// }
-// This is designed to allow use outside of rippled, simply pass "" for accountID
-using GuardLogFuncPtr = 
-    std::basic_ostream<char>&(*)  // 0
-    (
-            uint16_t,              // roundBraceCode           may be 0
-            std::string_view,      // square brace text        may be ""
-            void*                  // arbitrary data
-    );
-
-using GuardLog =
-    std::optional<
-    std::tuple<
-        GuardLogFuncPtr,
-        std::string_view,
-        void*
-    >>;
+using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
 #define DEBUG_GUARD 0
 #define GUARDLOG(logCode)\
@@ -35,7 +17,7 @@ using GuardLog =
         {\
         }\
         else\
-            (std::get<0>(*guardLog))(logCode, std::get<1>(*guardLog), std::get<2>(*guardLog))
+            (*guardLog).get() << "SetHook(" << logCode << ")[" << guardLogAccStr << "]: "
 
 // RH TODO test overflow on leb128 detection
 // web assembly contains a lot of run length encoding in LEB128 format
@@ -95,7 +77,8 @@ check_guard(
     int end_offset,
     int guard_func_idx,
     int last_import_idx,
-    GuardLog guardLog)
+    GuardLog guardLog,
+    std::string guardLogAccStr)
 {
 
     if (DEBUG_GUARD)
@@ -502,7 +485,8 @@ std::pair<
 validateGuards(
     std::vector<uint8_t> const& hook,
     bool strict,
-    GuardLog guardLog)
+    GuardLog guardLog,
+    std::string guardLogAccStr)
 {
     uint64_t byteCount = hook.size();
 
@@ -926,7 +910,15 @@ validateGuards(
                 // execution to here means we are up to the actual expr for the codesec/function
 
                 auto valid =
-                    check_guard(hook, j, i, code_end, guard_import_number, last_import_number, guardLog);
+                    check_guard(
+                        hook,
+                        j,
+                        i,
+                        code_end,
+                        guard_import_number,
+                        last_import_number,
+                        guardLog,
+                        guardLogAccStr);
 
                 if (!valid)
                     return {};
