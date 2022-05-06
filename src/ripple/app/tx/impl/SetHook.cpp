@@ -404,8 +404,34 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                         hsacc 
                     );
 
-                JLOG(ctx.j.trace())
-                   << loggerStream.str();
+                if (ctx.j.trace())
+                {
+                    // clunky but to get the stream to accept the output correctly we will
+                    // split on new line and feed each line one by one into the trace stream
+                    // beast::Journal should be updated to inherit from basic_ostream<char>
+                    // then this wouldn't be necessary.
+                    
+                    // is this a needless copy or does the compiler do copy elision here?
+                    std::string s = loggerStream.str();
+
+                    char* data = s.data();
+                    size_t len = s.size();
+
+                    char* last = data;
+                    size_t i = 0;
+                    for (; i < len; ++i)
+                    {
+                        if (data[i] == '\n')
+                        {
+                            data[i] = '\0';
+                            ctx.j.trace() << last;
+                            last = data + i;
+                        }
+                    }
+    
+                    if (last < data + i)
+                        ctx.j.trace() << last;
+                }
 
                 if (!result)
                     return false;
