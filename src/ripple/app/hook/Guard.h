@@ -17,7 +17,7 @@ using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>
         {\
         }\
         else\
-            (*guardLog).get() << "SetHook(" << logCode << ")[" << guardLogAccStr << "]: "
+            (*guardLog).get() << "HookSet(" << logCode << ")[" << guardLogAccStr << "]: "
 
 // RH TODO test overflow on leb128 detection
 // web assembly contains a lot of run length encoding in LEB128 format
@@ -59,7 +59,7 @@ parseLeb128(
         \
         GUARDLOG(hook::log::SHORT_HOOK) \
             << "Malformed transaction: Hook truncated or otherwise invalid. "\
-            << "SetHook.cpp:" << __LINE__;\
+            << "SetHook.cpp:" << __LINE__ << "\n";\
         return {};\
     }\
 }
@@ -134,7 +134,7 @@ check_guard(
                 GUARDLOG(hook::log::CALL_ILLEGAL)
                     << "GuardCheck "
                     << "Hook calls a function outside of the whitelisted imports "
-                    << "codesec: " << codesec << " hook byte offset: " << i;
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
 
                 return {};
             }
@@ -180,7 +180,7 @@ check_guard(
                         {
                             std::cout
                                 << "HookDebug GuardCheck "
-                                << "Depth " << block_depth << " guard: " << a;
+                                << "Depth " << block_depth << " guard: " << a << "\n";
                         }
                     }
 
@@ -199,7 +199,7 @@ check_guard(
         {
              GUARDLOG(hook::log::CALL_INDIRECT) << "GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
-                << "codesec: " << codesec << " hook byte offset: " << i;
+                << "codesec: " << codesec << " hook byte offset: " << i << "\n";
             return {};
             /*
             if (DEBUG_GUARD)
@@ -226,7 +226,7 @@ check_guard(
                  GUARDLOG(hook::log::GUARD_MISSING)
                     << "GuardCheck "
                     << "_g() did not occur at start of loop statement "
-                    << "codesec: " << codesec << " hook byte offset: " << i;
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                 return {};
             }
 
@@ -441,7 +441,7 @@ check_guard(
                 
                     GUARDLOG(hook::log::BLOCK_ILLEGAL) << "GuardCheck "
                     << "Unexpected 0x0B instruction, malformed"
-                    << "codesec: " << codesec << " hook byte offset: " << i;
+                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                 return {};
             }
 
@@ -454,14 +454,14 @@ check_guard(
 
     
     GUARDLOG(hook::log::INSTRUCTION_COUNT) << "GuardCheck "
-        << "Total worse-case execution count: " << instruction_count[0].second;
+        << "Total worse-case execution count: " << instruction_count[0].second << "\n";
 
     // RH TODO: don't hardcode this
     if (instruction_count[0].second > 0xFFFFF)
     {
         GUARDLOG(hook::log::INSTRUCTION_EXCESS) << "GuardCheck "
             << "Maximum possible instructions exceed 1048575, please make your hook smaller "
-            << "or check your guards!";
+            << "or check your guards!" << "\n";
         return {};
     }
 
@@ -471,7 +471,7 @@ check_guard(
 
     GUARDLOG(hook::log::GUARD_MISSING) << "GuardCheck "
         << "Guard did not occur before end of loop / function. "
-        << "Codesec: " << codesec;
+        << "Codesec: " << codesec << "\n";
     return {};
 }
 
@@ -494,7 +494,7 @@ validateGuards(
     if (byteCount < 10)
     {
         GUARDLOG(hook::log::WASM_TOO_SMALL)
-            << "Malformed transaction: Hook was not valid webassembly binary. Too small.";
+            << "Malformed transaction: Hook was not valid webassembly binary. Too small." << "\n";
         return {};
     }
 
@@ -506,7 +506,7 @@ validateGuards(
         {
             GUARDLOG(hook::log::WASM_BAD_MAGIC)
                 << "Malformed transaction: Hook was not valid webassembly binary. "
-                << "Missing magic number or version.";
+                << "Missing magic number or version." << "\n";
             return {};
         }
     }
@@ -533,7 +533,7 @@ validateGuards(
             // if the loop iterates twice with the same value for i then
             // it's an infinite loop edge case
             GUARDLOG(hook::log::WASM_PARSE_LOOP) 
-                << "Malformed transaction: Hook is invalid WASM binary.";
+                << "Malformed transaction: Hook is invalid WASM binary." << "\n";
             return {};
         }
 
@@ -559,7 +559,7 @@ validateGuards(
                 GUARDLOG(hook::log::IMPORTS_MISSING)
                     << "Malformed transaction. "
                     << "Hook did not import any functions... "
-                    << "required at least guard(uint32_t, uint32_t) and accept or rollback";
+                    << "required at least guard(uint32_t, uint32_t) and accept or rollback" << "\n";
                 return {};
             }
 
@@ -573,7 +573,7 @@ validateGuards(
                 {
                     GUARDLOG(hook::log::IMPORT_MODULE_BAD)
                         << "Malformed transaction. "
-                        << "Hook attempted to specify nil or invalid import module";
+                        << "Hook attempted to specify nil or invalid import module" << "\n";
                     return {};
                 }
 
@@ -581,7 +581,7 @@ validateGuards(
                 {
                     GUARDLOG(hook::log::IMPORT_MODULE_ENV)
                         << "Malformed transaction. "
-                        << "Hook attempted to specify import module other than 'env'";
+                        << "Hook attempted to specify import module other than 'env'" << "\n";
                     return {};
                 }
 
@@ -593,7 +593,7 @@ validateGuards(
                 {
                     GUARDLOG(hook::log::IMPORT_NAME_BAD) 
                         << "Malformed transaction. "
-                        << "Hook attempted to specify nil or invalid import name";
+                        << "Hook attempted to specify nil or invalid import name" << "\n";
                     return {};
                 }
 
@@ -625,7 +625,7 @@ validateGuards(
                     GUARDLOG(hook::log::IMPORT_ILLEGAL)
                         << "Malformed transaction. "
                         << "Hook attempted to import a function that does not "
-                        << "appear in the hook_api function set: `" << import_name << "`";
+                        << "appear in the hook_api function set: `" << import_name << "`" << "\n";
                     return {};
                 }
                 func_upto++;
@@ -635,7 +635,7 @@ validateGuards(
             {
                 GUARDLOG(hook::log::GUARD_IMPORT)
                     << "Malformed transaction. "
-                    << "Hook did not import _g (guard) function";
+                    << "Hook did not import _g (guard) function" << "\n";
                 return {};
             }
 
@@ -655,7 +655,7 @@ validateGuards(
                 GUARDLOG(hook::log::EXPORTS_MISSING)
                     << "Malformed transaction. "
                     << "Hook did not export any functions... "
-                    << "required hook(int64_t), callback(int64_t).";
+                    << "required hook(int64_t), callback(int64_t)." << "\n";
                 return {};
             }
 
@@ -672,7 +672,7 @@ validateGuards(
                         {
                             GUARDLOG(hook::log::EXPORT_HOOK_FUNC)
                                 << "Malformed transaction. "
-                                << "Hook did not export: A valid int64_t hook(uint32_t)";
+                                << "Hook did not export: A valid int64_t hook(uint32_t)" << "\n";
                             return {};
                         }
 
@@ -688,7 +688,7 @@ validateGuards(
                         {
                             GUARDLOG(hook::log::EXPORT_CBAK_FUNC)
                                 << "Malformed transaction. "
-                                << "Hook did not export: A valid int64_t cbak(uint32_t)";
+                                << "Hook did not export: A valid int64_t cbak(uint32_t)" << "\n";
                             return {};
                         }
                         i++; CHECK_SHORT_HOOK();
@@ -707,7 +707,7 @@ validateGuards(
                 GUARDLOG(hook::log::EXPORT_MISSING)
                     << "Malformed transaction. "
                     << "Hook did not export: "
-                    << ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" );
+                    << ( !hook_func_idx ? "int64_t hook(uint32_t); " : "" ) << "\n";
                 return {};
             }
         }
@@ -719,7 +719,7 @@ validateGuards(
                 GUARDLOG(hook::log::FUNCS_MISSING)
                     << "Malformed transaction. "
                     << "Hook did not establish any functions... "
-                    << "required hook(int64_t), callback(int64_t).";
+                    << "required hook(int64_t), callback(int64_t)." << "\n";
                 return {};
             }
 
@@ -748,7 +748,7 @@ validateGuards(
     {
         GUARDLOG(hook::log::FUNC_TYPELESS)
             << "Malformed transaction. "
-            << "hook or cbak functions did not have a corresponding type in WASM binary.";
+            << "hook or cbak functions did not have a corresponding type in WASM binary." << "\n";
         return {};
     }
 
@@ -783,7 +783,7 @@ validateGuards(
                         << "Invalid function type. "
                         << "Codesec: " << section_type << " "
                         << "Local: " << j << " "
-                        << "Offset: " << i;
+                        << "Offset: " << i << "\n";
                     return {};
                 }
                 CHECK_SHORT_HOOK();
@@ -803,7 +803,7 @@ validateGuards(
                             << "Invalid parameter type in function type. "
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
-                            << "Offset: " << i;
+                            << "Offset: " << i << "\n";
                         return {};
                     }
 
@@ -818,7 +818,7 @@ validateGuards(
                     {
                         GUARDLOG(hook::log::PARAM_HOOK_CBAK)
                             << "Malformed transaction. "
-                            << "hook and cbak function definition must have exactly one uint32_t parameter.";
+                            << "hook and cbak function definition must have exactly one uint32_t parameter." << "\n";
                         return {};
                     }
                 }
@@ -831,7 +831,7 @@ validateGuards(
                 {
                     GUARDLOG(hook::log::FUNC_RETURN_COUNT)
                         << "Malformed transaction. "
-                        << "Hook declares a function type that returns fewer or more than one value. ";
+                        << "Hook declares a function type that returns fewer or more than one value. " << "\n";
                     return {};
                 }
 
@@ -851,7 +851,7 @@ validateGuards(
                             << "Invalid return type in function type. "
                             << "Codesec: " << section_type << " "
                             << "Local: " << j << " "
-                            << "Offset: " << i;
+                            << "Offset: " << i << "\n";
                         return {};
                     }
                     
@@ -869,7 +869,7 @@ validateGuards(
                             << (j == hook_type_idx ? "hook" : "cbak") << " j=" << j << " "
                             << " function definition must have exactly one int64_t return type. "
                             << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
-                            << "paramcount=" << param_count;
+                            << "paramcount=" << param_count << "\n";
                         return {};
                     }
                 }
@@ -898,7 +898,7 @@ validateGuards(
                             << "Invalid local type. "
                             << "Codesec: " << j << " "
                             << "Local: " << k << " "
-                            << "Offset: " << i;
+                            << "Offset: " << i << "\n";
                         return {};
                     }
                     i++; CHECK_SHORT_HOOK();
@@ -946,7 +946,7 @@ validateGuards(
     /*
     GUARDLOG(hook::log::WASM_SMOKE_TEST)
         << "Trying to wasm instantiate proposed hook "
-        << "size = " <<  hook.size();
+        << "size = " <<  hook.size() << "\n";
 
     std::optional<std::string> result = 
         hook::HookExecutor::validateWasm(hook.data(), (size_t)hook.size());
@@ -955,7 +955,7 @@ validateGuards(
     {
         GUARDLOG(hook::log::WASM_TEST_FAILURE)
             << "Tried to set a hook with invalid code. VM error: "
-            << *result;
+            << *result << "\n";
         return {};
     }
     */
