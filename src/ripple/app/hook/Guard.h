@@ -30,16 +30,16 @@ parseLeb128(
     uint64_t val = 0, shift = 0, i = start_offset;
     while (i < buf.size())
     {
-        int b = (int)(buf[i]);
+        uint64_t b = (uint64_t)(buf[i]);
         uint64_t last = val;
-        val += (b & 0x7F) << shift;
+        val += (b & 0x7FU) << shift;
         if (val < last)
         {
             // overflow
             throw std::overflow_error { "leb128 overflow" };
         }
         ++i;
-        if (b & 0x80)
+        if (b & 0x80U)
         {
             shift += 7;
             continue;

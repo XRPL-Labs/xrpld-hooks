@@ -121,17 +121,24 @@ int out_len = 0;\
 // when using this macro buf1len may be dynamic but buf2len must be static
 // provide n >= 1 to indicate how many times the macro will be hit on the line of code
 // e.g. if it is in a loop that loops 10 times n = 10
+//    for (int x = 0; GUARDM( (buf2len) * (n), 1 ), x < (buf2len);\
+//         ++x)\
+
 #define BUFFER_EQUAL_GUARD(output, buf1, buf1len, buf2, buf2len, n)\
 {\
     output = ((buf1len) == (buf2len) ? 1 : 0);\
-    for (int x = 0; GUARDM( (buf2len) * (n), 1 ), x < (buf2len);\
-         ++x)\
+    int x = 0;\
+    while(1)\
     {\
+        GUARDM( (buf2len) * (n), 1 );\
+        if (x >= (buf2len))\
+            break;\
         if ((buf1)[x] != (buf2)[x])\
         {\
             output = 0;\
             break;\
         }\
+        ++x;\
     }\
 }
 
