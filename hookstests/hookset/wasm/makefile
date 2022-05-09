@@ -1,6 +1,8 @@
-all: accept.wasm makestate.wasm makestate2.wasm checkstate.wasm
+all: accept.wasm makestate.wasm makestate2.wasm checkstate.wasm rollback.wasm
 accept.wasm: accept.c
 	wasmcc accept.c -o accept.wasm -O0 -Wl,--allow-undefined -I../
+rollback.wasm: rollback.c
+	wasmcc rollback.c -o rollback.wasm -O0 -Wl,--allow-undefined -I../
 makestate.wasm: makestate.c
 	wasmcc makestate.c -o makestate.wasm -O0 -Wl,--allow-undefined -I../
 makestate2.wasm: makestate2.c

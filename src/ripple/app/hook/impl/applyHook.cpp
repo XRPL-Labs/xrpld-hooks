@@ -73,11 +73,18 @@ namespace hook
             // self transactions
             case ttACCOUNT_SET:
             case ttOFFER_CANCEL:
-            case ttREGULAR_KEY_SET:
             case ttTICKET_CREATE:
             case ttHOOK_SET:
             case ttOFFER_CREATE: // this is handled seperately
             {
+                break;
+            }
+
+            case ttREGULAR_KEY_SET:
+            {
+                if (!tx.isFieldPresent(sfRegularKey))
+                    return {};
+                ADD_TSH(tx.getAccountID(sfRegularKey), canRollback);
                 break;
             }
 

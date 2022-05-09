@@ -44,7 +44,7 @@ namespace hook
         {ttESCROW_FINISH,       tshROLLBACK },
         {ttACCOUNT_SET,         tshNONE     },
         {ttESCROW_CANCEL,       tshCOLLECT  },
-        {ttREGULAR_KEY_SET,     tshNONE     },
+        {ttREGULAR_KEY_SET,     tshROLLBACK },
         {ttOFFER_CREATE,        tshCOLLECT  },
         {ttOFFER_CANCEL,        tshNONE     },
         {ttTICKET_CREATE,       tshNONE     },
