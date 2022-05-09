@@ -51,20 +51,10 @@ getHookFees(RPC::JsonContext const& context)
         if (!stpTrans->isFieldPresent(sfAccount))
             throw std::invalid_argument("No sfAccount specified");
 
-        FeeUnit64 hookFees =
-            Transactor::calculateHookChainFee(*(context.app.openLedger().current()),
-                *stpTrans, keylet::hook(stpTrans->getAccountID(sfAccount)));
-
-        auto const view = context.app.openLedger().current();
-
-        std::vector<std::pair<AccountID, bool>> tsh = 
-            hook::getTransactionalStakeHolders(*stpTrans, *view);
-
-        for (auto const& [tshAccount, canRollback] : tsh)
-            if (canRollback)
-                hookFees +=
-                    Transactor::calculateHookChainFee(*view, *stpTrans, keylet::hook(tshAccount));
-        return hookFees;
+        return
+            Transactor::calculateBaseFee(
+                *(context.app.openLedger().current()),
+                *stpTrans);
     }
 
     return std::nullopt;

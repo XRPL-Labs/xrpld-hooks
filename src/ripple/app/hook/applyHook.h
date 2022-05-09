@@ -105,9 +105,10 @@ namespace hook_api
                                                         uint32_t d,         uint32_t e,         uint32_t f );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_burden         );
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_details,       uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base,      uint32_t tx_byte_count);
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_fee_base,      uint32_t read_ptr,  uint32_t read_len );
     DECLARE_HOOK_FUNCTION(int64_t,	etxn_reserve,       uint32_t count );
     DECLARE_HOOK_FUNCNARG(int64_t,	etxn_generation     );
+    DECLARE_HOOK_FUNCTION(int64_t,	etxn_nonce,         uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	emit,               uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len );
 
@@ -139,8 +140,9 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len, int32_t hook_no );
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
+    DECLARE_HOOK_FUNCNARG(int64_t,  ledger_last_time    );
     DECLARE_HOOK_FUNCTION(int64_t,  ledger_last_hash,   uint32_t write_ptr, uint32_t write_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	nonce,              uint32_t write_ptr, uint32_t write_len );
+    DECLARE_HOOK_FUNCTION(int64_t,	ledger_nonce,       uint32_t write_ptr, uint32_t write_len );
 
 
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param_set,     uint32_t read_ptr,  uint32_t read_len,
@@ -219,7 +221,8 @@ namespace hook
         HookStateMap& stateMap,
         ripple::ApplyContext& applyCtx,
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
-        bool callback = false,
+        bool hasCallback,
+        bool isCallback = false,
         uint32_t wasmParam = 0,
         int32_t hookChainPosition = -1
     );
@@ -266,7 +269,8 @@ namespace hook
         std::string exitReason {""};
         int64_t exitCode {-1};
         uint64_t instructionCount {0};
-        bool callback = false;
+        bool hasCallback = false;   // true iff this hook wasm has a cbak function
+        bool isCallback = false;    // true iff this hook execution is a callback in action
         uint32_t wasmParam = 0;
         uint32_t overrideCount = 0;
         int32_t hookChainPosition = -1;
@@ -282,7 +286,8 @@ namespace hook
         const ripple::STBase* entry; // raw pointer into the storage, that can be freely pointed around inside
     };
 
-    struct HookContext {
+    struct HookContext
+    {
         ripple::ApplyContext& applyCtx;
         // slots are used up by requesting objects from inside the hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
@@ -292,11 +297,11 @@ namespace hook
         int slot_counter { 1 };
         std::queue<int> slot_free {};
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
-        int nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
+        int emit_nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
+        int ledger_nonce_counter { 0 };
         std::map<ripple::uint256, bool> nonce_used {};
         uint32_t generation = 0; // used for caching, only generated when txn_generation is called
         int64_t burden = 0;      // used for caching, only generated when txn_burden is called
-        int64_t fee_base = 0;
         std::map<uint32_t, uint32_t> guard_map {}; // iteration guard map <id -> upto_iteration>
         HookResult result;
         std::optional<ripple::STObject> emitFailure;    // if this is a callback from a failed
@@ -509,6 +514,7 @@ namespace hook
             ADD_HOOK_FUNCTION(etxn_details, ctx);
             ADD_HOOK_FUNCTION(etxn_reserve, ctx);
             ADD_HOOK_FUNCTION(etxn_generation, ctx);
+            ADD_HOOK_FUNCTION(etxn_nonce, ctx);
 
             ADD_HOOK_FUNCTION(float_set, ctx);
             ADD_HOOK_FUNCTION(float_multiply, ctx);
@@ -544,7 +550,8 @@ namespace hook
             ADD_HOOK_FUNCTION(fee_base, ctx);
             ADD_HOOK_FUNCTION(ledger_seq, ctx);
             ADD_HOOK_FUNCTION(ledger_last_hash, ctx);
-            ADD_HOOK_FUNCTION(nonce, ctx);
+            ADD_HOOK_FUNCTION(ledger_last_time, ctx);
+            ADD_HOOK_FUNCTION(ledger_nonce, ctx);
 
             ADD_HOOK_FUNCTION(hook_param, ctx);
             ADD_HOOK_FUNCTION(hook_param_set, ctx);

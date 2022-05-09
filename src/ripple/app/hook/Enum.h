@@ -188,7 +188,8 @@ namespace hook_api
         CANT_RETURN_NEGATIVE = -33,
         NOT_AUTHORIZED = -34,
         PREVIOUS_FAILURE_PREVENTS_RETRY = -35,
-        TOO_MANY_PARAMS = -36
+        TOO_MANY_PARAMS = -36,
+        INVALID_TXN = -37
     };
 
     enum ExitType : uint8_t
@@ -199,12 +200,10 @@ namespace hook_api
         ACCEPT = 3,
     };
 
-    const int etxn_details_size = 105;
     const int max_slots = 255;
     const int max_nonce = 255;
     const int max_emit = 255;
     const int max_params = 16;
-    const int drops_per_byte = 31250; //RH TODO make these  votable config option
     const double fee_base_multiplier = 1.1f;
 
 
@@ -242,7 +241,9 @@ namespace hook_api
         "hook_hash",
         "ledger_seq",
         "ledger_last_hash",
-        "nonce",
+        "ledger_last_time",
+        "etxn_nonce",
+        "ledger_nonce",
         "otxn_burden",
         "otxn_field",
         "otxn_slot",

@@ -679,7 +679,8 @@ hook::apply(
     HookStateMap& stateMap,
     ApplyContext& applyCtx,
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
-    bool callback,
+    bool hasCallback,
+    bool isCallback,
     uint32_t wasmParam,
     int32_t hookChainPosition)
 {
@@ -705,13 +706,14 @@ hook::apply(
             .exitType = hook_api::ExitType::ROLLBACK, // default is to rollback unless hook calls accept()
             .exitReason = std::string(""),
             .exitCode = -1,
-            .callback = callback,
+            .hasCallback = hasCallback,
+            .isCallback = isCallback,
             .wasmParam = wasmParam,
             .hookChainPosition = hookChainPosition,
             .foreignStateSetDisabled = false
         },
         .emitFailure =
-                callback && wasmParam & 1
+                isCallback && wasmParam & 1
                 ? std::optional<ripple::STObject>(
                     (*(applyCtx.view().peek(
                         keylet::emitted(applyCtx.tx.getFieldH256(sfTransactionHash)))
@@ -724,7 +726,7 @@ hook::apply(
 
     HookExecutor executor { hookCtx } ;
 
-    executor.executeWasm(wasm.data(), (size_t)wasm.size(), callback, wasmParam, j);
+    executor.executeWasm(wasm.data(), (size_t)wasm.size(), isCallback, wasmParam, j);
 
     JLOG(j.trace()) <<
         "HookInfo[" << HC_ACC() << "]: " <<
@@ -1618,6 +1620,21 @@ DEFINE_HOOK_FUNCTION(
         hash.data(), 32,
         memory, memory_length);
 
+}
+
+DEFINE_HOOK_FUNCNARG(
+    int64_t,
+    ledger_last_time)
+{
+    HOOK_SETUP();
+    return
+        std::chrono::duration_cast<std::chrono::seconds>
+        (
+            applyCtx.app.getLedgerMaster()
+                .getValidatedLedger()->info()
+                    .parentCloseTime
+                        .time_since_epoch()
+        ).count();
 }
 
 // Dump a field in 'full text' form into the hook's memory
@@ -2621,11 +2638,9 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // rule 7 check the emitted txn pays the appropriate fee
-    if (hookCtx.fee_base == 0)
-        hookCtx.fee_base = etxn_fee_base(hookCtx, memoryCtx, read_len);
+    int64_t minfee = etxn_fee_base(hookCtx, memoryCtx, read_ptr, read_len);
 
-    int64_t minfee = hookCtx.fee_base * hook_api::drops_per_byte * read_len;
-    if (minfee < 0 || hookCtx.fee_base < 0)
+    if (minfee < 0)
     {
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: Fee could not be calculated";
@@ -2736,7 +2751,7 @@ DEFINE_HOOK_FUNCTION(
 // Writes nonce into the write_ptr
 DEFINE_HOOK_FUNCTION(
     int64_t,
-    nonce,
+    etxn_nonce,
     uint32_t write_ptr, uint32_t write_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
@@ -2747,18 +2762,51 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (hookCtx.nonce_counter > hook_api::max_nonce)
+    if (hookCtx.emit_nonce_counter > hook_api::max_nonce)
         return TOO_MANY_NONCES;
 
     auto hash = ripple::sha512Half(
             ripple::HashPrefix::emitTxnNonce,
-//            view.info().seq,
             applyCtx.tx.getTransactionID(),
-            hookCtx.nonce_counter++,
+            hookCtx.emit_nonce_counter++,
             hookCtx.result.account
     );
 
     hookCtx.nonce_used[hash] = true;
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, 32,
+        hash.data(), 32,
+        memory, memory_length);
+
+    return 32;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    ledger_nonce,
+    uint32_t write_ptr, uint32_t write_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
+
+    if (write_len < 32)
+        return TOO_SMALL;
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (hookCtx.ledger_nonce_counter > hook_api::max_nonce)
+        return TOO_MANY_NONCES;
+
+    auto hash = ripple::sha512Half(
+            ripple::HashPrefix::hookNonce,
+            view.info().seq,
+            view.info().parentCloseTime,
+            applyCtx.app.getLedgerMaster().getValidatedLedger()->info().hash,
+            applyCtx.tx.getTransactionID(),
+            hookCtx.ledger_nonce_counter++,
+            hookCtx.result.account
+    );
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, 32,
@@ -3393,33 +3441,44 @@ DEFINE_HOOK_FUNCNARG(
     fee_base)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    return (int64_t)((double)(view.fees().base.drops()) * hook_api::fee_base_multiplier);
+    return view.fees().base.drops();
 }
 
 // Return the fee base for a hypothetically emitted transaction from the current hook based on byte count
 DEFINE_HOOK_FUNCTION(
     int64_t,
     etxn_fee_base,
-    uint32_t tx_byte_count )
+    uint32_t read_ptr,
+    uint32_t read_len)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
+    
+    try
+    {    
+        ripple::Slice tx {reinterpret_cast<const void*>(read_ptr + memory), read_len};
 
-    uint64_t base_fee = (uint64_t)fee_base(hookCtx, memoryCtx); // will always return non-negative
+        SerialIter sitTrans(tx);
 
-    int64_t burden = etxn_burden(hookCtx, memoryCtx);
-    if (burden < 1)
-        return FEE_TOO_LARGE;
+        std::unique_ptr<STTx const> stpTrans;
+        stpTrans = std::make_unique<STTx const>(std::ref(sitTrans));
 
-    uint64_t fee = base_fee * burden;
-    if (fee < burden || fee & (3ULL << 62)) // a second under flow to handle
-        return FEE_TOO_LARGE;
+        FeeUnit64 fee =
+            Transactor::calculateBaseFee(
+                *(applyCtx.app.openLedger().current()),
+                *stpTrans);
 
-    hookCtx.fee_base = fee;
-
-    return fee * hook_api::drops_per_byte * tx_byte_count;
+        return fee.fee();
+    }
+    catch (std::exception& e)
+    {
+        return INVALID_TXN;
+    }
 }
 
 // Populate an sfEmitDetails field in a soon-to-be emitted transaction
@@ -3432,7 +3491,11 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (write_len < hook_api::etxn_details_size)
+    int64_t expected_size = 138U;
+    if (!hookCtx.result.hasCallback)
+        expected_size -= 22U;
+
+    if (write_len < expected_size)
         return TOO_SMALL;
 
     if (hookCtx.expected_etxn_count <= -1)
@@ -3449,39 +3512,45 @@ DEFINE_HOOK_FUNCTION(
     *out++ = 0xEDU; // begin sfEmitDetails                            /* upto =   0 | size =  1 */
     *out++ = 0x20U; // sfEmitGeneration preamble                      /* upto =   1 | size =  6 */
     *out++ = 0x2EU; // preamble cont
-    *out++ = ( generation >> 24 ) & 0xFFU;
-    *out++ = ( generation >> 16 ) & 0xFFU;
-    *out++ = ( generation >>  8 ) & 0xFFU;
-    *out++ = ( generation >>  0 ) & 0xFFU;
-    *out++ = 0x3D; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
-    *out++ = ( burden >> 56 ) & 0xFFU;
-    *out++ = ( burden >> 48 ) & 0xFFU;
-    *out++ = ( burden >> 40 ) & 0xFFU;
-    *out++ = ( burden >> 32 ) & 0xFFU;
-    *out++ = ( burden >> 24 ) & 0xFFU;
-    *out++ = ( burden >> 16 ) & 0xFFU;
-    *out++ = ( burden >>  8 ) & 0xFFU;
-    *out++ = ( burden >>  0 ) & 0xFFU;
-    *out++ = 0x5B; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
+    *out++ = ( generation >> 24U ) & 0xFFU;
+    *out++ = ( generation >> 16U ) & 0xFFU;
+    *out++ = ( generation >>  8U ) & 0xFFU;
+    *out++ = ( generation >>  0U ) & 0xFFU;
+    *out++ = 0x3DU; // sfEmitBurden preamble                           /* upto =   7 | size =  9 */
+    *out++ = ( burden >> 56U ) & 0xFFU;
+    *out++ = ( burden >> 48U ) & 0xFFU;
+    *out++ = ( burden >> 40U ) & 0xFFU;
+    *out++ = ( burden >> 32U ) & 0xFFU;
+    *out++ = ( burden >> 24U ) & 0xFFU;
+    *out++ = ( burden >> 16U ) & 0xFFU;
+    *out++ = ( burden >>  8U ) & 0xFFU;
+    *out++ = ( burden >>  0U ) & 0xFFU;
+    *out++ = 0x5BU; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
     if (otxn_id(hookCtx, memoryCtx, out - memory, 32, 1) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++ = 0x5C; // sfEmitNonce                                     /* upto =  49 | size = 33 */
-    if (nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
+    *out++ = 0x5CU; // sfEmitNonce                                     /* upto =  49 | size = 33 */
+    if (etxn_nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
-    *out++= 0x5D; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
+    *out++= 0x5DU; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
     for (int i = 0; i < 32; ++i)
         *out++ = hookCtx.result.hookHash.data()[i];                   
-    *out++ = 0x8A; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
-    *out++ = 0x14; // preamble cont
-    if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
-        return INTERNAL_ERROR;
-    out += 20;
+
+    if (hookCtx.result.hasCallback)
+    {
+        *out++ = 0x8AU; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
+        *out++ = 0x14U; // preamble cont
+        if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
+            return INTERNAL_ERROR;
+        out += 20;
+    }
     *out++ = 0xE1U; // end object (sfEmitDetails)                     /* upto = 137 | size =  1 */
                                                                       /* upto = 138 | --------- */
-    DBG_PRINTF("emitdetails size = %d\n", (out - memory - write_ptr));
-    return 138;
+    int64_t outlen = out - memory - write_ptr;
+    
+    DBG_PRINTF("emitdetails size = %d\n", outlen);
+    return outlen;
 }
 
 

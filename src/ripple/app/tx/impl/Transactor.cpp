@@ -218,6 +218,7 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
         tx.isFieldPresent(sfSigners) ? tx.getFieldArray(sfSigners).size() : 0;
 
     FeeUnit64 hookExecutionFee{0};
+    uint64_t burden {1};
     if (view.rules().enabled(featureHooks))
     {
         // if this is a "cleanup" txn we regard it as already paid up
@@ -238,6 +239,10 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
             if (hookDef && hookDef->isFieldPresent(sfHookCallbackFee))
                 hookExecutionFee +=
                     FeeUnit64{(uint32_t)(hookDef->getFieldAmount(sfHookCallbackFee).xrp().drops())};
+
+            assert (emitDetails.isFieldPresent(sfEmitBurden));
+
+            burden = emitDetails.getFieldU64(sfEmitBurden);
         }
         else
             hookExecutionFee +=
@@ -253,8 +258,8 @@ Transactor::calculateBaseFee(ReadView const& view, STTx const& tx)
                     calculateHookChainFee(view, tx, keylet::hook(tshAcc));
     }
 
-    return baseFee + (signerCount * baseFee) + hookExecutionFee; // RH NOTE: hookExecutionFee = 0 
-                                                                 //          unless featureHooks enabled
+    // RH NOTE: hookExecutionFee = 0, burden = 1 if hooks is not enabled 
+    return baseFee * burden + (signerCount * baseFee) + hookExecutionFee; 
 }
 
 XRPAmount
@@ -956,6 +961,8 @@ executeHookChain(
             return tecINTERNAL;
         }
 
+        bool hasCallback = hookDef->isFieldPresent(sfHookCallbackFee);
+
         results.push_back(
             hook::apply(
                 hookDef->getFieldH256(sfHookSetTxnID),
@@ -967,6 +974,7 @@ executeHookChain(
                 stateMap,
                 ctx_,
                 account,
+                hasCallback,
                 false,
                 0,
                 hook_no));
@@ -1102,6 +1110,7 @@ Transactor::doHookCallback()
                     stateMap,
                     ctx_,
                     callbackAccountID,
+                    true,
                     true,
                     safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE 
                         ? 1UL : 0UL, 
