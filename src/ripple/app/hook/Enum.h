@@ -282,7 +282,9 @@ namespace hook_api
         "hook_pos",
         "hook_param",
         "hook_param_set",
-        "hook_skip"
+        "hook_skip",
+        "hook_after",
+        "hook_weak"
     };
 };
 #endif

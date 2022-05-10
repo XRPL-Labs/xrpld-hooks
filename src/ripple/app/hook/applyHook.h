@@ -152,6 +152,9 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len);
 
+    DECLARE_HOOK_FUNCNARG(int64_t,  hook_after);
+    DECLARE_HOOK_FUNCNARG(int64_t,  hook_weak);
+
     DECLARE_HOOK_FUNCTION(int64_t,  hook_skip,          uint32_t read_ptr,  uint32_t read_len, uint32_t flags);
     DECLARE_HOOK_FUNCNARG(int64_t,  hook_pos);
 
@@ -223,6 +226,7 @@ namespace hook
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
         bool hasCallback,
         bool isCallback = false,
+        bool isStrongTSH = false,
         uint32_t wasmParam = 0,
         int32_t hookChainPosition = -1
     );
@@ -271,10 +275,13 @@ namespace hook
         uint64_t instructionCount {0};
         bool hasCallback = false;   // true iff this hook wasm has a cbak function
         bool isCallback = false;    // true iff this hook execution is a callback in action
+        bool isStrong = false;
         uint32_t wasmParam = 0;
         uint32_t overrideCount = 0;
         int32_t hookChainPosition = -1;
         bool foreignStateSetDisabled = false;
+        bool executeAgainAsWeak = false;     // hook_after allows strong pre-apply to nominate 
+                                             // additional weak post-apply execution
     };
 
     class HookExecutor;
@@ -547,6 +554,8 @@ namespace hook
             ADD_HOOK_FUNCTION(otxn_slot, ctx);
             ADD_HOOK_FUNCTION(hook_account, ctx);
             ADD_HOOK_FUNCTION(hook_hash, ctx);
+            ADD_HOOK_FUNCTION(hook_after, ctx);
+            ADD_HOOK_FUNCTION(hook_weak, ctx);
             ADD_HOOK_FUNCTION(fee_base, ctx);
             ADD_HOOK_FUNCTION(ledger_seq, ctx);
             ADD_HOOK_FUNCTION(ledger_last_hash, ctx);

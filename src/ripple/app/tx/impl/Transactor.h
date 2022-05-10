@@ -204,7 +204,8 @@ protected:
         std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
         hook::HookStateMap& stateMap,
         std::vector<hook::HookResult>& results,
-        ripple::AccountID const& account);
+        ripple::AccountID const& account,
+        bool strong);
     
     void
     addWeakTSHFromSandbox(detail::ApplyViewBase const& pv); 

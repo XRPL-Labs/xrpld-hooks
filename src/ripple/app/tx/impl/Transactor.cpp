@@ -900,7 +900,8 @@ executeHookChain(
     std::shared_ptr<ripple::STLedgerEntry const> const& hookSLE,
     hook::HookStateMap& stateMap,
     std::vector<hook::HookResult>& results,
-    ripple::AccountID const& account)
+    ripple::AccountID const& account,
+    bool strong)
 {
     std::set<uint256> hookSkips;
     std::map<
@@ -976,6 +977,7 @@ executeHookChain(
                 account,
                 hasCallback,
                 false,
+                strong,
                 0,
                 hook_no));
 
@@ -1112,6 +1114,7 @@ Transactor::doHookCallback()
                     callbackAccountID,
                     true,
                     true,
+                    false,
                     safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE 
                         ? 1UL : 0UL, 
                     hook_no - 1);
@@ -1294,7 +1297,8 @@ doTSH(
                 tshHook,
                 stateMap,
                 results,
-                tshAccountID);
+                tshAccountID,
+                strong);
 
         if (canRollback && (tshResult != tesSUCCESS))
             return tshResult;
@@ -1333,6 +1337,13 @@ Transactor::operator()()
     
     bool const hooksEnabled = view().rules().enabled(featureHooks);
 
+    // This vector stores any "strong" hooks that requested a weak "after application" re-execution.
+    std::vector<
+        std::pair<
+            AccountID,  // account of hook
+            uint256     // hash of hook
+        >> executeAgainAsWeak;
+
     // Pre-application (Strong TSH) Hooks are executed here
     // These TSH have the right to rollback.
     // Weak TSH and callback are executed post-application.
@@ -1356,7 +1367,8 @@ Transactor::operator()()
                     hooksOriginator,
                     stateMap,
                     orgResults,
-                    accountID);
+                    accountID,
+                    true);
 
         if (isTesSuccess(result))
         {
@@ -1376,10 +1388,18 @@ Transactor::operator()()
         // because it contains error codes that any failed hooks would have
         // returned for meta
         for (auto& orgResult: orgResults)
+        {
             hook::finalizeHookResult(orgResult, ctx_, isTesSuccess(result));
+            if (isTesSuccess(result) && orgResult.executeAgainAsWeak)
+                executeAgainAsWeak.emplace_back(orgResult.account, orgResult.hookHash);
+        }
 
         for (auto& tshResult: tshResults)
+        {
             hook::finalizeHookResult(tshResult, ctx_, isTesSuccess(result));
+            if (isTesSuccess(result) && tshResult.executeAgainAsWeak)
+                executeAgainAsWeak.emplace_back(tshResult.account, tshResult.hookHash);
+        }
         
     }
 
@@ -1413,6 +1433,13 @@ Transactor::operator()()
         std::vector<hook::HookResult> tshResults;
 
         doTSH(false, stateMap, tshResults);
+
+        // execute any hooks that nominated for 'again as weak'
+        for (auto const& [accID, hash] : executeAgainAsWeak)
+        {
+
+            // RH UPTO: execute individual hooks again here
+        }
 
         // write hook results
         hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());

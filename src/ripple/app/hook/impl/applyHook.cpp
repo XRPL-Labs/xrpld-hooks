@@ -681,6 +681,7 @@ hook::apply(
     ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
     bool hasCallback,
     bool isCallback,
+    bool isStrong,
     uint32_t wasmParam,
     int32_t hookChainPosition)
 {
@@ -708,6 +709,7 @@ hook::apply(
             .exitCode = -1,
             .hasCallback = hasCallback,
             .isCallback = isCallback,
+            .isStrong = isStrong,
             .wasmParam = wasmParam,
             .hookChainPosition = hookChainPosition,
             .foreignStateSetDisabled = false
@@ -4489,3 +4491,28 @@ DEFINE_HOOK_FUNCNARG(
     return hookCtx.result.hookChainPosition;
 }
 
+DEFINE_HOOK_FUNCNARG(
+    int64_t,
+    hook_weak)
+{
+    HOOK_SETUP();
+    return (hookCtx.result.isStrong ? 0 : 1);
+}
+
+DEFINE_HOOK_FUNCNARG(
+    int64_t,
+    hook_after)
+{
+    HOOK_SETUP();
+
+    if (hookCtx.result.executeAgainAsWeak)
+        return ALREADY_SET;
+
+    if (hookCtx.result.isStrong)
+    {
+        hookCtx.result.executeAgainAsWeak = true;
+        return 1;
+    }
+
+    return PREREQUISITE_NOT_MET;
+}
