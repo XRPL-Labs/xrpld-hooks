@@ -247,7 +247,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             }
 
 
-            if (flags & ~(hsfOVERRIDE | hsfNSDELETE))
+            if (flags & ~(hsfOVERRIDE | hsfNSDELETE | hsfCOLLECT))
             {
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::FLAGS_INVALID << ")[" << HS_ACC()
@@ -994,7 +994,7 @@ SetHook::setHook()
          * so a degree of copying is required.
          */
 
-        uint32_t flags = 0;
+        std::optional<uint32_t> flags;
         
         if (hookSetObj && hookSetObj->get().isFieldPresent(sfFlags))
             flags = hookSetObj->get().getFieldU32(sfFlags);
@@ -1004,6 +1004,18 @@ SetHook::setHook()
         
         if (hookSetObj)
             op = inferOperation(hookSetObj->get());
+           
+        
+        // these flags are not able to be passed onto the ledger object
+        if (flags)
+        {
+            if (*flags & hsfOVERRIDE)
+                *flags -= hsfOVERRIDE;
+
+            if (*flags & hsfNSDELETE)
+                *flags -= hsfNSDELETE;
+        }
+
 
         printf("HookSet operation %d: %s\n", hookSetNumber, 
                 (op == hsoNSDELETE ? "hsoNSDELETE" :
@@ -1057,7 +1069,7 @@ SetHook::setHook()
         }
 
         // users may destroy a namespace in any operation except NOOP and INVALID
-        if (flags & hsfNSDELETE)
+        if (flags && (*flags & hsfNSDELETE))
         {
             if (op == hsoNOOP || op == hsoINVALID)
             {
@@ -1109,7 +1121,7 @@ SetHook::setHook()
             case hsoDELETE:
             {
 
-                if (!(flags & hsfOVERRIDE))
+                if (!flags || !(*flags & hsfOVERRIDE))
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet(" << hook::log::DELETE_FLAG << ")[" << HS_ACC()
@@ -1162,6 +1174,11 @@ SetHook::setHook()
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
                     newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
 
+
+                if (flags)
+                    newHook.setFieldU32(sfFlags, *flags);
+                
+
                 newHooks.push_back(std::move(newHook));
                 continue;
             }
@@ -1169,7 +1186,7 @@ SetHook::setHook()
 
             case hsoCREATE:
             {
-                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
+                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && (!flags || !(*flags & hsfOVERRIDE)))
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet(" << hook::log::CREATE_FLAG << ")[" << HS_ACC()
@@ -1267,6 +1284,12 @@ SetHook::setHook()
                     if (maxInstrCountCbak > 0)
                     newHookDef->setFieldAmount(sfHookCallbackFee,
                             XRPAmount {hook::computeExecutionFee(maxInstrCountCbak)});
+
+                    if (flags)
+                        newHookDef->setFieldU32(sfFlags, *flags);
+                    else
+                        newHookDef->setFieldU32(sfFlags, 0);
+
                     view().insert(newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
@@ -1279,7 +1302,7 @@ SetHook::setHook()
             // otherwise be created already exists on the ledger
             case hsoINSTALL:
             {
-                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && !(flags & hsfOVERRIDE))
+                if (oldHook && oldHook->get().isFieldPresent(sfHookHash) && (!flags || !(*flags & hsfOVERRIDE)))
                 {
                     JLOG(ctx.j.trace())
                         << "HookSet(" << hook::log::INSTALL_FLAG << ")[" << HS_ACC()
@@ -1336,6 +1359,9 @@ SetHook::setHook()
                 // if grants are provided set them
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
                     newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
+
+                if (flags)
+                    newHook.setFieldU32(sfFlags, *flags);
 
                 newHooks.push_back(std::move(newHook));
 

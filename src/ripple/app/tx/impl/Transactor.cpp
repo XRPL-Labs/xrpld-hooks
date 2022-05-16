@@ -35,6 +35,7 @@
 #include <ripple/protocol/UintTypes.h>
 #include <ripple/ledger/PaymentSandbox.h>
 #include <ripple/ledger/detail/ApplyViewBase.h>
+#include <ripple/app/hook/Enum.h>
 #include <limits>
 #include <set>
 
@@ -156,7 +157,8 @@ Transactor::
 calculateHookChainFee(
     ReadView const& view,
     STTx const& tx,
-    Keylet const& hookKeylet)
+    Keylet const& hookKeylet,
+    bool collectCallsOnly)
 {
 
     std::shared_ptr<SLE const> hookSLE = view.read(hookKeylet);
@@ -191,11 +193,20 @@ calculateHookChainFee(
                 ? hookObj->getFieldU64(sfHookOn)
                 : hookDef->getFieldU64(sfHookOn));
 
-        if (hook::canHook(tx.getTxnType(), hookOn))
+        uint32_t flags = 0;
+        if (hookObj->isFieldPresent(sfFlags))
+            flags = hookObj->getFieldU32(sfFlags);
+        else
+            flags = hookDef->getFieldU32(sfFlags);
+
+        if (hook::canHook(tx.getTxnType(), hookOn) &&
+                ((collectCallsOnly && (flags & hook::hsfCOLLECT)) ||
+                (!collectCallsOnly && !(flags & hook::hsfCOLLECT)))
+            )
         {
-            fee += FeeUnit64{
-                (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
-            };
+                fee += FeeUnit64{
+                    (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
+                };
         }
     }
 
@@ -948,6 +959,13 @@ executeHookChain(
         if (!hook::canHook(ctx_.tx.getTxnType(), hookOn))
             continue;    // skip if it can't
 
+        uint32_t flags = (hookObj->isFieldPresent(sfFlags) ?
+                hookObj->getFieldU32(sfFlags) : hookDef->getFieldU32(sfFlags));
+
+        // skip weakly executed hooks that lack a collect flag
+        if (!strong && !(flags & hsfCOLLECT))
+            continue;
+
         // fetch the namespace either from the hook object of, if absent, the hook def
         uint256 const& ns = 
             (hookObj->isFieldPresent(sfHookNamespace)
@@ -1240,7 +1258,7 @@ doTSH(
 
             // compute and deduct fees for the TSH if applicable
             FeeUnit64 tshFee =
-                calculateHookChainFee(view, ctx_.tx, klTshHook);
+                calculateHookChainFee(view, ctx_.tx, klTshHook, !canRollback);
 
             // no hooks to execute, skip tsh
             if (tshFee == 0)
@@ -1614,8 +1632,11 @@ Transactor::operator()()
     {
         // weakly executed hooks have access to a provisional TxMeta
         // for this tx application.
+        TxMeta meta = ctx_.generateProvisionalMeta();
+        meta.setResult(result, 0);
+
         std::shared_ptr<STObject const>
-            proMeta = std::make_shared<STObject const>(std::move(ctx_.generateProvisionalMeta().getAsObject()));
+            proMeta = std::make_shared<STObject const>(std::move(meta.getAsObject()));
 
         // perform callback logic if applicable
         if (ctx_.tx.isFieldPresent(sfEmitDetails))

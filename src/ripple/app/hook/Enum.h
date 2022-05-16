@@ -2,6 +2,27 @@
 #include <string>
 #ifndef HOOKENUM_INCLUDED
 #define HOOKENUM_INCLUDED 1
+namespace ripple
+{
+    enum HookSetOperation : int8_t
+    {
+        hsoINVALID  = -1,
+        hsoNOOP     = 0,
+        hsoCREATE   = 1,
+        hsoINSTALL  = 2,
+        hsoDELETE   = 3,
+        hsoNSDELETE = 4,
+        hsoUPDATE   = 5
+    };
+        
+    enum HookSetFlags : uint8_t
+    {
+        hsfOVERRIDE = 0b00000001U,       // override or delete hook
+        hsfNSDELETE = 0b00000010U,       // delete namespace
+        hsfCOLLECT  = 0b00000100U,       // allow collect calls on this hook
+    };
+}
+
 namespace hook
 {
     enum TSHFlags : uint8_t
@@ -10,6 +31,7 @@ namespace hook
         tshROLLBACK            = 0b001,
         tshCOLLECT             = 0b010,
     };
+
 
     namespace log
     {

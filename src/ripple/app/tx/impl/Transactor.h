@@ -186,7 +186,8 @@ public:
     // Hooks
 
     static FeeUnit64
-    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet);
+    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet, 
+            bool collectCallsOnly = false);
 
 protected:
 

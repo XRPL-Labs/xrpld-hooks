@@ -207,6 +207,14 @@ TxMeta::getAffectedNode(uint256 const& node)
     return *(mNodes.begin());  // Silence compiler warning.
 }
 
+// used for mock TxMeta objects
+void
+TxMeta::setResult(TER res, int index)
+{
+    mResult = TERtoInt(res);
+    mIndex = index;
+}
+
 STObject
 TxMeta::getAsObject() const
 {

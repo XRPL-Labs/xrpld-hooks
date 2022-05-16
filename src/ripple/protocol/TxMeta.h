@@ -76,6 +76,9 @@ public:
     }
 
     void
+    setResult(TER res, int index);
+
+    void
     setAffectedNode(uint256 const&, SField const& type, std::uint16_t nodeType);
     STObject&
     getAffectedNode(SLE::ref node, SField const& type);  // create if needed
