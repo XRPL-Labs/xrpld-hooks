@@ -72,6 +72,8 @@ public:
         deliver_ = amount;
     }
 
+    TxMeta
+    generateProvisionalMeta(OpenView const& to, STTx const& tx, beast::Journal j);
    
     /* Set hook metadata for a hook execution
      * Takes ownership / use std::move

@@ -152,8 +152,7 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len);
 
-    DECLARE_HOOK_FUNCNARG(int64_t,  hook_after);
-    DECLARE_HOOK_FUNCNARG(int64_t,  hook_weak);
+    DECLARE_HOOK_FUNCNARG(int64_t,  hook_again);
 
     DECLARE_HOOK_FUNCTION(int64_t,  hook_skip,          uint32_t read_ptr,  uint32_t read_len, uint32_t flags);
     DECLARE_HOOK_FUNCNARG(int64_t,  hook_pos);
@@ -195,6 +194,7 @@ namespace hook_api
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_slot,          uint32_t slot_no );
 
+    DECLARE_HOOK_FUNCTION(int64_t,  meta_slot,          uint32_t slot_no );
 
 } /* end namespace hook_api */
 
@@ -225,10 +225,12 @@ namespace hook
         ripple::ApplyContext& applyCtx,
         ripple::AccountID const& account,     /* the account the hook is INSTALLED ON not always the otxn account */
         bool hasCallback,
-        bool isCallback = false,
-        bool isStrongTSH = false,
-        uint32_t wasmParam = 0,
-        int32_t hookChainPosition = -1
+        bool isCallback,
+        bool isStrongTSH,
+        uint32_t wasmParam,
+        int32_t hookChainPosition,
+        // result of apply() if this is weak exec
+        std::shared_ptr<STObject const> const& provisionalMeta
     );
 
     struct HookContext;
@@ -280,8 +282,9 @@ namespace hook
         uint32_t overrideCount = 0;
         int32_t hookChainPosition = -1;
         bool foreignStateSetDisabled = false;
-        bool executeAgainAsWeak = false;     // hook_after allows strong pre-apply to nominate 
+        bool executeAgainAsWeak = false;     // hook_again allows strong pre-apply to nominate 
                                              // additional weak post-apply execution
+        std::shared_ptr<STObject const> provisionalMeta;
     };
 
     class HookExecutor;
@@ -554,8 +557,7 @@ namespace hook
             ADD_HOOK_FUNCTION(otxn_slot, ctx);
             ADD_HOOK_FUNCTION(hook_account, ctx);
             ADD_HOOK_FUNCTION(hook_hash, ctx);
-            ADD_HOOK_FUNCTION(hook_after, ctx);
-            ADD_HOOK_FUNCTION(hook_weak, ctx);
+            ADD_HOOK_FUNCTION(hook_again, ctx);
             ADD_HOOK_FUNCTION(fee_base, ctx);
             ADD_HOOK_FUNCTION(ledger_seq, ctx);
             ADD_HOOK_FUNCTION(ledger_last_hash, ctx);
@@ -587,6 +589,8 @@ namespace hook
             ADD_HOOK_FUNCTION(trace_slot, ctx);
             ADD_HOOK_FUNCTION(trace_num, ctx);
             ADD_HOOK_FUNCTION(trace_float, ctx);
+
+            ADD_HOOK_FUNCTION(meta_slot, ctx);
 
             WasmEdge_TableInstanceContext* hostTable = WasmEdge_TableInstanceCreate(tableType);
             WasmEdge_ImportObjectAddTable(importObj, tableName, hostTable);

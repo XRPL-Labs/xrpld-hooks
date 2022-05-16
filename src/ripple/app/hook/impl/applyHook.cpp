@@ -683,7 +683,8 @@ hook::apply(
     bool isCallback,
     bool isStrong,
     uint32_t wasmParam,
-    int32_t hookChainPosition)
+    int32_t hookChainPosition,
+    std::shared_ptr<STObject const> const& provisionalMeta)
 {
 
     HookContext hookCtx =
@@ -712,7 +713,8 @@ hook::apply(
             .isStrong = isStrong,
             .wasmParam = wasmParam,
             .hookChainPosition = hookChainPosition,
-            .foreignStateSetDisabled = false
+            .foreignStateSetDisabled = false,
+            .provisionalMeta = provisionalMeta
         },
         .emitFailure =
                 isCallback && wasmParam & 1
@@ -4493,15 +4495,7 @@ DEFINE_HOOK_FUNCNARG(
 
 DEFINE_HOOK_FUNCNARG(
     int64_t,
-    hook_weak)
-{
-    HOOK_SETUP();
-    return (hookCtx.result.isStrong ? 0 : 1);
-}
-
-DEFINE_HOOK_FUNCNARG(
-    int64_t,
-    hook_after)
+    hook_again)
 {
     HOOK_SETUP();
 
@@ -4516,3 +4510,38 @@ DEFINE_HOOK_FUNCNARG(
 
     return PREREQUISITE_NOT_MET;
 }
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    meta_slot,
+    uint32_t slot_into )
+{
+    HOOK_SETUP();
+    if (!hookCtx.result.provisionalMeta)
+        return PREREQUISITE_NOT_MET;
+
+    if (slot_into > hook_api::max_slots)
+        return INVALID_ARGUMENT;
+
+    // check if we can emplace the object to a slot
+    if (slot_into == 0 && no_free_slots(hookCtx))
+        return NO_FREE_SLOTS;
+
+    if (slot_into == 0)
+        slot_into = get_free_slot(hookCtx);
+
+    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+            .id = { 
+                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
+                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
+                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
+                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
+            },
+            .storage = hookCtx.result.provisionalMeta,
+            .entry = 0
+    }});
+    hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
+
+    return slot_into;
+}
+

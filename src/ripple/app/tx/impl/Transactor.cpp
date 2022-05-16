@@ -901,7 +901,8 @@ executeHookChain(
     hook::HookStateMap& stateMap,
     std::vector<hook::HookResult>& results,
     ripple::AccountID const& account,
-    bool strong)
+    bool strong,
+    std::shared_ptr<STObject const> const& provisionalMeta)
 {
     std::set<uint256> hookSkips;
     std::map<
@@ -978,8 +979,9 @@ executeHookChain(
                 hasCallback,
                 false,
                 strong,
-                0,
-                hook_no));
+                (strong ? 0 : 1UL),             // 0 = strong, 1 = weak
+                hook_no,
+                provisionalMeta));
 
         executedHookCount_++;
 
@@ -1015,7 +1017,7 @@ executeHookChain(
 }
 
 void
-Transactor::doHookCallback()
+Transactor::doHookCallback(std::shared_ptr<STObject const> const& provisionalMeta)
 {
     // Finally check if there is a callback
     if (!ctx_.tx.isFieldPresent(sfEmitDetails))
@@ -1117,7 +1119,8 @@ Transactor::doHookCallback()
                     false,
                     safe_cast<TxType>(ctx_.tx.getFieldU16(sfTransactionType)) == ttEMIT_FAILURE 
                         ? 1UL : 0UL, 
-                    hook_no - 1);
+                    hook_no - 1,
+                    provisionalMeta);
 
             
             bool success = callbackResult.exitType == hook_api::ExitType::ACCEPT;
@@ -1185,7 +1188,8 @@ Transactor::
 doTSH(
     bool strong,                    // only strong iff true, only weak iff false
     hook::HookStateMap& stateMap,
-    std::vector<hook::HookResult>& results)
+    std::vector<hook::HookResult>& results,
+    std::shared_ptr<STObject const> const& provisionalMeta)
 {
     auto& view = ctx_.view();
 
@@ -1298,13 +1302,119 @@ doTSH(
                 stateMap,
                 results,
                 tshAccountID,
-                strong);
+                strong,
+                provisionalMeta);
 
         if (canRollback && (tshResult != tesSUCCESS))
             return tshResult;
     }
 
     return tesSUCCESS;
+}
+
+void
+Transactor::doAaw(
+    AccountID const& hookAccountID,
+    std::set<uint256> const& hookHashes,
+    hook::HookStateMap& stateMap,
+    std::vector<hook::HookResult>& results,
+    std::shared_ptr<STObject const> const& provisionalMeta)
+{
+
+    auto const& hooksArray = view().peek(keylet::hook(hookAccountID));
+    if (!hooksArray)
+    {
+        JLOG(j_.warn())
+            << "HookError[]: Hook missing on aaw";
+        return;
+    }
+
+    if (!hooksArray->isFieldPresent(sfHooks))
+    {
+        JLOG(j_.warn())
+            << "HookError[]: Hooks Array missing on aaw";
+        return;
+    }
+
+    auto const& hooks = hooksArray->getFieldArray(sfHooks);
+    int hook_no = 0;
+    for (auto const& hook : hooks)
+    {
+        hook_no++;
+
+        STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
+
+        if (!hookObj->isFieldPresent(sfHookHash)) // skip blanks
+            continue;
+        
+        uint256 const& hookHash = hookObj->getFieldH256(sfHookHash);
+
+        if (hookHashes.find(hookObj->getFieldH256(sfHookHash)) == hookHashes.end())
+            continue;
+
+        auto const& hookDef = view().peek(keylet::hookDefinition(hookHash));
+        if (!hookDef)
+        {
+            JLOG(j_.warn())
+                << "HookError[]: Hook def missing on aaw, hash: "
+                << hookHash;
+            continue;
+        }
+
+        // fetch the namespace either from the hook object of, if absent, the hook def
+        uint256 const& ns = 
+            (hookObj->isFieldPresent(sfHookNamespace)
+                 ?  hookObj->getFieldH256(sfHookNamespace)
+                 :  hookDef->getFieldH256(sfHookNamespace));
+
+        executedHookCount_++;
+
+        std::map<std::vector<uint8_t>, std::vector<uint8_t>> parameters;
+        if (hook::gatherHookParameters(hookDef, hookObj, parameters, j_))
+        {
+            JLOG(j_.warn())
+                << "HookError[]: Failure: gatherHookParameters failed)";
+            return;
+        }
+
+        try
+        {
+            hook::HookResult aawResult = 
+                hook::apply(
+                    hookDef->getFieldH256(sfHookSetTxnID),
+                    hookHash,
+                    ns,
+                    hookDef->getFieldVL(sfCreateCode),
+                    parameters,
+                    {},
+                    stateMap,
+                    ctx_,
+                    hookAccountID,
+                    hookDef->isFieldPresent(sfHookCallbackFee),
+                    false,
+                    false,
+                    2UL,                                            // param 2 = aaw
+                    hook_no - 1,
+                    provisionalMeta);
+
+
+            results.push_back(aawResult);            
+
+            JLOG(j_.trace())
+                << "HookInfo[" << hookAccountID << "-" <<ctx_.tx.getAccountID(sfAccount) << "]: "
+                << " aaw Hook ExitCode = "
+                << aawResult.exitCode;
+
+        }
+        catch (std::exception& e)
+        {
+            JLOG(j_.fatal()) 
+                << "HookError[" << hookAccountID << "-" <<ctx_.tx.getAccountID(sfAccount) << "]: "
+                << "]: aaw failure " << e.what();
+        }
+
+    }
+
 }
 
 //------------------------------------------------------------------------------
@@ -1337,12 +1447,9 @@ Transactor::operator()()
     
     bool const hooksEnabled = view().rules().enabled(featureHooks);
 
-    // This vector stores any "strong" hooks that requested a weak "after application" re-execution.
-    std::vector<
-        std::pair<
-            AccountID,  // account of hook
-            uint256     // hash of hook
-        >> executeAgainAsWeak;
+    // AgainAsWeak map stores information about accounts whose strongly executed hooks
+    // request an additional weak execution after the otxn has finished application to the ledger
+    std::map<AccountID, std::set<uint256>> aawMap;
 
     // Pre-application (Strong TSH) Hooks are executed here
     // These TSH have the right to rollback.
@@ -1355,8 +1462,7 @@ Transactor::operator()()
         hook::HookStateMap stateMap;
 
         auto const& accountID = ctx_.tx.getAccountID(sfAccount);
-        std::vector<hook::HookResult> orgResults;
-        std::vector<hook::HookResult> tshResults;
+        std::vector<hook::HookResult> hookResults;
 
         auto const& hooksOriginator = view().read(keylet::hook(accountID));
 
@@ -1366,9 +1472,10 @@ Transactor::operator()()
                 executeHookChain(
                     hooksOriginator,
                     stateMap,
-                    orgResults,
+                    hookResults,
                     accountID,
-                    true);
+                    true,
+                    {});
 
         if (isTesSuccess(result))
         {
@@ -1376,7 +1483,7 @@ Transactor::operator()()
             // here. Note these are only strong TSH (who have the right to rollback the txn),
             // any weak TSH will be executed after doApply has been successful (callback as well)
 
-            result = doTSH(true, stateMap, tshResults);
+            result = doTSH(true, stateMap, hookResults, {});
         }
 
         // write state if all chains executed successfully
@@ -1387,20 +1494,18 @@ Transactor::operator()()
         // this happens irrespective of whether final result was a tesSUCCESS
         // because it contains error codes that any failed hooks would have
         // returned for meta
-        for (auto& orgResult: orgResults)
-        {
-            hook::finalizeHookResult(orgResult, ctx_, isTesSuccess(result));
-            if (isTesSuccess(result) && orgResult.executeAgainAsWeak)
-                executeAgainAsWeak.emplace_back(orgResult.account, orgResult.hookHash);
-        }
 
-        for (auto& tshResult: tshResults)
+        for (auto& hookResult: hookResults)
         {
-            hook::finalizeHookResult(tshResult, ctx_, isTesSuccess(result));
-            if (isTesSuccess(result) && tshResult.executeAgainAsWeak)
-                executeAgainAsWeak.emplace_back(tshResult.account, tshResult.hookHash);
+            hook::finalizeHookResult(hookResult, ctx_, isTesSuccess(result));
+            if (isTesSuccess(result) && hookResult.executeAgainAsWeak)
+            {
+                if (aawMap.find(hookResult.account) == aawMap.end())
+                    aawMap[hookResult.account] = {hookResult.hookHash};
+                else
+                    aawMap[hookResult.account].emplace(hookResult.hookHash);
+            }
         }
-        
     }
 
     // fall through allows normal apply
@@ -1415,38 +1520,6 @@ Transactor::operator()()
         stream << "preclaim result: " << transToken(result);
 
     bool applied = isTesSuccess(result);
-
-    // Post-application (Weak TSH) Hooks are executed here.
-    // These TSH do not have the ability to rollback.
-    // The callback, if any, is also executed here.
-    if (hooksEnabled && applied)
-    {
-        // perform callback logic if applicable
-        if (ctx_.tx.isFieldPresent(sfEmitDetails))
-            doHookCallback();
-
-        // remove emission entry if this is an emitted transaction
-        hook::removeEmissionEntry(ctx_);
-
-        // process weak TSH
-        hook::HookStateMap stateMap;
-        std::vector<hook::HookResult> tshResults;
-
-        doTSH(false, stateMap, tshResults);
-
-        // execute any hooks that nominated for 'again as weak'
-        for (auto const& [accID, hash] : executeAgainAsWeak)
-        {
-
-            // RH UPTO: execute individual hooks again here
-        }
-
-        // write hook results
-        hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
-        for (auto& tshResult: tshResults)
-            hook::finalizeHookResult(tshResult, ctx_, isTesSuccess(result));
-    }
-
 
     auto fee = ctx_.tx.getFieldAmount(sfFee).xrp();
 
@@ -1533,6 +1606,44 @@ Transactor::operator()()
         if (!isTecClaim(result) && !isTesSuccess(result))
             applied = false;
     }
+    
+    // Post-application (Weak TSH/AAW) Hooks are executed here.
+    // These TSH do not have the ability to rollback.
+    // The callback, if any, is also executed here.
+    if (applied && hooksEnabled)
+    {
+        // weakly executed hooks have access to a provisional TxMeta
+        // for this tx application.
+        std::shared_ptr<STObject const>
+            proMeta = std::make_shared<STObject const>(std::move(ctx_.generateProvisionalMeta().getAsObject()));
+
+        // perform callback logic if applicable
+        if (ctx_.tx.isFieldPresent(sfEmitDetails))
+            doHookCallback(proMeta);
+
+        // remove emission entry if this is an emitted transaction
+        hook::removeEmissionEntry(ctx_);
+
+        // process weak TSH
+        hook::HookStateMap stateMap;
+        std::vector<hook::HookResult> weakResults;
+
+        doTSH(false, stateMap, weakResults, proMeta);
+
+        // execute any hooks that nominated for 'again as weak'
+        for (auto const& [accID, hookHashes] : aawMap)
+            doAaw(accID, hookHashes, stateMap, weakResults, proMeta);
+
+        // write hook results
+        hook::finalizeHookState(stateMap, ctx_, ctx_.tx.getTransactionID());
+        for (auto& weakResult: weakResults)
+            hook::finalizeHookResult(weakResult, ctx_, isTesSuccess(result));
+    
+        if (ctx_.size() > oversizeMetaDataCap)
+            result = tecOVERSIZE;
+    }
+
+
 
     if (applied)
     {

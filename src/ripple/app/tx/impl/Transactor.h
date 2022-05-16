@@ -191,13 +191,27 @@ public:
 protected:
 
     void
-    doHookCallback();
+    doHookCallback(
+        std::shared_ptr<STObject const> const& provisionalMeta);
 
     TER
     doTSH(
         bool strong,                                // only do strong TSH iff true, otheriwse only weak
         hook::HookStateMap& stateMap,
-        std::vector<hook::HookResult>& results);
+        std::vector<hook::HookResult>& result,
+        std::shared_ptr<STObject const> const& provisionalMeta);
+
+
+    // Execute a hook "Again As Weak" is a feature that allows
+    // a hook that which is being executed pre-application of the otxn
+    // to request an additional post-application execution.
+    void
+    doAaw(
+        AccountID const& hookAccountID,
+        std::set<uint256> const& hookHashes,
+        hook::HookStateMap& stateMap,
+        std::vector<hook::HookResult>& results,
+        std::shared_ptr<STObject const> const& provisionalMeta);
 
     TER
     executeHookChain(
@@ -205,8 +219,10 @@ protected:
         hook::HookStateMap& stateMap,
         std::vector<hook::HookResult>& results,
         ripple::AccountID const& account,
-        bool strong);
-    
+        bool strong,
+        std::shared_ptr<STObject const> const& provisionalMeta);
+
+
     void
     addWeakTSHFromSandbox(detail::ApplyViewBase const& pv); 
     
