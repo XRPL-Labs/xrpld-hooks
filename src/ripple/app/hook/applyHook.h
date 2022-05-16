@@ -247,14 +247,14 @@ namespace hook
 
     struct HookResult
     {
-        ripple::uint256     const&      hookSetTxnID;
-        ripple::uint256     const&      hookHash;
-        ripple::Keylet      const&      accountKeylet;
-        ripple::Keylet      const&      ownerDirKeylet;
-        ripple::Keylet      const&      hookKeylet;
-        ripple::AccountID   const&      account;
-        ripple::AccountID   const&      otxnAccount;
-        ripple::uint256     const&      hookNamespace;
+        ripple::uint256     const      hookSetTxnID;
+        ripple::uint256     const      hookHash;
+        ripple::Keylet      const      accountKeylet;
+        ripple::Keylet      const      ownerDirKeylet;
+        ripple::Keylet      const      hookKeylet;
+        ripple::AccountID   const      account;
+        ripple::AccountID   const      otxnAccount;
+        ripple::uint256     const      hookNamespace;
 
         std::queue<std::shared_ptr<ripple::Transaction>> emittedTxn {}; // etx stored here until accept/rollback
         HookStateMap& stateMap;

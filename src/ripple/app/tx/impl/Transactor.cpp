@@ -1343,7 +1343,8 @@ Transactor::doAaw(
     if (!hooksArray)
     {
         JLOG(j_.warn())
-            << "HookError[]: Hook missing on aaw";
+            << "HookError[]: Hook missing on aaw account: "
+            << hookAccountID;
         return;
     }
 

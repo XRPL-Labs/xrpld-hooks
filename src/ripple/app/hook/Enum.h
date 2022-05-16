@@ -305,7 +305,7 @@ namespace hook_api
         "hook_param",
         "hook_param_set",
         "hook_skip",
-        "hook_after",
+        "hook_again",
         "meta_slot"
     };
 };
