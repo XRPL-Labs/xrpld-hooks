@@ -418,20 +418,22 @@ bool hook::isEmittedTxn(ripple::STTx const& tx)
 
 
 #define U32MAX ((uint32_t)(-1))
-uint32_t hook::computeExecutionFee(uint64_t instructionCount)
+int64_t hook::computeExecutionFee(uint64_t instructionCount)
 {
-    // RH TODO: fee multiplier, validator votable
-    if (instructionCount > U32MAX)
-        return U32MAX;
-    return instructionCount;
+    int64_t fee = (int64_t)instructionCount;
+    if (fee < instructionCount)
+        return 0x7FFFFFFFFFFFFFFFLL;
+
+    return fee;
 }
 
-uint32_t hook::computeCreationFee(uint64_t byteCount)
+int64_t hook::computeCreationFee(uint64_t byteCount)
 {
-    // RH TODO: fee multiplier, validator votable
-    if (byteCount > U32MAX)
-        return U32MAX;
-    return byteCount;
+    int64_t fee = ((int64_t)byteCount) * 10000ULL;
+    if (fee < byteCount)
+        return 0x7FFFFFFFFFFFFFFFLL;
+
+    return fee;
 }
 
 uint32_t hook::maxHookChainLength(void)

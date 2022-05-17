@@ -200,9 +200,7 @@ calculateHookChainFee(
             flags = hookDef->getFieldU32(sfFlags);
 
         if (hook::canHook(tx.getTxnType(), hookOn) &&
-                ((collectCallsOnly && (flags & hook::hsfCOLLECT)) ||
-                (!collectCallsOnly && !(flags & hook::hsfCOLLECT)))
-            )
+            (!collectCallsOnly || (flags & hook::hsfCOLLECT)))
         {
                 fee += FeeUnit64{
                     (uint32_t)(hookDef->getFieldAmount(sfFee).xrp().drops())
