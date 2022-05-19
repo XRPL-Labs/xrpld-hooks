@@ -429,7 +429,7 @@ int64_t hook::computeExecutionFee(uint64_t instructionCount)
 
 int64_t hook::computeCreationFee(uint64_t byteCount)
 {
-    int64_t fee = ((int64_t)byteCount) * 10000ULL;
+    int64_t fee = ((int64_t)byteCount) * 500ULL;
     if (fee < byteCount)
         return 0x7FFFFFFFFFFFFFFFLL;
 

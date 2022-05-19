@@ -60,6 +60,57 @@ module.exports = {
                     if (x.slice(0,1) != '/')
                         x = 'wasm/' + x;
                     return fs.readFileSync( x).toString('hex').toUpperCase();
+                };
+
+
+                const wasmFee = (x) =>
+                {
+                    if (x.slice(0,1) != '/')
+                        x = 'wasm/' + x;
+                    return "" + (fs.readFileSync( x).length * 500) + 20;
+                }
+
+                const feeCompute = (account_seed, txn_org) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        txn_to_send = { ... txn_org };
+                        txn_to_send['SigningPubKey'] = '';
+                    
+                        let wal = xrpljs.Wallet.fromSeed(account_seed);
+                        api.prepareTransaction(txn_to_send, {wallet: wal}).then(txn => 
+                        {
+                            let ser = rbc.encode(txn);
+                            fee(ser).then(fees =>
+                            {
+                                let base_drops = fees.base_fee 
+                            
+                                delete txn_to_send['SigningPubKey']
+                                txn_to_send['Fee'] = base_drops + '';
+
+
+                                api.prepareTransaction(txn_to_send, {wallet: wal}).then(txn => 
+                                {
+                                    resolve(txn);
+                                }).catch(e=>{reject(e);});
+                            }).catch(e=>{reject(e);});
+                        }).catch(e=>{reject(e);});
+                    });
+                }
+
+                const feeSubmit = (seed, txn) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        feeCompute(seed, txn).then(txn=>
+                        {
+                            api.submit(txn, 
+                                {wallet: xrpljs.Wallet.fromSeed(seed)}).then(s=>
+                            {
+                                resolve(s);
+                            }).catch(e=>{reject(e);});
+                        }).catch(e=>{reject(e);});
+                    });
                 }
 
                 const genesisseed = 'snoPBrXtMeMyMHUVTgbuqAfg1SUTb';
@@ -174,7 +225,10 @@ module.exports = {
                         pay_mock: pay_mock,
                         fee: fee,
                         genesisseed: genesisseed,
-                        genesisaddr: genesisaddr
+                        genesisaddr: genesisaddr,
+                        wasmFee: wasmFee,
+                        feeCompute: feeCompute,
+                        feeSubmit: feeSubmit
                     });
                 }).catch(err);
         });

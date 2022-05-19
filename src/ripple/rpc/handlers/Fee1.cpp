@@ -31,6 +31,7 @@
 
 namespace ripple {
 
+
 inline
 std::optional<FeeUnit64>
 getHookFees(RPC::JsonContext const& context)
@@ -52,7 +53,7 @@ getHookFees(RPC::JsonContext const& context)
             throw std::invalid_argument("No sfAccount specified");
 
         return
-            Transactor::calculateBaseFee(
+            invoke_calculateBaseFee(
                 *(context.app.openLedger().current()),
                 *stpTrans);
     }

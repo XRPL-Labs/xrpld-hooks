@@ -17,7 +17,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                     }
                 }
             ],
-            Fee: "100000"
+            Fee: t.wasmFee('accept.wasm')
         }, {wallet: account}).then(x=>
         {
             t.assertTxnSuccess(x)
@@ -35,11 +35,11 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                     txn['Fee'] = base_drops + '';
 
                     console.log(txn)
-                    t.api.submit(txn, {wallet: t.genesis}).then(s=>
+                    t.api.submit(txn, {wallet: account}).then(s=>
                     {
                         t.assertTxnSuccess(s);
                         console.log(s);
-                        txn['Fee'] = (base_drops - 1) + '';
+                        txn['Fee'] = (base_drops - 20) + '';
                         txn['Sequence'] = (txn['Sequence'] + 1) ;
                         console.log(txn)
                         t.api.submit(txn, {wallet: t.genesis}).then(s=>

@@ -30,7 +30,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                         }
                     }
                 ],
-                Fee: "100000"
+                Fee: t.wasmFee('accept.wasm')
             }, {wallet: account}).then(x=>
             {
                 t.assertTxnSuccess(x)

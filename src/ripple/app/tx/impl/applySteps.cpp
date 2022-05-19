@@ -237,7 +237,7 @@ invoke_preclaim(PreclaimContext const& ctx)
     }
 }
 
-static FeeUnit64
+FeeUnit64
 invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
 {
     switch (tx.getTxnType())

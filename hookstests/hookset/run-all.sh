@@ -3,6 +3,7 @@ RESULT=""
 FAILCOUNT=0
 PASSCOUNT=0
 for i in `ls test-*.js`; do
+    echo Running $i
     node $i 2>/dev/null >/dev/null;
     if [ "$?" -eq "0" ];
     then       

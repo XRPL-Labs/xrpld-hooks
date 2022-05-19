@@ -945,7 +945,10 @@ SetHook::setHook()
        oldHookCount = (oldHooks->get()).size();
     }
 
-    std::set<ripple::Keylet, KeyletComparator> defsToDestroy {};
+    std::set<ripple::Keylet, KeyletComparator> keyletsToDestroy {};
+    std::map<ripple::Keylet, std::shared_ptr<SLE>, KeyletComparator> slesToInsert {};
+    std::map<ripple::Keylet, std::shared_ptr<SLE>, KeyletComparator> slesToUpdate {};
+
     std::set<uint256> namespacesToDestroy {};
 
     int hookSetNumber = -1;
@@ -1007,13 +1010,15 @@ SetHook::setHook()
            
         
         // these flags are not able to be passed onto the ledger object
+        int newFlags = 0;
         if (flags)
         {
-            if (*flags & hsfOVERRIDE)
-                *flags -= hsfOVERRIDE;
+            newFlags = *flags;
+            if (newFlags & hsfOVERRIDE)
+                newFlags -= hsfOVERRIDE;
 
-            if (*flags & hsfNSDELETE)
-                *flags -= hsfNSDELETE;
+            if (newFlags & hsfNSDELETE)
+                newFlags -= hsfNSDELETE;
         }
 
 
@@ -1145,9 +1150,9 @@ SetHook::setHook()
                 if (oldDefSLE)
                 {
                     if (reduceReferenceCount(oldDefSLE))
-                        defsToDestroy.emplace(*oldDefKeylet);
-
-                    view().update(oldDefSLE);
+                        keyletsToDestroy.emplace(*oldDefKeylet);
+                    else
+                        slesToUpdate.emplace(*oldDefKeylet, oldDefSLE);
                 }
 
                 continue;
@@ -1219,6 +1224,14 @@ SetHook::setHook()
         
                     // this falls through to hsoINSTALL
                 }
+                else if (slesToInsert.find(keylet) != slesToInsert.end())
+                {
+                    // this hook was created in this very loop but isn't yet on the ledger
+                    newDefSLE = slesToInsert[keylet];
+                    newDefKeylet = keylet;
+
+                    // this falls through to hsoINSTALL
+                }
                 else
                 {
                     uint64_t maxInstrCountHook = 0;
@@ -1261,9 +1274,9 @@ SetHook::setHook()
                     if (oldDefSLE)
                     {
                         if (reduceReferenceCount(oldDefSLE))
-                            defsToDestroy.emplace(*oldDefKeylet);
-
-                        view().update(oldDefSLE);
+                            keyletsToDestroy.emplace(*oldDefKeylet);
+                        else
+                            slesToUpdate.emplace(*oldDefKeylet, oldDefSLE);
                     }
 
                     auto newHookDef = std::make_shared<SLE>( keylet );
@@ -1286,11 +1299,11 @@ SetHook::setHook()
                             XRPAmount {hook::computeExecutionFee(maxInstrCountCbak)});
 
                     if (flags)
-                        newHookDef->setFieldU32(sfFlags, *flags);
+                        newHookDef->setFieldU32(sfFlags, newFlags);
                     else
                         newHookDef->setFieldU32(sfFlags, 0);
 
-                    view().insert(newHookDef);
+                    slesToInsert.emplace(keylet, newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
                     continue;
@@ -1323,9 +1336,9 @@ SetHook::setHook()
                 if (oldDefSLE)
                 {
                     if (reduceReferenceCount(oldDefSLE))
-                        defsToDestroy.emplace(*oldDefKeylet);
-
-                    view().update(oldDefSLE);
+                        keyletsToDestroy.emplace(*oldDefKeylet);
+                    else
+                        slesToUpdate.emplace(*oldDefKeylet, oldDefSLE);
                 }
 
                 // set the hookhash on the new hook, and allow for a fall through event from hsoCREATE
@@ -1361,12 +1374,11 @@ SetHook::setHook()
                     newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
 
                 if (flags)
-                    newHook.setFieldU32(sfFlags, *flags);
+                    newHook.setFieldU32(sfFlags, newFlags);
 
                 newHooks.push_back(std::move(newHook));
 
-                view().update(newDefSLE);
-
+                slesToUpdate.emplace(*newDefKeylet, newDefSLE);
                 continue;
             }
 
@@ -1381,23 +1393,98 @@ SetHook::setHook()
         }
     }
 
+    int reserveDelta = 0;
     {
+        // compute owner counts before modifying anything on ledger
+
+        // Owner reserve is billed as follows:
+        // sfHook: 1 reserve PER non-blank entry
+        // sfParameters: 1 reserve PER entry
+        // sfGrants are: 1 reserve PER entry
+        // sfHookHash, sfHookNamespace, sfHookOn, sfHookApiVersion, sfFlags: free
+
+        // sfHookDefinition is not reserved because it is an unowned object, rather the uploader is billed via fee
+        // according to the following:
+        // sfCreateCode:     1000 drops per byte
+        // sfHookParameters: 1000 drops per byte
+        // other fields: free
+
+        int oldHookReserve = 0;
+        int newHookReserve = 0;
+
+        auto const computeHookReserve = [](STObject const& hookObj) -> int
+        {
+            if (!hookObj.isFieldPresent(sfHookHash))
+                return 0;
+
+            int reserve { 1 };
+
+            if (hookObj.isFieldPresent(sfHookParameters))
+                reserve += hookObj.getFieldArray(sfHookParameters).size();
+
+            if (hookObj.isFieldPresent(sfHookGrants))
+                reserve += hookObj.getFieldArray(sfHookGrants).size();
+
+            return reserve;
+        };
+
+        for (int i = 0; i < 4; ++i)
+        {
+            if (oldHooks && i < oldHookCount)
+                oldHookReserve += computeHookReserve(((*oldHooks).get())[i]);
+
+            if (i < newHooks.size())
+                newHookReserve += computeHookReserve(newHooks[i]);
+        }
+
+        reserveDelta = newHookReserve - oldHookReserve;
+
+        JLOG(j_.trace())
+            << "SetHook: "
+            << "newHookReserve: " << newHookReserve << " "
+            << "oldHookReserve: " << oldHookReserve << " " 
+            << "reserveDelta: " << reserveDelta;
+
+        int64_t newOwnerCount = (int64_t)(accountSLE->getFieldU32(sfOwnerCount)) + reserveDelta;
+        
+        if (newOwnerCount < 0 || newOwnerCount > 0xFFFFFFFFUL)
+            return tefINTERNAL;
+       
+
+        auto const requiredDrops = view().fees().accountReserve((uint32_t)(newOwnerCount));
+        if (mSourceBalance < requiredDrops)
+            return tecINSUFFICIENT_RESERVE;
+    }
+    {
+        // execution to here means we will enact changes to the ledger:
+
+        // do any pending insertions
+        for (auto const& [_, s] : slesToInsert)
+            view().insert(s);
+        
+        // do any pending updates
+        for (auto const& [_, s] : slesToUpdate)
+            view().update(s);
+
         // clean up any Namespace directories marked for deletion and any zero reference Hook Definitions
         for (auto const& ns : namespacesToDestroy)
             destroyNamespace(ctx, view(), account_, ns);
 
 
-        // defs
-        for (auto const& p : defsToDestroy)
+        // do any pending removals
+        for (auto const& p : keyletsToDestroy)
         {
             auto const& sle = view().peek(p);
             if (!sle)
                 continue;
-            uint64_t refCount = sle->getFieldU64(sfReferenceCount);
-            if (refCount <= 0)
+            if (sle->isFieldPresent(sfReferenceCount))
             {
-                view().erase(sle);
+                uint64_t refCount = sle->getFieldU64(sfReferenceCount);
+                if (refCount <= 0)
+                    view().erase(sle);
             }
+            else
+                view().erase(sle);
         }
 
         // check if the new hook object is empty
@@ -1411,12 +1498,12 @@ SetHook::setHook()
             }
         }
         
-
         newHookSLE->setFieldArray(sfHooks, newHooks);
         newHookSLE->setAccountID(sfAccount, account_);
 
         // There are three possible final outcomes
         // Either the account's ltHOOK is deleted, updated or created.
+
 
         if (oldHookSLE && newHooksEmpty)
         {
@@ -1431,12 +1518,7 @@ SetHook::setHook()
                     << "]: Unable to delete ltHOOK from owner";
                 return tefBAD_LEDGER;
             }
-
             view().erase(oldHookSLE);
-    
-            // update owner count to reflect removal
-            adjustOwnerCount(view(), accountSLE, -1, j_);
-            view().update(accountSLE);
         }
         else if (oldHookSLE && !newHooksEmpty)
         {
@@ -1462,18 +1544,20 @@ SetHook::setHook()
                 return tecDIR_FULL;
 
             newHookSLE->setFieldU64(sfOwnerNode, *page);
-            
             view().insert(newHookSLE);
-            
-            // update owner count to reflect new ltHOOK object
-            adjustOwnerCount(view(), accountSLE, 1, j_);
-            view().update(accountSLE);
         }
         else
         {
             // for clarity if this is a NO-OP
         }
     }
+
+    if (reserveDelta != 0)
+    {
+        adjustOwnerCount(view(), accountSLE, reserveDelta, j_);
+        view().update(accountSLE);
+    }
+
     return tesSUCCESS;
 }
 
