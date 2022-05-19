@@ -8,7 +8,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
         {
 
             let hash = t.hookHash('checkstate.wasm')
-            t.api.submit(
+            t.feeSubmit(account.seed,
             {
                 Account: account.classicAddress,
                 TransactionType: "SetHook",
@@ -20,13 +20,12 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             HookOn: "0000000000000000"
                         }
                     }
-                ],
-                Fee: "100000"
-            }, {wallet: account}).then(x=>
+                ]
+            }).then(x=>
             {
                 t.assertTxnSuccess(x)
                 console.log(x)
-                t.api.submit(
+                t.feeSubmit(account2.seed,
                 {
                     Account: account2.classicAddress,
                     TransactionType: "SetHook",
@@ -42,15 +41,14 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             HookHash: hash
                         }}
                     ]
-                }, {wallet: account2}).then(x=>
+                }).then(x=>
                 {
                     t.assertTxnSuccess(x)
                     console.log(x);
-                    t.api.submit(
+                    t.feeSubmit(account2.seed,
                     {
                         Account: account2.classicAddress,
                         TransactionType: "SetHook",
-                        Fee: "100000",
                         Flags: 0,
                         Hooks: [
                             { Hook: {
@@ -58,16 +56,15 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                                 "CreateCode": "",
                             }}
                         ]
-                    }, {wallet: account2}).then(x=>
+                    }).then(x=>
                     {
                         console.log(x);
                         t.assertTxnSuccess(x);
 
-                        t.api.submit(
+                        t.feeSubmit(account2.seed,
                         {
                             Account: account2.classicAddress,
                             TransactionType: "SetHook",
-                            Fee: "100000",
                             Flags: 0,
                             Hooks: [
                                 {Hook:{}},
@@ -82,7 +79,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                                     ]
                                 }}
                             ]
-                        }, {wallet: account2}).then(x=>
+                        }).then(x=>
                         {
                             console.log(x);
                             t.assertTxnSuccess(x);

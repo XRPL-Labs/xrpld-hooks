@@ -6,7 +6,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     {
         t.fundFromGenesis(account2).then(()=>
         {
-            t.api.submit(
+            t.feeSubmit(account1.seed,
             {
                 Account: account1.classicAddress,
                 TransactionType: "SetHook",
@@ -19,9 +19,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             HookOn: "0000000000000000"
                         }
                     }
-                ],
-                Fee: t.wasmFee('aaw.wasm')
-            }, {wallet: account1}).then(x=>
+                ]
+            }).then(x=>
             {
                 t.assertTxnSuccess(x)
                 console.log(x);

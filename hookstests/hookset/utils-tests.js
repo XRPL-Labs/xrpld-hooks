@@ -63,13 +63,6 @@ module.exports = {
                 };
 
 
-                const wasmFee = (x) =>
-                {
-                    if (x.slice(0,1) != '/')
-                        x = 'wasm/' + x;
-                    return "" + (fs.readFileSync( x).length * 500) + 20;
-                }
-
                 const feeCompute = (account_seed, txn_org) =>
                 {
                     return new Promise((resolve, reject) =>
@@ -226,7 +219,6 @@ module.exports = {
                         fee: fee,
                         genesisseed: genesisseed,
                         genesisaddr: genesisaddr,
-                        wasmFee: wasmFee,
                         feeCompute: feeCompute,
                         feeSubmit: feeSubmit
                     });

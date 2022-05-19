@@ -5,7 +5,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     
     t.fundFromGenesis(account).then(()=>
     {
-        t.api.submit(
+        t.feeSubmit(account.seed,
         {
             Account: account.classicAddress,
             TransactionType: "SetHook",
@@ -15,7 +15,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
         {
             t.assertTxnSuccess(x)
             console.log(x)
-            t.api.submit(
+            t.feeSubmit(account.seed,
             {
                 Account: account.classicAddress,
                 TransactionType: "SetHook",
@@ -29,13 +29,12 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             HookOn: "0000000000000000"
                         }
                     }
-                ],
-                Fee: t.wasmFee('accept.wasm')
-            }, {wallet: account}).then(x=>
+                ]
+            }).then(x=>
             {
                 t.assertTxnSuccess(x)
                 console.log(x);
-                t.api.submit(
+                t.feeSubmit(account.seed,
                 {
                     Account: account.classicAddress,
                     TransactionType: "SetHook",
@@ -47,8 +46,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             }
                         }
                     ],
-                    Fee: "100000"
-                }, {wallet: account}).then(x=>
+                }).then(x=>
                 {
                     t.assertTxnSuccess(x)
                     console.log(x);

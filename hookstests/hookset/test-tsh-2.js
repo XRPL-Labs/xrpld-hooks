@@ -6,7 +6,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     {
         t.fundFromGenesis(account2).then(()=>
         {
-            t.api.submit(
+            t.feeSubmit(account1.seed,
             {
                 Account: account1.classicAddress,
                 TransactionType: "SetHook",
@@ -19,13 +19,12 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             HookOn: "0000000000000000"
                         }
                     }
-                ],
-                Fee: "100000"
-            }, {wallet: account1}).then(x=>
+                ]
+            }).then(x=>
             {
                 t.assertTxnSuccess(x)
                 console.log(x);
-                t.api.submit(
+                t.feeSubmit(account2.seed,
                 {
                     Account: account2.classicAddress,
                     TransactionType: "SignerListSet",
@@ -39,9 +38,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                                 SignerWeight: 1
                             }
                         }
-                    ],
-                    Fee: "100000"
-                }, {wallet: account2}).then(x=>
+                    ]
+                }).then(x=>
                 {
                     t.assertTxnFailure(x)
                     process.exit(0);

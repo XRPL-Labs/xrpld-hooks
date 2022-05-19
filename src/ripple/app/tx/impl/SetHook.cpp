@@ -486,6 +486,22 @@ SetHook::calculateBaseFee(ReadView const& view, STTx const& tx)
         extraFee += FeeUnit64{
             hook::computeCreationFee(
                 hookSetObj->getFieldVL(sfCreateCode).size())};
+
+        // parameters are billed at the same rate as code bytes
+        if (hookSetObj->isFieldPresent(sfHookParameters))
+        {
+            uint64_t paramBytes = 0;
+            auto const& params = hookSetObj->getFieldArray(sfHookParameters);
+            for (auto const& param : params)
+            {
+                paramBytes +=
+                    (param.isFieldPresent(sfHookParameterName) ?
+                        param.getFieldVL(sfHookParameterName).size() : 0) +
+                    (param.isFieldPresent(sfHookParameterValue) ?
+                        param.getFieldVL(sfHookParameterValue).size() : 0);
+            }
+            extraFee += FeeUnit64 { paramBytes };
+        }
     }
 
     return Transactor::calculateBaseFee(view, tx) + extraFee;
@@ -1405,8 +1421,8 @@ SetHook::setHook()
 
         // sfHookDefinition is not reserved because it is an unowned object, rather the uploader is billed via fee
         // according to the following:
-        // sfCreateCode:     1000 drops per byte
-        // sfHookParameters: 1000 drops per byte
+        // sfCreateCode:     5000 drops per byte
+        // sfHookParameters: 5000 drops per byte
         // other fields: free
 
         int oldHookReserve = 0;

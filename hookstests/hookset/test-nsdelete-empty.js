@@ -3,7 +3,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     const account =  t.randomAccount();
     t.fundFromGenesis(account).then(()=>
     {
-        t.api.submit(
+        t.feeSubmit(account.seed,
         {
             Account: account.classicAddress,
             TransactionType: "SetHook",
@@ -27,16 +27,15 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                 }
             ],
             Fee: "100000"
-        }, {wallet: account}).then(x=>
+        }).then(x=>
         {
             t.assertTxnSuccess(x)
                 console.log(x);
 
-                t.api.submit(
+                t.feeSubmit(account.seed,
                 {
                     Account: account.classicAddress,
                     TransactionType: "SetHook",  
-                    Fee: "100000",
                     Hooks: [
                         {
                             Hook: {
@@ -45,7 +44,7 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                             }
                         }
                     ]
-                }, {wallet: account}).then(x=>
+                }).then(x=>
                 {
                     t.assertTxnSuccess(x)
                     console.log(x);
