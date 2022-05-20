@@ -30,6 +30,7 @@ namespace hook
         tshNONE                = 0b000,
         tshROLLBACK            = 0b001,
         tshCOLLECT             = 0b010,
+        tshMIXED               = 0b100,
     };
 
 

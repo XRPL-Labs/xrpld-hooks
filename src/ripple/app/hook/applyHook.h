@@ -39,28 +39,44 @@ namespace hook
     using namespace ripple;
     static const std::map<uint16_t, uint8_t> TSHAllowances = 
     {
-        {ttPAYMENT,             tshROLLBACK },
-        {ttESCROW_CREATE,       tshROLLBACK },
-        {ttESCROW_FINISH,       tshROLLBACK },
-        {ttACCOUNT_SET,         tshNONE     },
-        {ttESCROW_CANCEL,       tshCOLLECT  },
-        {ttREGULAR_KEY_SET,     tshROLLBACK },
-        {ttOFFER_CREATE,        tshCOLLECT  },
-        {ttOFFER_CANCEL,        tshNONE     },
-        {ttTICKET_CREATE,       tshNONE     },
-        {ttSIGNER_LIST_SET,     tshROLLBACK },
-        {ttPAYCHAN_CREATE,      tshROLLBACK },
-        {ttPAYCHAN_FUND,        tshCOLLECT  },
-        {ttPAYCHAN_CLAIM,       tshCOLLECT  },
-        {ttCHECK_CREATE,        tshROLLBACK },
-        {ttCHECK_CASH,          tshROLLBACK },
-        {ttCHECK_CANCEL,        tshCOLLECT  },
-        {ttDEPOSIT_PREAUTH,     tshROLLBACK },
-        {ttTRUST_SET,           tshCOLLECT  },
-        {ttACCOUNT_DELETE,      tshROLLBACK },
-        {ttHOOK_SET,            tshNONE     }
-        // RH TODO: add NFT transactions here
+        {ttPAYMENT,                 tshROLLBACK },
+        {ttESCROW_CREATE,           tshROLLBACK },
+        {ttESCROW_FINISH,           tshROLLBACK },
+        {ttACCOUNT_SET,             tshNONE     },
+        {ttESCROW_CANCEL,           tshCOLLECT  },
+        {ttREGULAR_KEY_SET,         tshROLLBACK },
+        {ttOFFER_CREATE,            tshCOLLECT  },
+        {ttOFFER_CANCEL,            tshNONE     },
+        {ttTICKET_CREATE,           tshNONE     },
+        {ttSIGNER_LIST_SET,         tshROLLBACK },
+        {ttPAYCHAN_CREATE,          tshROLLBACK },
+        {ttPAYCHAN_FUND,            tshCOLLECT  },
+        {ttPAYCHAN_CLAIM,           tshCOLLECT  },
+        {ttCHECK_CREATE,            tshROLLBACK },
+        {ttCHECK_CASH,              tshROLLBACK },
+        {ttCHECK_CANCEL,            tshCOLLECT  },
+        {ttDEPOSIT_PREAUTH,         tshROLLBACK },
+        {ttTRUST_SET,               tshCOLLECT  },
+        {ttACCOUNT_DELETE,          tshROLLBACK },
+        {ttHOOK_SET,                tshNONE     },
+        {ttNFTOKEN_MINT,            tshROLLBACK },
+        {ttNFTOKEN_BURN,            tshCOLLECT  }, 
+        {ttNFTOKEN_CREATE_OFFER,    tshROLLBACK },
+        {ttNFTOKEN_CANCEL_OFFER,    tshCOLLECT  },
+        {ttNFTOKEN_ACCEPT_OFFER,    tshROLLBACK }
     };
+
+/*
+    ttNFTOKEN_MINT = 25,                                                                                               
+                                                                                                                       
+    ttNFTOKEN_BURN = 26,                                                                                               
+                                                                                                                       
+    ttNFTOKEN_CREATE_OFFER = 27,                                                                                       
+                                                                                                                       
+    ttNFTOKEN_CANCEL_OFFER = 28,                                                                                       
+                                                                                                                       
+    ttNFTOKEN_ACCEPT_OFFER = 29,        
+    */
 
 
     std::vector<std::pair<AccountID, bool>>

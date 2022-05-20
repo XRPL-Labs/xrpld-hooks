@@ -21,7 +21,6 @@ using namespace ripple;
 
 namespace hook
 {
-
     std::vector<std::pair<AccountID, bool>>
     getTransactionalStakeHolders(STTx const& tx, ReadView const& rv)
     {
@@ -67,8 +66,93 @@ namespace hook
             }\
         }
 
+
+        auto const getNFTOffer = [](std::optional<uint256> id, ReadView const& rv) ->
+        std::shared_ptr<const SLE>
+        {
+                if (!id)
+                    return nullptr;
+
+                return rv.read(keylet::nftoffer(*id));
+        };
+            
+
         switch (tt)
         {
+
+            // NFT
+            case ttNFTOKEN_MINT:
+            {
+                if (tx.isFieldPresent(sfIssuer))
+                    ADD_TSH(tx.getAccountID(sfIssuer), canRollback);
+                break;
+            };
+
+            case ttNFTOKEN_BURN:
+            case ttNFTOKEN_CREATE_OFFER:
+            {
+                if (!tx.isFieldPresent(sfNFTokenID) || !tx.isFieldPresent(sfAccount))
+                    return {};
+
+                uint256 nid = tx.getFieldH256(sfNFTokenID);
+                bool hasOwner = tx.isFieldPresent(sfOwner);
+                AccountID owner = tx.getAccountID(hasOwner ? sfOwner : sfAccount);
+
+                if (!nft::findToken(rv, owner, nid))
+                    return {};
+
+                auto const issuer = nft::getIssuer(nid);
+
+                ADD_TSH(issuer, canRollback);
+                if (hasOwner)
+                    ADD_TSH(owner, canRollback);
+                break;
+            }
+
+            case ttNFTOKEN_ACCEPT_OFFER:
+            {
+                auto const bo = getNFTOffer(tx[~sfNFTokenBuyOffer], rv);
+                auto const so = getNFTOffer(tx[~sfNFTokenSellOffer], rv);
+                
+                if (!bo && !so)
+                    return {};
+
+                if (bo)
+                {
+                    ADD_TSH(bo->getAccountID(sfOwner), canRollback);
+                    if (bo->isFieldPresent(sfDestination))
+                        ADD_TSH(bo->getAccountID(sfDestination), canRollback);
+                }
+
+                if (so)
+                {
+                    ADD_TSH(so->getAccountID(sfOwner), canRollback);
+                    if (so->isFieldPresent(sfDestination))
+                        ADD_TSH(so->getAccountID(sfDestination), canRollback);
+                }
+
+                break;
+            }
+            
+            case ttNFTOKEN_CANCEL_OFFER:
+            {
+                if (!tx.isFieldPresent(sfNFTokenOffers))
+                    return {};
+
+                auto const& offerVec = tx.getFieldV256(sfNFTokenOffers);
+                for (auto const& offerID : offerVec)
+                {
+                    auto const offer = getNFTOffer(offerID, rv);
+                    if (offer)
+                    {
+                        ADD_TSH(offer->getAccountID(sfOwner), canRollback);
+                        if (offer->isFieldPresent(sfDestination))
+                            ADD_TSH(offer->getAccountID(sfDestination), canRollback);
+                    }
+                }
+                break;
+            }
+
 
             // self transactions
             case ttACCOUNT_SET:
