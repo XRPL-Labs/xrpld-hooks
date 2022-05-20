@@ -34,8 +34,7 @@
 #include <ripple/app/misc/TxQ.h>
 #include <ripple/app/misc/ValidatorList.h>
 #include <ripple/app/paths/PathRequests.h>
-#include <ripple/app/rdb/RelationalDBInterface_postgres.h>
-#include <ripple/app/rdb/backend/RelationalDBInterfacePostgres.h>
+#include <ripple/app/rdb/backend/PostgresDatabase.h>
 #include <ripple/app/tx/apply.h>
 #include <ripple/basics/Log.h>
 #include <ripple/basics/MathUtilities.h>
@@ -261,8 +260,13 @@ LedgerMaster::getPublishedLedgerAge()
     std::chrono::seconds ret = app_.timeKeeper().closeTime().time_since_epoch();
     ret -= pubClose;
     ret = (ret > 0s) ? ret : 0s;
+    static std::chrono::seconds lastRet = -1s;
 
-    JLOG(m_journal.trace()) << "Published ledger age is " << ret.count();
+    if (ret != lastRet)
+    {
+        JLOG(m_journal.trace()) << "Published ledger age is " << ret.count();
+        lastRet = ret;
+    }
     return ret;
 }
 
@@ -273,10 +277,10 @@ LedgerMaster::getValidatedLedgerAge()
 
 #ifdef RIPPLED_REPORTING
     if (app_.config().reporting())
-        return static_cast<RelationalDBInterfacePostgres*>(
-                   &app_.getRelationalDBInterface())
+        return static_cast<PostgresDatabase*>(&app_.getRelationalDatabase())
             ->getValidatedLedgerAge();
 #endif
+
     std::chrono::seconds valClose{mValidLedgerSign.load()};
     if (valClose == 0s)
     {
@@ -287,8 +291,13 @@ LedgerMaster::getValidatedLedgerAge()
     std::chrono::seconds ret = app_.timeKeeper().closeTime().time_since_epoch();
     ret -= valClose;
     ret = (ret > 0s) ? ret : 0s;
+    static std::chrono::seconds lastRet = -1s;
 
-    JLOG(m_journal.trace()) << "Validated ledger age is " << ret.count();
+    if (ret != lastRet)
+    {
+        JLOG(m_journal.trace()) << "Validated ledger age is " << ret.count();
+        lastRet = ret;
+    }
     return ret;
 }
 
@@ -299,8 +308,7 @@ LedgerMaster::isCaughtUp(std::string& reason)
 
 #ifdef RIPPLED_REPORTING
     if (app_.config().reporting())
-        return static_cast<RelationalDBInterfacePostgres*>(
-                   &app_.getRelationalDBInterface())
+        return static_cast<PostgresDatabase*>(&app_.getRelationalDatabase())
             ->isCaughtUp(reason);
 #endif
 
@@ -733,7 +741,7 @@ LedgerMaster::tryFill(std::shared_ptr<Ledger const> ledger)
                 mCompleteLedgers.insert(range(minHas, maxHas));
             }
             maxHas = minHas;
-            ledgerHashes = app_.getRelationalDBInterface().getHashesByIndex(
+            ledgerHashes = app_.getRelationalDatabase().getHashesByIndex(
                 (seq < 500) ? 0 : (seq - 499), seq);
             it = ledgerHashes.find(seq);
 
@@ -917,8 +925,8 @@ LedgerMaster::setFullLedger(
     {
         // Check the SQL database's entry for the sequence before this
         // ledger, if it's not this ledger's parent, invalidate it
-        uint256 prevHash = app_.getRelationalDBInterface().getHashByIndex(
-            ledger->info().seq - 1);
+        uint256 prevHash =
+            app_.getRelationalDatabase().getHashByIndex(ledger->info().seq - 1);
         if (prevHash.isNonZero() && prevHash != ledger->info().parentHash)
             clearLedger(ledger->info().seq - 1);
     }
@@ -1487,12 +1495,14 @@ LedgerMaster::updatePaths()
         if (app_.getOPs().isNeedNetworkLedger())
         {
             --mPathFindThread;
+            JLOG(m_journal.debug()) << "Need network ledger for updating paths";
             return;
         }
     }
 
     while (!app_.getJobQueue().isStopping())
     {
+        JLOG(m_journal.debug()) << "updatePaths running";
         std::shared_ptr<ReadView const> lastLedger;
         {
             std::lock_guard ml(m_mutex);
@@ -1510,6 +1520,7 @@ LedgerMaster::updatePaths()
             else
             {  // Nothing to do
                 --mPathFindThread;
+                JLOG(m_journal.debug()) << "Nothing to do for updating paths";
                 return;
             }
         }
@@ -1531,7 +1542,31 @@ LedgerMaster::updatePaths()
 
         try
         {
-            app_.getPathRequests().updateAll(lastLedger);
+            auto& pathRequests = app_.getPathRequests();
+            {
+                std::lock_guard ml(m_mutex);
+                if (!pathRequests.requestsPending())
+                {
+                    --mPathFindThread;
+                    JLOG(m_journal.debug())
+                        << "No path requests found. Nothing to do for updating "
+                           "paths. "
+                        << mPathFindThread << " jobs remaining";
+                    return;
+                }
+            }
+            JLOG(m_journal.debug()) << "Updating paths";
+            pathRequests.updateAll(lastLedger);
+
+            std::lock_guard ml(m_mutex);
+            if (!pathRequests.requestsPending())
+            {
+                JLOG(m_journal.debug())
+                    << "No path requests left. No need for further updating "
+                       "paths";
+                --mPathFindThread;
+                return;
+            }
         }
         catch (SHAMapMissingNode const& mn)
         {
@@ -1591,8 +1626,12 @@ LedgerMaster::newPFWork(
     const char* name,
     std::unique_lock<std::recursive_mutex>&)
 {
-    if (mPathFindThread < 2)
+    if (!app_.isStopping() && mPathFindThread < 2 &&
+        app_.getPathRequests().requestsPending())
     {
+        JLOG(m_journal.debug())
+            << "newPFWork: Creating job. path find threads: "
+            << mPathFindThread;
         if (app_.getJobQueue().addJob(
                 jtUPDATE_PF, name, [this]() { updatePaths(); }))
         {
@@ -1627,7 +1666,7 @@ LedgerMaster::getValidatedLedger()
 #ifdef RIPPLED_REPORTING
     if (app_.config().reporting())
     {
-        auto seq = app_.getRelationalDBInterface().getMaxLedgerSeq();
+        auto seq = app_.getRelationalDatabase().getMaxLedgerSeq();
         if (!seq)
             return {};
         return getLedgerBySeq(*seq);
@@ -1663,8 +1702,7 @@ LedgerMaster::getCompleteLedgers()
 {
 #ifdef RIPPLED_REPORTING
     if (app_.config().reporting())
-        return static_cast<RelationalDBInterfacePostgres*>(
-                   &app_.getRelationalDBInterface())
+        return static_cast<PostgresDatabase*>(&app_.getRelationalDatabase())
             ->getCompleteLedgers();
 #endif
     std::lock_guard sl(mCompleteLock);
@@ -1709,7 +1747,7 @@ LedgerMaster::getHashBySeq(std::uint32_t index)
     if (hash.isNonZero())
         return hash;
 
-    return app_.getRelationalDBInterface().getHashByIndex(index);
+    return app_.getRelationalDatabase().getHashByIndex(index);
 }
 
 std::optional<LedgerHash>
@@ -1833,12 +1871,6 @@ LedgerMaster::setLedgerRangePresent(std::uint32_t minV, std::uint32_t maxV)
 }
 
 void
-LedgerMaster::tune(int size, std::chrono::seconds age)
-{
-    mLedgerHistory.tune(size, age);
-}
-
-void
 LedgerMaster::sweep()
 {
     mLedgerHistory.sweep();
@@ -1936,7 +1968,7 @@ LedgerMaster::fetchForHistory(
                     fillInProgress = mFillInProgress;
                 }
                 if (fillInProgress == 0 &&
-                    app_.getRelationalDBInterface().getHashByIndex(seq - 1) ==
+                    app_.getRelationalDatabase().getHashByIndex(seq - 1) ==
                         ledger->info().parentHash)
                 {
                     {
@@ -2078,7 +2110,7 @@ LedgerMaster::doAdvance(std::unique_lock<std::recursive_mutex>& sl)
         {
             JLOG(m_journal.trace()) << "tryAdvance found " << pubLedgers.size()
                                     << " ledgers to publish";
-            for (auto ledger : pubLedgers)
+            for (auto const& ledger : pubLedgers)
             {
                 {
                     ScopedUnlock sul{sl};
@@ -2332,7 +2364,7 @@ LedgerMaster::getFetchPackCacheSize() const
 std::optional<LedgerIndex>
 LedgerMaster::minSqlSeq()
 {
-    return app_.getRelationalDBInterface().getMinLedgerSeq();
+    return app_.getRelationalDatabase().getMinLedgerSeq();
 }
 
 }  // namespace ripple

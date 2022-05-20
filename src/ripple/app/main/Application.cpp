@@ -45,8 +45,8 @@
 #include <ripple/app/misc/ValidatorKeys.h>
 #include <ripple/app/misc/ValidatorSite.h>
 #include <ripple/app/paths/PathRequests.h>
-#include <ripple/app/rdb/RelationalDBInterface_global.h>
-#include <ripple/app/rdb/backend/RelationalDBInterfacePostgres.h>
+#include <ripple/app/rdb/Wallet.h>
+#include <ripple/app/rdb/backend/PostgresDatabase.h>
 #include <ripple/app/reporting/ReportingETL.h>
 #include <ripple/app/tx/apply.h>
 #include <ripple/basics/ByteUtilities.h>
@@ -219,15 +219,17 @@ public:
     boost::asio::steady_timer sweepTimer_;
     boost::asio::steady_timer entropyTimer_;
 
-    std::unique_ptr<RelationalDBInterface> mRelationalDBInterface;
+    std::unique_ptr<RelationalDatabase> mRelationalDatabase;
     std::unique_ptr<DatabaseCon> mWalletDB;
     std::unique_ptr<Overlay> overlay_;
 
     boost::asio::signal_set m_signals;
 
-    std::condition_variable cv_;
-    mutable std::mutex mut_;
-    bool isTimeToStop = false;
+    // Once we get C++20, we could use `std::atomic_flag` for `isTimeToStop`
+    // and eliminate the need for the condition variable and the mutex.
+    std::condition_variable stoppingCondition_;
+    mutable std::mutex stoppingMutex_;
+    std::atomic<bool> isTimeToStop = false;
 
     std::atomic<bool> checkSigs_;
 
@@ -875,11 +877,11 @@ public:
         return *txQ_;
     }
 
-    RelationalDBInterface&
-    getRelationalDBInterface() override
+    RelationalDatabase&
+    getRelationalDatabase() override
     {
-        assert(mRelationalDBInterface.get() != nullptr);
-        return *mRelationalDBInterface;
+        assert(mRelationalDatabase.get() != nullptr);
+        return *mRelationalDatabase;
     }
 
     DatabaseCon&
@@ -905,14 +907,14 @@ public:
     //--------------------------------------------------------------------------
 
     bool
-    initRDBMS()
+    initRelationalDatabase()
     {
         assert(mWalletDB.get() == nullptr);
 
         try
         {
-            mRelationalDBInterface =
-                RelationalDBInterface::init(*this, *config_, *m_jobQueue);
+            mRelationalDatabase =
+                RelationalDatabase::init(*this, *config_, *m_jobQueue);
 
             // wallet database
             auto setup = setup_DatabaseCon(*config_, m_journal);
@@ -960,108 +962,7 @@ public:
                            << "' took " << elapsed.count() << " seconds.";
         }
 
-        // tune caches
-        using namespace std::chrono;
-
-        m_ledgerMaster->tune(
-            config_->getValueFor(SizedItem::ledgerSize),
-            seconds{config_->getValueFor(SizedItem::ledgerAge)});
-
         return true;
-    }
-
-    //--------------------------------------------------------------------------
-
-    // Called to indicate shutdown.
-    void
-    stop()
-    {
-        JLOG(m_journal.debug()) << "Application stopping";
-
-        m_io_latency_sampler.cancel_async();
-
-        // VFALCO Enormous hack, we have to force the probe to cancel
-        //        before we stop the io_service queue or else it never
-        //        unblocks in its destructor. The fix is to make all
-        //        io_objects gracefully handle exit so that we can
-        //        naturally return from io_service::run() instead of
-        //        forcing a call to io_service::stop()
-        m_io_latency_sampler.cancel();
-
-        m_resolver->stop_async();
-
-        // NIKB This is a hack - we need to wait for the resolver to
-        //      stop. before we stop the io_server_queue or weird
-        //      things will happen.
-        m_resolver->stop();
-
-        {
-            boost::system::error_code ec;
-            sweepTimer_.cancel(ec);
-            if (ec)
-            {
-                JLOG(m_journal.error())
-                    << "Application: sweepTimer cancel error: " << ec.message();
-            }
-
-            ec.clear();
-            entropyTimer_.cancel(ec);
-            if (ec)
-            {
-                JLOG(m_journal.error())
-                    << "Application: entropyTimer cancel error: "
-                    << ec.message();
-            }
-        }
-        // Make sure that any waitHandlers pending in our timers are done
-        // before we declare ourselves stopped.
-        using namespace std::chrono_literals;
-        waitHandlerCounter_.join("Application", 1s, m_journal);
-
-        mValidations.flush();
-
-        validatorSites_->stop();
-
-        // TODO Store manifests in manifests.sqlite instead of wallet.db
-        validatorManifests_->save(
-            getWalletDB(),
-            "ValidatorManifests",
-            [this](PublicKey const& pubKey) {
-                return validators().listed(pubKey);
-            });
-
-        publisherManifests_->save(
-            getWalletDB(),
-            "PublisherManifests",
-            [this](PublicKey const& pubKey) {
-                return validators().trustedPublisher(pubKey);
-            });
-
-        // The order of these stop calls is delicate.
-        // Re-ordering them risks undefined behavior.
-        m_loadManager->stop();
-        m_shaMapStore->stop();
-        m_jobQueue->stop();
-        if (shardArchiveHandler_)
-            shardArchiveHandler_->stop();
-        if (overlay_)
-            overlay_->stop();
-        if (shardStore_)
-            shardStore_->stop();
-        grpcServer_->stop();
-        m_networkOPs->stop();
-        serverHandler_->stop();
-        m_ledgerReplayer->stop();
-        m_inboundTransactions->stop();
-        m_inboundLedgers->stop();
-        ledgerCleaner_->stop();
-        if (reportingETL_)
-            reportingETL_->stop();
-        if (auto pg = dynamic_cast<RelationalDBInterfacePostgres*>(
-                &*mRelationalDBInterface))
-            pg->stop();
-        m_nodeStore->stop();
-        perfLog_->stop();
     }
 
     //--------------------------------------------------------------------------
@@ -1140,7 +1041,7 @@ public:
     doSweep()
     {
         if (!config_->standalone() &&
-            !getRelationalDBInterface().transactionDbHasSpace(*config_))
+            !getRelationalDatabase().transactionDbHasSpace(*config_))
         {
             signalStop();
         }
@@ -1165,8 +1066,7 @@ public:
         cachedSLEs_.sweep();
 
 #ifdef RIPPLED_REPORTING
-        if (auto pg = dynamic_cast<RelationalDBInterfacePostgres*>(
-                &*mRelationalDBInterface))
+        if (auto pg = dynamic_cast<PostgresDatabase*>(&*mRelationalDatabase))
             pg->sweep();
 #endif
 
@@ -1261,7 +1161,7 @@ ApplicationImp::setup()
     if (!config_->standalone())
         timeKeeper_->run(config_->SNTP_SERVERS);
 
-    if (!initRDBMS() || !initNodeStore())
+    if (!initRelationalDatabase() || !initNodeStore())
         return false;
 
     if (shardStore_)
@@ -1636,27 +1536,101 @@ ApplicationImp::run()
     }
 
     {
-        std::unique_lock<std::mutex> lk{mut_};
-        cv_.wait(lk, [this] { return isTimeToStop; });
+        std::unique_lock<std::mutex> lk{stoppingMutex_};
+        stoppingCondition_.wait(lk, [this] { return isTimeToStop.load(); });
     }
 
-    JLOG(m_journal.info()) << "Received shutdown request";
-    stop();
+    JLOG(m_journal.debug()) << "Application stopping";
+
+    m_io_latency_sampler.cancel_async();
+
+    // VFALCO Enormous hack, we have to force the probe to cancel
+    //        before we stop the io_service queue or else it never
+    //        unblocks in its destructor. The fix is to make all
+    //        io_objects gracefully handle exit so that we can
+    //        naturally return from io_service::run() instead of
+    //        forcing a call to io_service::stop()
+    m_io_latency_sampler.cancel();
+
+    m_resolver->stop_async();
+
+    // NIKB This is a hack - we need to wait for the resolver to
+    //      stop. before we stop the io_server_queue or weird
+    //      things will happen.
+    m_resolver->stop();
+
+    {
+        boost::system::error_code ec;
+        sweepTimer_.cancel(ec);
+        if (ec)
+        {
+            JLOG(m_journal.error())
+                << "Application: sweepTimer cancel error: " << ec.message();
+        }
+
+        ec.clear();
+        entropyTimer_.cancel(ec);
+        if (ec)
+        {
+            JLOG(m_journal.error())
+                << "Application: entropyTimer cancel error: " << ec.message();
+        }
+    }
+
+    // Make sure that any waitHandlers pending in our timers are done
+    // before we declare ourselves stopped.
+    using namespace std::chrono_literals;
+
+    waitHandlerCounter_.join("Application", 1s, m_journal);
+
+    mValidations.flush();
+
+    validatorSites_->stop();
+
+    // TODO Store manifests in manifests.sqlite instead of wallet.db
+    validatorManifests_->save(
+        getWalletDB(), "ValidatorManifests", [this](PublicKey const& pubKey) {
+            return validators().listed(pubKey);
+        });
+
+    publisherManifests_->save(
+        getWalletDB(), "PublisherManifests", [this](PublicKey const& pubKey) {
+            return validators().trustedPublisher(pubKey);
+        });
+
+    // The order of these stop calls is delicate.
+    // Re-ordering them risks undefined behavior.
+    m_loadManager->stop();
+    m_shaMapStore->stop();
+    m_jobQueue->stop();
+    if (shardArchiveHandler_)
+        shardArchiveHandler_->stop();
+    if (overlay_)
+        overlay_->stop();
+    if (shardStore_)
+        shardStore_->stop();
+    grpcServer_->stop();
+    m_networkOPs->stop();
+    serverHandler_->stop();
+    m_ledgerReplayer->stop();
+    m_inboundTransactions->stop();
+    m_inboundLedgers->stop();
+    ledgerCleaner_->stop();
+    if (reportingETL_)
+        reportingETL_->stop();
+    if (auto pg = dynamic_cast<PostgresDatabase*>(&*mRelationalDatabase))
+        pg->stop();
+    m_nodeStore->stop();
+    perfLog_->stop();
+
     JLOG(m_journal.info()) << "Done.";
 }
 
 void
 ApplicationImp::signalStop()
 {
-    // Unblock the main thread (which is sitting in run()).
-    // When we get C++20 this can use std::latch.
-    std::lock_guard lk{mut_};
-
-    if (!isTimeToStop)
-    {
-        isTimeToStop = true;
-        cv_.notify_all();
-    }
+    if (!isTimeToStop.exchange(true))
+        stoppingCondition_.notify_all();
 }
 
 bool
@@ -1674,8 +1648,7 @@ ApplicationImp::checkSigs(bool check)
 bool
 ApplicationImp::isStopping() const
 {
-    std::lock_guard lk{mut_};
-    return isTimeToStop;
+    return isTimeToStop.load();
 }
 
 int
@@ -2162,7 +2135,7 @@ ApplicationImp::nodeToShards()
 void
 ApplicationImp::setMaxDisallowedLedger()
 {
-    auto seq = getRelationalDBInterface().getMaxLedgerSeq();
+    auto seq = getRelationalDatabase().getMaxLedgerSeq();
     if (seq)
         maxDisallowedLedger_ = *seq;
 

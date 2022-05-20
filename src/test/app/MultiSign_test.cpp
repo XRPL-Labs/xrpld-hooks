@@ -189,7 +189,6 @@ public:
         env(signers(
                 alice,
                 1,
-
                 features[featureExpandedSignerList]
                     ? std::vector<signer>{{bogie, 1}, {demon, 1}, {ghost, 1},
                                           {haunt, 1}, {jinni, 1}, {phase, 1},
@@ -202,9 +201,11 @@ public:
                                           {acc25, 1}, {acc26, 1}, {acc27, 1},
                                           {acc28, 1}, {acc29, 1}, {acc30, 1},
                                           {acc31, 1}, {acc32, 1}, {acc33, 1}}
-                    : std::vector<
-                          signer>{{bogie, 1}, {demon, 1}, {ghost, 1}, {haunt, 1}, {jinni, 1}, {phase, 1}, {shade, 1}, {spook, 1}, {spare, 1}}),
+                    : std::vector<signer>{{bogie, 1}, {demon, 1}, {ghost, 1},
+                                          {haunt, 1}, {jinni, 1}, {phase, 1},
+                                          {shade, 1}, {spook, 1}, {spare, 1}}),
             ter(temMALFORMED));
+        // clang-format on
         env.close();
         env.require(owners(alice, 0));
     }
@@ -1586,10 +1587,10 @@ public:
     void
     test_signersWithTags(FeatureBitset features)
     {
-        testcase("Signers With Tags");
-
         if (!features[featureExpandedSignerList])
             return;
+
+        testcase("Signers With Tags");
 
         using namespace jtx;
         Env env{*this, features};
@@ -1688,10 +1689,13 @@ public:
         using namespace jtx;
         auto const all = supported_amendments();
 
-        // The reserve required on a signer list changes based on.
-        // featureMultiSignReserve.  Test both with and without.
-        testAll(all - featureMultiSignReserve);
-        testAll(all | featureMultiSignReserve);
+        // The reserve required on a signer list changes based on
+        // featureMultiSignReserve.  Limits on the number of signers
+        // changes based on featureExpandedSignerList.  Test both with and
+        // without.
+        testAll(all - featureMultiSignReserve - featureExpandedSignerList);
+        testAll(all - featureExpandedSignerList);
+        testAll(all);
         test_amendmentTransition();
     }
 };

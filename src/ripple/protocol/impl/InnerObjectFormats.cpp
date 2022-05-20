@@ -118,6 +118,13 @@ InnerObjectFormats::InnerObjectFormats()
             {sfHookParameterValue,  soeREQUIRED}
         });
 
+
+    add(sfNFToken.jsonName.c_str(),
+        sfNFToken.getCode(),
+        {
+            {sfNFTokenID, soeREQUIRED},
+            {sfURI, soeOPTIONAL},
+        });
 }
 
 InnerObjectFormats const&

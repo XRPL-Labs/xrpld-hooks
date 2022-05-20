@@ -82,6 +82,7 @@ target_sources (xrpl_core PRIVATE
   src/ripple/protocol/impl/PublicKey.cpp
   src/ripple/protocol/impl/Quality.cpp
   src/ripple/protocol/impl/Rate2.cpp
+  src/ripple/protocol/impl/Rules.cpp
   src/ripple/protocol/impl/SField.cpp
   src/ripple/protocol/impl/SOTemplate.cpp
   src/ripple/protocol/impl/STAccount.cpp
@@ -209,6 +210,7 @@ install (
     src/ripple/protocol/PublicKey.h
     src/ripple/protocol/Quality.h
     src/ripple/protocol/Rate.h
+    src/ripple/protocol/Rules.h
     src/ripple/protocol/SField.h
     src/ripple/protocol/SOTemplate.h
     src/ripple/protocol/STAccount.h
@@ -395,18 +397,23 @@ target_sources (rippled PRIVATE
   src/ripple/app/paths/Pathfinder.cpp
   src/ripple/app/paths/RippleCalc.cpp
   src/ripple/app/paths/RippleLineCache.cpp
-  src/ripple/app/paths/RippleState.cpp
+  src/ripple/app/paths/TrustLine.cpp
   src/ripple/app/paths/impl/BookStep.cpp
   src/ripple/app/paths/impl/DirectStep.cpp
   src/ripple/app/paths/impl/PaySteps.cpp
   src/ripple/app/paths/impl/XRPEndpointStep.cpp
-  src/ripple/app/rdb/backend/RelationalDBInterfacePostgres.cpp
-  src/ripple/app/rdb/backend/RelationalDBInterfaceSqlite.cpp
-  src/ripple/app/rdb/impl/RelationalDBInterface.cpp
-  src/ripple/app/rdb/impl/RelationalDBInterface_global.cpp
-  src/ripple/app/rdb/impl/RelationalDBInterface_nodes.cpp
-  src/ripple/app/rdb/impl/RelationalDBInterface_postgres.cpp
-  src/ripple/app/rdb/impl/RelationalDBInterface_shards.cpp
+  src/ripple/app/rdb/backend/detail/impl/Node.cpp
+  src/ripple/app/rdb/backend/detail/impl/Shard.cpp
+  src/ripple/app/rdb/backend/impl/PostgresDatabase.cpp
+  src/ripple/app/rdb/backend/impl/SQLiteDatabase.cpp
+  src/ripple/app/rdb/impl/Download.cpp
+  src/ripple/app/rdb/impl/PeerFinder.cpp
+  src/ripple/app/rdb/impl/RelationalDatabase.cpp
+  src/ripple/app/rdb/impl/ShardArchive.cpp
+  src/ripple/app/rdb/impl/State.cpp
+  src/ripple/app/rdb/impl/UnitaryShard.cpp
+  src/ripple/app/rdb/impl/Vacuum.cpp
+  src/ripple/app/rdb/impl/Wallet.cpp
   src/ripple/app/tx/impl/ApplyContext.cpp
   src/ripple/app/tx/impl/BookTip.cpp
   src/ripple/app/tx/impl/CancelCheck.cpp
@@ -420,6 +427,11 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/DepositPreauth.cpp
   src/ripple/app/tx/impl/Escrow.cpp
   src/ripple/app/tx/impl/InvariantCheck.cpp
+  src/ripple/app/tx/impl/NFTokenAcceptOffer.cpp
+  src/ripple/app/tx/impl/NFTokenBurn.cpp
+  src/ripple/app/tx/impl/NFTokenCancelOffer.cpp
+  src/ripple/app/tx/impl/NFTokenCreateOffer.cpp
+  src/ripple/app/tx/impl/NFTokenMint.cpp
   src/ripple/app/tx/impl/OfferStream.cpp
   src/ripple/app/tx/impl/PayChan.cpp
   src/ripple/app/tx/impl/Payment.cpp
@@ -434,6 +446,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/apply.cpp
   src/ripple/app/tx/impl/applySteps.cpp
   src/ripple/app/hook/impl/applyHook.cpp
+  src/ripple/app/tx/impl/details/NFTokenUtils.cpp
   #[===============================[
      main sources:
        subdir: basics (partial)
@@ -488,7 +501,6 @@ target_sources (rippled PRIVATE
   src/ripple/ledger/impl/RawStateTable.cpp
   src/ripple/ledger/impl/ReadView.cpp
   src/ripple/ledger/impl/View.cpp
-  src/ripple/ledger/impl/Rules.cpp
   #[===============================[
      main sources:
        subdir: net
@@ -597,6 +609,7 @@ target_sources (rippled PRIVATE
   src/ripple/rpc/handlers/LogLevel.cpp
   src/ripple/rpc/handlers/LogRotate.cpp
   src/ripple/rpc/handlers/Manifest.cpp
+  src/ripple/rpc/handlers/NFTOffers.cpp
   src/ripple/rpc/handlers/NodeToShard.cpp
   src/ripple/rpc/handlers/NoRippleCheck.cpp
   src/ripple/rpc/handlers/OwnerInfo.cpp
@@ -691,6 +704,9 @@ if (tests)
     src/test/app/LoadFeeTrack_test.cpp
     src/test/app/Manifest_test.cpp
     src/test/app/MultiSign_test.cpp
+    src/test/app/NFToken_test.cpp
+    src/test/app/NFTokenBurn_test.cpp
+    src/test/app/NFTokenDir_test.cpp
     src/test/app/OfferStream_test.cpp
     src/test/app/Offer_test.cpp
     src/test/app/OversizeMeta_test.cpp
@@ -737,6 +753,7 @@ if (tests)
     src/test/basics/contract_test.cpp
     src/test/basics/FeeUnits_test.cpp
     src/test/basics/hardened_hash_test.cpp
+    src/test/basics/join_test.cpp
     src/test/basics/mulDiv_test.cpp
     src/test/basics/tagged_integer_test.cpp
     #[===============================[
@@ -839,6 +856,7 @@ if (tests)
     src/test/jtx/impl/sig.cpp
     src/test/jtx/impl/tag.cpp
     src/test/jtx/impl/ticket.cpp
+    src/test/jtx/impl/token.cpp
     src/test/jtx/impl/trust.cpp
     src/test/jtx/impl/txflags.cpp
     src/test/jtx/impl/utility.cpp
@@ -895,6 +913,7 @@ if (tests)
     src/test/protocol/InnerObjectFormats_test.cpp
     src/test/protocol/Issue_test.cpp
     src/test/protocol/KnownFormatToGRPC_test.cpp
+    src/test/protocol/Hooks_test.cpp
     src/test/protocol/PublicKey_test.cpp
     src/test/protocol/Quality_test.cpp
     src/test/protocol/STAccount_test.cpp
@@ -993,17 +1012,18 @@ if (is_ci)
   target_compile_definitions(rippled PRIVATE RIPPLED_RUNNING_IN_CI)
 endif ()
 
-if (reporting)
-    target_compile_definitions(rippled PRIVATE RIPPLED_REPORTING)
-endif ()
+if(reporting)
+set_target_properties(rippled PROPERTIES OUTPUT_NAME rippled-reporting)
+get_target_property(BIN_NAME rippled OUTPUT_NAME)
+message(STATUS "Reporting mode build: rippled renamed ${BIN_NAME}")
+  target_compile_definitions(rippled PRIVATE RIPPLED_REPORTING)
+endif()
 
-if (CMAKE_VERSION VERSION_GREATER_EQUAL 3.16)
-  # any files that don't play well with unity should be added here
-  if (tests)
-    set_source_files_properties(
-      # these two seem to produce conflicts in beast teardown template methods
-      src/test/rpc/ValidatorRPC_test.cpp
-      src/test/rpc/ShardArchiveHandler_test.cpp
-      PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
-  endif () #tests
-endif ()
+# any files that don't play well with unity should be added here
+if (tests)
+  set_source_files_properties(
+    # these two seem to produce conflicts in beast teardown template methods
+    src/test/rpc/ValidatorRPC_test.cpp
+    src/test/rpc/ShardArchiveHandler_test.cpp
+    PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
+endif () #tests

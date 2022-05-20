@@ -95,7 +95,7 @@ LedgerHandler::check()
             return rpcINVALID_PARAMS;
         }
 
-        queueTxs_ = context_.app.getTxQ().getTxs(*ledger_);
+        queueTxs_ = context_.app.getTxQ().getTxs();
     }
 
     return Status::OK;

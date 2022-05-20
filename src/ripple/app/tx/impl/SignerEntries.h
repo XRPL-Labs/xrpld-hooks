@@ -23,7 +23,7 @@
 #include <ripple/app/tx/impl/Transactor.h>  // NotTEC
 #include <ripple/basics/Expected.h>         //
 #include <ripple/beast/utility/Journal.h>   // beast::Journal
-#include <ripple/ledger/Rules.h>            // Rules
+#include <ripple/protocol/Rules.h>          // Rules
 #include <ripple/protocol/STTx.h>           // STTx::maxMultiSigners
 #include <ripple/protocol/TER.h>            // temMALFORMED
 #include <ripple/protocol/UintTypes.h>      // AccountID

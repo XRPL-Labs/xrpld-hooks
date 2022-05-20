@@ -26,10 +26,11 @@
 #include <ripple/basics/chrono.h>
 #include <ripple/beast/hash/uhash.h>
 #include <ripple/beast/utility/Journal.h>
-#include <ripple/ledger/Rules.h>
+#include <ripple/protocol/Rules.h>
 #include <ripple/ledger/detail/ReadViewFwdRange.h>
 #include <ripple/protocol/Indexes.h>
 #include <ripple/protocol/Protocol.h>
+#include <ripple/protocol/Rules.h>
 #include <ripple/protocol/STAmount.h>
 #include <ripple/protocol/STLedgerEntry.h>
 #include <ripple/protocol/STTx.h>
@@ -365,6 +366,11 @@ getCloseAgree(LedgerInfo const& info)
 
 void
 addRaw(LedgerInfo const&, Serializer&, bool includeHash = false);
+
+Rules
+makeRulesGivenLedger(
+    DigestAwareReadView const& ledger,
+    std::unordered_set<uint256, beast::uhash<>> const& presets);
 
 }  // namespace ripple
 

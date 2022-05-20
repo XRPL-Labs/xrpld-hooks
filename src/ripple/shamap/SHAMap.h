@@ -210,14 +210,21 @@ public:
     peekItem(uint256 const& id, SHAMapHash& hash) const;
 
     // traverse functions
+    /** Find the first item after the given item.
 
-    // finds the object in the tree with the smallest object id greater than the
-    // input id
+        @param id the identifier of the item.
+
+        @note The item does not need to exist.
+     */
     const_iterator
     upper_bound(uint256 const& id) const;
 
-    // finds the object in the tree with the greatest object id smaller than the
-    // input id
+    /** Find the object with the greatest object id smaller than the input id.
+
+        @param id the identifier of the item.
+
+        @note The item does not need to exist.
+     */
     const_iterator
     lower_bound(uint256 const& id) const;
 
@@ -238,7 +245,7 @@ public:
     void
     visitDifferences(
         SHAMap const* have,
-        std::function<bool(SHAMapTreeNode const&)>) const;
+        std::function<bool(SHAMapTreeNode const&)> const&) const;
 
     /**  Visit every leaf node in this SHAMap
 
@@ -267,8 +274,7 @@ public:
     bool
     getNodeFat(
         SHAMapNodeID const& wanted,
-        std::vector<SHAMapNodeID>& nodeIDs,
-        std::vector<Blob>& rawNodes,
+        std::vector<std::pair<SHAMapNodeID, Blob>>& data,
         bool fatLeaves,
         std::uint32_t depth) const;
 

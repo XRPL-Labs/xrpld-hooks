@@ -49,11 +49,7 @@ signers(
         je[jss::Account] = e.account.human();
         je[sfSignerWeight.getJsonName()] = e.weight;
         if (e.tag)
-        {
-            std::stringstream ss;
-            ss << *(e.tag);
-            je[sfWalletLocator.getJsonName()] = ss.str();
-        }
+            je[sfWalletLocator.getJsonName()] = to_string(*e.tag);
     }
     return jv;
 }

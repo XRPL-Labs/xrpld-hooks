@@ -78,8 +78,7 @@ SetSignerList::determineOperation(
 NotTEC
 SetSignerList::preflight(PreflightContext const& ctx)
 {
-    auto const ret = preflight1(ctx);
-    if (!isTesSuccess(ret))
+    if (auto const ret = preflight1(ctx); !isTesSuccess(ret))
         return ret;
 
     auto const result = determineOperation(ctx.tx, ctx.flags, ctx.j);
@@ -269,7 +268,7 @@ SetSignerList::validateQuorumAndSignerEntries(
     }
 
     // Is the ExpandedSignerList amendment active?
-    bool expandedSignerList = rules.enabled(featureExpandedSignerList);
+    bool const expandedSignerList = rules.enabled(featureExpandedSignerList);
 
     // Make sure no signers reference this account.  Also make sure the
     // quorum can be reached.
@@ -410,7 +409,7 @@ SetSignerList::writeSignersToSLE(
     if (flags)  // Only set flags if they are non-default (default is zero).
         ledgerEntry->setFieldU32(sfFlags, flags);
 
-    bool expandedSignerList =
+    bool const expandedSignerList =
         ctx_.view().rules().enabled(featureExpandedSignerList);
 
     // Create the SignerListArray one SignerEntry at a time.

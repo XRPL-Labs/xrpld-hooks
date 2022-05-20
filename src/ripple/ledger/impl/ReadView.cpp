@@ -17,6 +17,7 @@
 */
 //==============================================================================
 
+#include <ripple/protocol/Rules.h>
 #include <ripple/ledger/ReadView.h>
 
 namespace ripple {
@@ -63,6 +64,22 @@ auto
 ReadView::txs_type::end() const -> iterator
 {
     return iterator(view_, view_->txsEnd());
+}
+
+Rules
+makeRulesGivenLedger(
+    DigestAwareReadView const& ledger,
+    std::unordered_set<uint256, beast::uhash<>> const& presets)
+{
+    Keylet const k = keylet::amendments();
+    std::optional digest = ledger.digest(k.key);
+    if (digest)
+    {
+        auto const sle = ledger.read(k);
+        if (sle)
+            return Rules(presets, digest, sle->getFieldV256(sfAmendments));
+    }
+    return Rules(presets);
 }
 
 }  // namespace ripple
