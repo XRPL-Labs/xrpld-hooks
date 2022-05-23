@@ -209,7 +209,7 @@ extern int64_t ledger_last_hash    (uint32_t write_ptr,  uint32_t write_len);
  * @param write_len The length of that buffer
  * @return The number of bytes written into the buffer of a negative integer if an error occured.
  */
-extern int64_t nonce               (uint32_t write_ptr,  uint32_t write_len);
+extern int64_t etxn_nonce          (uint32_t write_ptr,  uint32_t write_len);
 
 
 /**

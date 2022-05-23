@@ -17,7 +17,7 @@ require('../utils-tests.js').TestRig('ws://localhost:6005').then(t=>
     }
     const secret  = process.argv[2];
     const account = t.xrpljs.Wallet.fromSeed(secret)
-    t.api.submit(
+    t.feeSubmit(process.argv[2],
     {
         Account: account.classicAddress,
         TransactionType: "SetHook",
@@ -31,9 +31,8 @@ require('../utils-tests.js').TestRig('ws://localhost:6005').then(t=>
                     Flags: t.hsfOVERRIDE
                 }
             }
-        ],
-        Fee: "100000"
-    }, {wallet: account}).then(x=>
+        ]
+    }).then(x=>
     {
         t.assertTxnSuccess(x)
         console.log(x);
