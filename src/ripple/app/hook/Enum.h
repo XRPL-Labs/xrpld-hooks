@@ -212,7 +212,8 @@ namespace hook_api
         NOT_AUTHORIZED = -34,
         PREVIOUS_FAILURE_PREVENTS_RETRY = -35,
         TOO_MANY_PARAMS = -36,
-        INVALID_TXN = -37
+        INVALID_TXN = -37,
+        RESERVE_INSUFFICIENT = -38      // setting a new state object would exceed account reserve 
     };
 
     enum ExitType : uint8_t

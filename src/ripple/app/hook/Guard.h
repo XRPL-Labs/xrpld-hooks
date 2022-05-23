@@ -19,7 +19,6 @@ using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>
         else\
             (*guardLog).get() << "HookSet(" << logCode << ")[" << guardLogAccStr << "]: "
 
-// RH TODO test overflow on leb128 detection
 // web assembly contains a lot of run length encoding in LEB128 format
 inline uint64_t
 parseLeb128(

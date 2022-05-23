@@ -953,19 +953,23 @@ lookup_state_cache(
 
 // update the state cache
 inline
-void
+bool                                    // true unless a new hook state was required and canReserveNew = false
 set_state_cache(
         hook::HookContext& hookCtx,
         ripple::AccountID const& acc,
         ripple::uint256 const& ns,
         ripple::uint256 const& key,
         ripple::Blob& data,
-        bool modified)
+        bool modified,
+        bool canReserveNew)             // true iff there's sufficient xrp to reserve a new hook state
 {
 
     auto& stateMap = hookCtx.result.stateMap;
     if (stateMap.find(acc) == stateMap.end())
     {
+        if (modified && !canReserveNew)
+            return false;
+
         stateMap[acc] =
         {
             { ns,
@@ -976,27 +980,33 @@ set_state_cache(
                 }
             }
         };
-        return;
+        return true;
     }
 
     auto& stateMapAcc = stateMap[acc];
     if (stateMapAcc.find(ns) == stateMapAcc.end())
     {
+        if (modified && !canReserveNew)
+            return false;
+
         stateMapAcc[ns] =
         {
             { key,
                        { modified, data }
             }
         };
-        return;
+        return true;
     }
 
     auto& stateMapNs = stateMapAcc[ns];
     if (stateMapNs.find(key) == stateMapNs.end())
     {
+        if (modified && !canReserveNew)
+            return false;
+
         stateMapNs[key] = { modified, data };
         hookCtx.result.changedStateCount++;
-        return;
+        return true;
     }
 
     if (modified)
@@ -1008,7 +1018,7 @@ set_state_cache(
     }
 
     stateMapNs[key].second = data;
-    return;
+    return true;
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -1090,10 +1100,24 @@ DEFINE_HOOK_FUNCTION(
 
     ripple::Blob data {memory + read_ptr,  memory + read_ptr + read_len};
 
+
+    bool canReserveNew = false;
+    {
+        auto const accSLE = view.read(ripple::keylet::account(acc));
+        if (!accSLE)
+            return INVALID_ACCOUNT;
+
+        STAmount bal = accSLE->getFieldAmount(sfBalance);
+        uint32_t oldOwnerCount = accSLE->getFieldU32(sfOwnerCount);
+        canReserveNew = (bal >= view.fees().accountReserve(oldOwnerCount + 1));
+    }
+
     // local modifications are always allowed
     if (aread_len == 0 || acc == hookCtx.result.account)
     {
-        set_state_cache(hookCtx, acc, ns, *key, data, true);
+        if (!set_state_cache(hookCtx, acc, ns, *key, data, true, canReserveNew))
+            return RESERVE_INSUFFICIENT;
+
         return read_len;
     }
 
@@ -1106,13 +1130,15 @@ DEFINE_HOOK_FUNCTION(
     if (cacheEntry && cacheEntry->get().first)
     {
         // if a cache entry already exists and it has already been modified don't check grants again
-        set_state_cache(hookCtx, acc, ns, *key, data, true);
+        if (!set_state_cache(hookCtx, acc, ns, *key, data, true, canReserveNew))
+            return RESERVE_INSUFFICIENT;
+
         return read_len;
     }
 
     // cache miss or cache was present but entry was not marked as previously modified
     // therefore before continuing we need to check grants
-    auto const sle = view.peek(ripple::keylet::hook(acc));
+    auto const sle = view.read(ripple::keylet::hook(acc));
     if (!sle)
         return INTERNAL_ERROR;
 
@@ -1164,13 +1190,14 @@ DEFINE_HOOK_FUNCTION(
         return NOT_AUTHORIZED;
     }
 
-    set_state_cache(
+    if (!set_state_cache(
             hookCtx,
             acc,
             ns,
             *key,
             data,
-            true);
+            true, canReserveNew))
+        return RESERVE_INSUFFICIENT;
 
     return read_len;
 }
@@ -1497,7 +1524,8 @@ DEFINE_HOOK_FUNCTION(
     Blob b = hsSLE->getFieldVL(sfHookStateData);
 
     // it exists add it to cache and return it
-    set_state_cache(hookCtx, acc, ns, *key, b, false);
+    if (!set_state_cache(hookCtx, acc, ns, *key, b, false, false))
+        return INTERNAL_ERROR; // should never happen
 
     if (write_ptr == 0)
         return data_as_int64(b.data(), b.size());
