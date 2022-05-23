@@ -427,12 +427,12 @@ namespace hook
             WasmEdge_VMContext* vmCtx = WasmEdge_VMCreate(confCtx, NULL);
             WasmEdge_Result res = WasmEdge_VMLoadWasmFromBuffer(vmCtx, reinterpret_cast<const uint8_t*>(wasm), len);
             if (!WasmEdge_ResultOK(res))
-                *ret = std::string {WasmEdge_ResultGetMessage(res)};
+                ret = "VMLoadWasmFromBuffer failed";
             else
             {
                 res = WasmEdge_VMValidate(vmCtx);
                 if (!WasmEdge_ResultOK(res))
-                    *ret = std::string {WasmEdge_ResultGetMessage(res)};
+                    ret = "VMValidate failed";
             }
             WasmEdge_VMDelete(vmCtx);
             WasmEdge_ConfigureDelete(confCtx);
