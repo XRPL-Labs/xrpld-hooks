@@ -754,12 +754,23 @@ validateGuards(
     int hook_type_idx = func_type_map[*hook_func_idx];
 
     // cbak function is optional so if it exists it has a type otherwise it is skipped in checks
-    std::optional<int> cbak_type_idx;
-    if (cbak_func_idx)
-        cbak_type_idx = func_type_map[*cbak_func_idx];
+    if (cbak_func_idx && func_type_map[*cbak_func_idx] != hook_type_idx)
+    {
+        GUARDLOG(hook::log::HOOK_CBAK_DIFF_TYPES)
+            << "Malformed transaction. "
+            << "Hook and cbak func must have the same type. int64_t (*)(uint32_t).\n";
+        return {};
+    }
 
     int64_t maxInstrCountHook = 0;
     int64_t maxInstrCountCbak = 0;
+
+/*    printf( "hook_func_idx: %d\ncbak_func_idx: %d\n"
+            "hook_type_idx: %d\ncbak_type_idx: %d\n", 
+            *hook_func_idx,
+            *cbak_func_idx,
+            hook_type_idx, *cbak_type_idx);
+*/
 
     // second pass... where we check all the guard function calls follow the guard rules
     // minimal other validation in this pass because first pass caught most of it
@@ -788,11 +799,19 @@ validateGuards(
                 CHECK_SHORT_HOOK();
                 
                 int param_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (j == hook_type_idx && param_count != 1)
+                {
+                    GUARDLOG(hook::log::PARAM_HOOK_CBAK)
+                        << "Malformed transaction. "
+                        << "hook and cbak function definition must have exactly one parameter (uint32_t)." << "\n";
+                    return {};
+                }
+
                 for (int k = 0; k < param_count; ++k)
                 {
                     int param_type = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    if (param_type == 0x7F || param_type == 0x7E ||
-                        param_type == 0x7D || param_type == 0x7C)
+                    if (param_type == 0x7FU || param_type == 0x7EU ||
+                        param_type == 0x7DU || param_type == 0x7CU)
                     {
                         // pass, this is fine
                     }
@@ -812,8 +831,7 @@ validateGuards(
                                j, *hook_func_idx, *cbak_func_idx, param_count, param_type);
 
                     // hook and cbak parameter check here
-                    if ((j == hook_type_idx || (cbak_type_idx && j == cbak_type_idx)) && 
-                        (param_count != 1 || param_type != 0x7F /* i32 */ ))
+                    if (j == hook_type_idx && param_type != 0x7FU /* i32 */)
                     {
                         GUARDLOG(hook::log::PARAM_HOOK_CBAK)
                             << "Malformed transaction. "
@@ -860,8 +878,7 @@ validateGuards(
                                j, *hook_func_idx, *cbak_func_idx, result_count, result_type);
                         
                     // hook and cbak return type check here
-                    if ((j == hook_type_idx || (cbak_type_idx && j == cbak_type_idx)) && 
-                        (result_count != 1 || result_type != 0x7E /* i64 */ ))
+                    if (j == hook_type_idx && (result_count != 1 || result_type != 0x7E /* i64 */))
                     {
                         GUARDLOG(hook::log::RETURN_HOOK_CBAK)
                             << "Malformed transaction. "

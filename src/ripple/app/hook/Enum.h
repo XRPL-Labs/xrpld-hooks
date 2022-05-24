@@ -126,7 +126,8 @@ namespace hook
             WASM_TEST_FAILURE    = 78,  // the smoke test failed                                                       
             WASM_TOO_BIG         = 79,  // set hook would exceed maximum hook size                                     
             WASM_TOO_SMALL       = 80,                                                                                 
-            WASM_VALIDATION      = 81,  // a generic error while parsing wasm, usually leb128 overflow        
+            WASM_VALIDATION      = 81,  // a generic error while parsing wasm, usually leb128 overflow
+            HOOK_CBAK_DIFF_TYPES = 82,  // hook and cbak function definitions were different
             // RH NOTE: only HookSet msgs got log codes, possibly all Hook log lines should get a code? 
         };
     };
