@@ -858,8 +858,8 @@ DEFINE_HOOK_FUNCTION(
     if (mread_len > 128)
         mread_len = 128;
 
-    if (dread_len > 1024)
-        dread_len = 1024;
+    if (dread_len > 1023)
+        dread_len = 1023;
 
     uint8_t output[2048];
     size_t out_len = 0;
@@ -875,16 +875,18 @@ DEFINE_HOOK_FUNCTION(
             output[i*2 + 0] = high;
             output[i*2 + 1] = low;
         }
+//        output[out_len++] = '\0';
     }
     else if (is_UTF16LE(memory + dread_ptr, dread_len))
     {
         out_len = dread_len / 2; //is_UTF16LE will only return true if read_len is even
         for (int i = 0; i < out_len; ++i)
             output[i] = memory[dread_ptr + i * 2];
+//        output[out_len++] = '\0';
     }
 
     RETURN_HOOK_TRACE(mread_ptr, mread_len,
-           std::string_view((const char*)output, out_len));
+           std::string((const char*)output, out_len));
 }
 
 
@@ -952,6 +954,8 @@ lookup_state_cache(
 
 
 // update the state cache
+// RH TODO: add an accumulator for newly reserved state to the state map so canReserveNew can be computed
+// correctly when more than one new state is reserved.
 inline
 bool                                    // true unless a new hook state was required and canReserveNew = false
 set_state_cache(

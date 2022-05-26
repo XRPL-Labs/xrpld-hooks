@@ -1321,7 +1321,7 @@ doTSH(
 
             if (tshFeeDrops > beast::zero)
             {
-                STAmount finalBalance = priorBalance -= tshFeeDrops;
+                STAmount finalBalance = priorBalance - tshFeeDrops;
                 assert(finalBalance >= beast::zero);
                 assert(finalBalance < priorBalance);
 
