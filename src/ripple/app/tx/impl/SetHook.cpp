@@ -722,7 +722,8 @@ SetHook::destroyNamespace(
     uint32_t stateCount =sleAccount->getFieldU32(sfHookStateCount);
     uint32_t oldStateCount = stateCount;
 
-    std::vector<uint256> toDelete {sleDir->getFieldV256(sfIndexes).size()};
+    std::vector<uint256> toDelete;
+    toDelete.reserve(sleDir->getFieldV256(sfIndexes).size());
     do
     {
         // Make sure any directory node types that we find are the kind

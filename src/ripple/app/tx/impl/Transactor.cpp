@@ -980,6 +980,10 @@ executeHookChain(
         uint32_t flags = (hookObj->isFieldPresent(sfFlags) ?
                 hookObj->getFieldU32(sfFlags) : hookDef->getFieldU32(sfFlags));
 
+        JLOG(j_.trace())
+            << "HookChainExecution: " << hookHash
+            << " strong:" << strong << " flags&hsfCOLLECT: " << (flags & hsfCOLLECT); 
+
         // skip weakly executed hooks that lack a collect flag
         if (!strong && !(flags & hsfCOLLECT))
             continue;
