@@ -24,12 +24,11 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>
             {
                 t.assertTxnSuccess(x)
                 console.log(x);
-                t.api.submit(
+                t.feeSubmit(account2.seed,
                 {
                     Account: account2.classicAddress,
-                    TransactionType: "AccountSet",
-                    Fee: "100000"
-                }, {wallet: account2}).then(x=>
+                    TransactionType: "AccountSet"
+                }).then(x=>
                 {
                     t.assertTxnSuccess(x)
                     process.exit(0);

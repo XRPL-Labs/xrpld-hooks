@@ -35,6 +35,20 @@ module.exports = {
                     });
                 };
 
+                const ledgerAccept = () =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        let req = {command: 'ledger_accept'};
+                        api.request(req).then(resp =>
+                        {
+                            resolve(resp)
+                        }).catch(e =>
+                        {
+                            reject(e);
+                        });
+                    });     
+                };
 
                 const assertTxnSuccess = x =>
                 {
@@ -44,6 +58,66 @@ module.exports = {
                         process.exit(1);
                     }
                 };
+
+                const assert = (x, m) =>
+                {
+                    if (!(x))
+                    {
+                        console.log("Assertion failed: ", m);
+                        console.log(new Error().stack);
+                        process.exit(1);
+                    }
+                };
+
+                const fetchMeta = (hash) =>
+                {
+                    if (typeof(hash) != 'string')
+                        hash = hash.result.tx_json.hash
+                    
+                    return new Promise((resolve, reject) =>
+                    {
+                        api.request(
+                        {
+                            command:"tx", 
+                            transaction: hash
+                        }).then(e=>{
+                            resolve(e.result.meta)
+                        }).catch(e=>reject(e));
+                    });
+                };
+                
+
+                const fetchMetaHookExecutions = (hash, hookhash) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        fetchMeta(hash).then(m=>
+                        {
+                            if (typeof(m) == 'undefined' ||
+                                typeof(m.HookExecutions) == 'undefined' ||
+                                typeof(m.HookExecutions.length) == 'undefined')
+                                    reject(m);
+
+                            let ret = [];
+
+                            for (let i = 0; i < m.HookExecutions.length; ++i)
+                            {
+                                if (typeof(hookhash) == 'undefined' ||
+                                    m.HookExecutions[i].HookExecution.HookHash == hookhash)
+                                m.HookExecutions[i].HookExecution.HookReturnCode =
+                                    parseInt(m.HookExecutions[i].HookExecution.HookReturnCode, 16);
+                                m.HookExecutions[i].HookExecution.HookInstructionCount =
+                                    parseInt(m.HookExecutions[i].HookExecution.HookInstructionCount, 16);
+
+                                ret.push(m.HookExecutions[i].HookExecution);
+                            }
+
+                            resolve(ret);
+                        }).catch(e=>reject(e));
+                    });
+                };
+
+                
 
                 const assertTxnFailure = x =>
                 {
@@ -63,6 +137,14 @@ module.exports = {
                 };
 
 
+                const wasmHash = (x)=>
+                {
+                    const blob = wasm(x);
+                    return crypto.createHash('SHA512').
+                        update(Buffer.from(blob, 'hex')).
+                        digest().slice(0,32).toString('hex').toUpperCase();
+                }
+
                 const feeCompute = (account_seed, txn_org) =>
                 {
                     return new Promise((resolve, reject) =>
@@ -81,15 +163,44 @@ module.exports = {
                                 delete txn_to_send['SigningPubKey']
                                 txn_to_send['Fee'] = base_drops + '';
 
-
-                                api.prepareTransaction(txn_to_send, {wallet: wal}).then(txn => 
+                                api.request(
                                 {
-                                    resolve(txn);
+                                    command: "account_info",
+                                    account: txn.Account
+                                }).then(y=>
+                                {
+                                    let seq = (y.result.account_data.Sequence);
+                                    txn_to_send.Sequence = seq;
+                                    api.prepareTransaction(txn_to_send, {wallet: wal}).then(txn => 
+                                    {
+                                        resolve(txn);
+                                    }).catch(e=>{reject(e);});
                                 }).catch(e=>{reject(e);});
                             }).catch(e=>{reject(e);});
                         }).catch(e=>{reject(e);});
                     });
                 }
+
+                const feeSubmitAccept = (seed, txn) =>
+                {
+                    return new Promise((resolve, reject) => 
+                    {
+                        feeSubmit(seed, txn).then(x=>
+                        {
+                            ledgerAccept().then(()=>
+                            {
+                                resolve(x);
+                            }).catch(e=>
+                            {
+                                reject(e);
+                            });
+                        }).catch(e =>
+                        {
+                            reject(e);
+                        });
+                    });
+                }
+
 
                 const feeSubmit = (seed, txn) =>
                 {
@@ -178,20 +289,48 @@ module.exports = {
                 {    
                     return new Promise((resolve, reject) =>
                     {
-                        if (typeof(acc) != 'string')
-                            acc = acc.classicAddress;
-
-                        api.submit({
-                            Account: genesis.classicAddress,        // fund account from genesis
-                            TransactionType: "Payment",
-                            Amount: "1000000000",
-                            Destination: acc,
-                            Fee: "10000"
-                        }, {wallet: genesis}).then(x=>
+                        const ffg = (acc, after) =>
                         {
-                            assertTxnSuccess(x);
-                            resolve();
-                        }).catch(err);
+                            if (typeof(acc) != 'string')
+                                acc = acc.classicAddress;
+
+                            console.log('ffg: ' + acc);
+                            feeSubmitAccept(genesis.seed, {
+                                Account: genesis.classicAddress,        // fund account from genesis
+                                TransactionType: "Payment",
+                                Amount: "1000000000",
+                                Destination: acc,
+                            }).then(x=>
+                            {
+                                assertTxnSuccess(x);
+                                if (after)
+                                    return after();
+                                else
+                                    resolve();
+                            }).catch(err);
+                        };
+
+                        const doFfg = (acc) =>
+                        {
+
+                            if (typeof(acc.length) == 'undefined')
+                                return ffg(acc);
+                            else if (acc.length == 1)
+                                return ffg(acc[0]);
+                            else
+                            {
+                                return ffg(acc[0],
+                                    ((acc)=>{
+                                        return ()=>{
+                                            acc.shift();
+                                            return doFfg(acc);
+                                        };
+                                    })(acc));
+                            }
+                        }
+
+                        return doFfg(acc);
+
                     });
                 };
 
@@ -211,8 +350,8 @@ module.exports = {
                         err: err,
                         hsfOVERRIDE: 1,
                         hsfNSDELETE: 2,
-                        hfsOVERRIDE: 1,
-                        hfsNSDELETE: 2,
+                        hsfCOLLECT: 4,
+                        asfTshCollect: 11,
                         hookHash: hookHash,
                         pay: pay,
                         pay_mock: pay_mock,
@@ -220,7 +359,13 @@ module.exports = {
                         genesisseed: genesisseed,
                         genesisaddr: genesisaddr,
                         feeCompute: feeCompute,
-                        feeSubmit: feeSubmit
+                        feeSubmit: feeSubmit,
+                        feeSubmitAccept: feeSubmitAccept,
+                        ledgerAccept: ledgerAccept,
+                        fetchMeta: fetchMeta,
+                        fetchMetaHookExecutions: fetchMetaHookExecutions,
+                        wasmHash: wasmHash,
+                        assert: assert
                     });
                 }).catch(err);
         });
