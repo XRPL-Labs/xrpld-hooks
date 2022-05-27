@@ -27,36 +27,24 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>{
             t.assertTxnSuccess(x)
             console.log(x);
 
-            t.feeSubmitAccept(issuer.seed,
+            t.feeSubmitAccept(holder1.seed,
             {
-                Account: issuer.classicAddress,
-                TransactionType: "AccountSet",
-                SetFlag: t.asfTshCollect
+                Account: holder1.classicAddress,
+                TransactionType: "TrustSet",
+                LimitAmount: {
+                    "currency": "IOU",
+                    "issuer": issuer.classicAddress,
+                    "value": "1000"
+                }
             }).then(x=>
             {
-                t.assertTxnSuccess(x);
+                t.assertTxnSuccess(x)
                 console.log(x);
-
-                t.feeSubmitAccept(holder1.seed,
+                t.fetchMetaHookExecutions(x, t.wasmHash('aaw.wasm')).then(m=>
                 {
-                    Account: holder1.classicAddress,
-                    TransactionType: "TrustSet",
-                    LimitAmount: {
-                        "currency": "IOU",
-                        "issuer": issuer.classicAddress,
-                        "value": "1000"
-                    }
-                }).then(x=>
-                {
-                    t.assertTxnSuccess(x)
-                    console.log(x);
-                    t.fetchMetaHookExecutions(x, t.wasmHash('aaw.wasm')).then(m=>
-                    {
-                        t.assert(m.length == 1, "needed exactly one hook execution");
-                        t.assert(m[0].HookReturnCode == 100, "non-weak execution");
-                        console.log(m);
-                        process.exit(0);
-                    });
+                    t.assert(m.length == 0, "hook executed when it should not");
+                    console.log(m);
+                    process.exit(0);
                 }).catch(t.err);
             }).catch(t.err);
         });

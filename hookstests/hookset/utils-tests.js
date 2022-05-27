@@ -96,7 +96,9 @@ module.exports = {
                             if (typeof(m) == 'undefined' ||
                                 typeof(m.HookExecutions) == 'undefined' ||
                                 typeof(m.HookExecutions.length) == 'undefined')
-                                    reject(m);
+                                {
+                                    return resolve([])
+                                }
 
                             let ret = [];
 
@@ -108,6 +110,11 @@ module.exports = {
                                     parseInt(m.HookExecutions[i].HookExecution.HookReturnCode, 16);
                                 m.HookExecutions[i].HookExecution.HookInstructionCount =
                                     parseInt(m.HookExecutions[i].HookExecution.HookInstructionCount, 16);
+
+                                let s = m.HookExecutions[i].HookExecution.HookReturnString;
+                                if (s != '')
+                                    m.HookExecutions[i].HookExecution.HookReturnString = 
+                                        Buffer.from(s, 'hex').toString('utf-8')
 
                                 ret.push(m.HookExecutions[i].HookExecution);
                             }
@@ -334,6 +341,138 @@ module.exports = {
                     });
                 };
 
+
+            
+                const trustSet = (issuer, currency, limit, holders) =>
+                {
+                    if (typeof(issuer.classicAddress) != 'undefined')
+                        issuer = issuer.classicAddress;
+
+                    return new Promise((resolve, reject)=>
+                    {
+                        const doTs = (holder) =>
+                        {
+                            if (holder.length == 0)
+                                return resolve();
+                            let h = holder.shift();
+                            feeSubmitAccept(h.seed,
+                            {
+                                Account: h.classicAddress,
+                                TransactionType: "TrustSet",
+                                LimitAmount: {
+                                    "currency": currency + "",
+                                    "issuer": issuer,
+                                    "value": limit + ""
+                                }
+                            }).then(x=>
+                            {
+                                console.log(x)
+                                assertTxnSuccess(x);
+                                return doTs(holder);
+                            }).catch(e=>reject(e));
+                        };
+
+                        doTs(holders);
+                    });
+                };
+
+                const issueTokens = (issuer, currency, toWhom) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        const itf = (issuer, currency, toWhom) =>
+                        {
+                            let c = 0;
+                            for (let next in toWhom)
+                            {
+                                c++;
+
+                                let addr = next;
+                                let amt = toWhom[addr];
+                                delete toWhom[addr];
+                                let txn = 
+                                {
+                                    Account: issuer.classicAddress,
+                                    TransactionType: "Payment",
+                                    Amount: {
+                                        "currency": currency,
+                                        "value": amt + "",
+                                        "issuer": issuer.classicAddress
+                                    },
+                                    Destination: addr
+                                };
+
+                                feeSubmitAccept(issuer.seed, txn).then(x=>
+                                {
+                                    console.log(x);
+                                    assertTxnSuccess(x);
+                                    return itf(issuer, currency, toWhom);
+                                }).catch(e=>reject(e));
+                                break;
+                            }
+                            if (c == 0)
+                                resolve();
+                        };
+                        return itf(issuer, currency, toWhom);
+                    });
+                };
+
+                const setTshCollect = (accounts) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        const stc = (accounts) =>
+                        {
+                            if (accounts.length == 0)
+                                return resolve();
+                            let acc = accounts.shift();
+
+                            feeSubmitAccept(acc.seed,
+                            {
+                                Account: acc.classicAddress,
+                                TransactionType: "AccountSet",
+                                SetFlag: 11
+                            }).then(x=>
+                            {
+                                console.log(x);
+                                assertTxnSuccess(x);
+                                return stc(accounts);
+                            }).catch(e=>reject(e));
+                        };
+                        stc(accounts);
+                    });
+                }
+                
+                const feeSubmitAcceptMultiple = (txn, accounts) =>
+                {
+                    return new Promise((resolve, reject) =>
+                    {
+                        const stc = (accounts) =>
+                        {
+                            if (accounts.length == 0)
+                                return resolve();
+                            let acc = accounts.shift();
+
+                            let txn_to_submit = { ... txn };
+
+                            txn_to_submit['Account'] = acc.classicAddress;
+                            feeSubmitAccept(acc.seed, txn_to_submit).then(x=>
+                            {
+                                console.log(x);
+                                assertTxnSuccess(x);
+                                return stc(accounts);
+                            }).catch(e=>reject(e));
+                        };
+                        stc(accounts);
+                    });
+                }
+
+                const log = m =>
+                {
+//                    console.log(JSON.stringify(m, null, 4));
+                      console.dir(m, {depth:null});
+                }
+
                 api.connect().then(()=>
                 {
                     resolve({
@@ -365,7 +504,13 @@ module.exports = {
                         fetchMeta: fetchMeta,
                         fetchMetaHookExecutions: fetchMetaHookExecutions,
                         wasmHash: wasmHash,
-                        assert: assert
+                        assert: assert,
+                        trustSet: trustSet,
+                        issueTokens: issueTokens,
+                        log: log,
+                        setTshCollect: setTshCollect,
+                        feeSubmitAcceptMultiple: feeSubmitAcceptMultiple
+
                     });
                 }).catch(err);
         });

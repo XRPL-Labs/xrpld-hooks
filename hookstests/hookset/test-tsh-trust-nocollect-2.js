@@ -9,19 +9,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>{
         t.feeSubmitAccept(issuer.seed,
         {
             Account: issuer.classicAddress,
-            TransactionType: "SetHook",
-            Hooks: [
-                {
-                    Hook:
-                    {
-                        CreateCode: t.wasm('aaw.wasm'),
-                        HookApiVersion: 0,
-                        HookNamespace: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF",
-                        HookOn: "0000000000000000",
-                        Flags: t.hsfCOLLECT
-                    }
-                }
-            ]
+            TransactionType: "AccountSet",
+            SetFlag: t.asfTshCollect
         }).then(x=>
         {
             t.assertTxnSuccess(x)
@@ -30,8 +19,18 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>{
             t.feeSubmitAccept(issuer.seed,
             {
                 Account: issuer.classicAddress,
-                TransactionType: "AccountSet",
-                SetFlag: t.asfTshCollect
+                TransactionType: "SetHook",
+                Hooks: [
+                    {
+                        Hook:
+                        {
+                            CreateCode: t.wasm('aaw.wasm'),
+                            HookApiVersion: 0,
+                            HookNamespace: "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF",
+                            HookOn: "0000000000000000"
+                        }
+                    }
+                ]
             }).then(x=>
             {
                 t.assertTxnSuccess(x);
@@ -52,9 +51,8 @@ require('./utils-tests.js').TestRig('ws://localhost:6005').then(t=>{
                     console.log(x);
                     t.fetchMetaHookExecutions(x, t.wasmHash('aaw.wasm')).then(m=>
                     {
-                        t.assert(m.length == 1, "needed exactly one hook execution");
-                        t.assert(m[0].HookReturnCode == 100, "non-weak execution");
                         console.log(m);
+                        t.assert(m.length == 0, "hook executed when it should not");
                         process.exit(0);
                     });
                 }).catch(t.err);
