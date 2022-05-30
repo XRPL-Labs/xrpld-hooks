@@ -147,11 +147,13 @@ extern int64_t etxn_burden         (void );
 extern int64_t etxn_details        (uint32_t write_ptr,  uint32_t write_len);
 
 /**
- * Compute the minimum fee required to be paid by a hypothetically emitted transaction based on its size in bytes.
- * @param The size of the emitted transaction in bytes
+ * Compute the minimum fee required to be paid by a hypothetically emitted transaction.
+ * Note: provide an sfFee field in your serialized transaction with a 0 value when passing to this function.
+ * @param read_ptr A pointer to the buffer containing the serialized transaction whose fee is to be computed
+ * @param read_len The length of the serialized transaction.
  * @return The minimum fee in drops this transaction should pay to succeed
  */
-extern int64_t etxn_fee_base       (uint32_t tx_byte_count);
+extern int64_t etxn_fee_base       (uint32_t read_ptr, uint32_t read_len);
 
 /**
  * Inform xrpld that you will be emitting at most @count@ transactions during the course of this hook execution.
@@ -184,6 +186,18 @@ extern int64_t emit                (uint32_t write_ptr, uint32_t write_len, uint
 extern int64_t hook_account        (uint32_t write_ptr,  uint32_t write_len);
 
 /**
+ * If this is a strongly executed hook then signal to xrpld that it wishes to be executed
+ * again as a weak hook after the originating transaction has been applied to the ledger.
+ */
+extern int64_t hook_again          (void);
+
+/**
+ * If this is a weakly executed hook then request the metadata for the originating transaction
+ * be placed into the slot indicated
+ */
+extern int64_t meta_slot           (uint32_t slot_no);
+
+/**
  * Retrieve the hash of the currently executing hook.
  * @param write_ptr A buffer of at least 32 bytes to write into.
  * @param write_len The length of that buffer
@@ -201,7 +215,16 @@ extern int64_t fee_base            (void);
  */
 extern int64_t ledger_seq          (void);
 
+/**
+ * Retrieve the ledger hash of the last closed ledger and write it into the buffer provided
+ */
 extern int64_t ledger_last_hash    (uint32_t write_ptr,  uint32_t write_len);
+
+/**
+ * Retrieve the XRPL timestamp of the last closed ledger and return it as an integer.
+ * Tip: Add 946681200 to the result to turn it into a unix timestamp.
+ */
+extern int64_t ledger_last_time    (void);
 
 /**
  * Retrieve a nonce for use in an emitted transaction (or another task). Can be called repeatedly for multiple nonces.
@@ -210,6 +233,15 @@ extern int64_t ledger_last_hash    (uint32_t write_ptr,  uint32_t write_len);
  * @return The number of bytes written into the buffer of a negative integer if an error occured.
  */
 extern int64_t etxn_nonce          (uint32_t write_ptr,  uint32_t write_len);
+
+
+/**
+ * Retrieve a random nonce for use in anything. Can be called repeatedly for multiple nonces.
+ * @param write_ptr A buffer of at least 32 bytes to write into.
+ * @param write_len The length of that buffer
+ * @return The number of bytes written into the buffer of a negative integer if an error occured.
+ */
+extern int64_t ledger_nonce        (uint32_t write_ptr,  uint32_t write_len);
 
 
 /**
@@ -355,6 +387,8 @@ extern int64_t  float_mantissa_set  (int64_t float1,     int64_t mantissa );
 extern int64_t  float_sign          (int64_t float1 );
 extern int64_t  float_sign_set      (int64_t float1,     uint32_t negative );
 extern int64_t  float_int           (int64_t float1,     uint32_t decimal_places, uint32_t abs);
+extern int64_t  float_log           (int64_t float1 );
+extern int64_t  float_root          (int64_t float1, uint32_t n );
 extern int64_t  trace_float         (uint32_t mread_ptr, uint32_t mread_len, int64_t float1);
 
 
