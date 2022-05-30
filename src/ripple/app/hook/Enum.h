@@ -214,7 +214,9 @@ namespace hook_api
         PREVIOUS_FAILURE_PREVENTS_RETRY = -35,
         TOO_MANY_PARAMS = -36,
         INVALID_TXN = -37,
-        RESERVE_INSUFFICIENT = -38      // setting a new state object would exceed account reserve 
+        RESERVE_INSUFFICIENT = -38,     // setting a new state object would exceed account reserve 
+        COMPLEX_NOT_SUPPORTED = -39
+
     };
 
     enum ExitType : uint8_t
@@ -260,6 +262,8 @@ namespace hook_api
         "float_sto",
         "float_sto_set",
         "float_sum",
+        "float_log",
+        "float_root",
         "fee_base",
         "_g",
         "hook_account",

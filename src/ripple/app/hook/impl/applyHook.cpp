@@ -3893,21 +3893,33 @@ DEFINE_HOOK_FUNCTION(
         return CANT_RETURN_NEGATIVE;
 
 
-    while (exp1 > -decimal_places)
+    int32_t dp = -((int32_t)decimal_places);
+
+    while (exp1 > dp && man1 < maxMantissa)
     {
+        printf("while (exp1 %d > dp %d) \n", exp1, dp);
         man1 *= 10;
         exp1--;
     }
 
-    while (exp1 < -decimal_places)
+    if (exp1 > dp)
+        return OVERFLOW;
+
+    while (exp1 < dp && man1 > 0)
     {
+        printf("while (exp1 %d < dp %d) \n", exp1, dp);
         man1 /= 10;
         exp1++;
     }
-    if (((int64_t)(man1)) < man1)
+
+    int64_t man_out = man1;
+    if (man_out < 0)
+        return INVALID_ARGUMENT;
+        
+    if (man_out < man1)
         return INVALID_FLOAT;
 
-    return man1;
+    return man_out;
 
 }
 
@@ -4435,6 +4447,72 @@ DEFINE_HOOK_FUNCTION(
     if (mantissa == 0)
         return 0;
     return set_mantissa(float1, mantissa);
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    float_log,
+    int64_t float1 )
+{
+    RETURN_IF_INVALID_FLOAT(float1);
+
+    if (float1 == 0) return INVALID_ARGUMENT;
+
+    uint64_t man1 = get_mantissa(float1);
+    int32_t exp1 = get_exponent(float1);
+    if (is_negative(float1))
+        return COMPLEX_NOT_SUPPORTED;
+
+    double result = log10(man1);
+    
+    result += exp1;
+    
+    if (result == 0)
+        return 0;
+    
+    int32_t exp_out = 0;
+    while (result * 10 < maxMantissa)
+    {
+        result *= 10;
+        exp_out--;
+    }
+
+    return make_float((int64_t)result, exp_out);    
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    float_root,
+    int64_t float1, uint32_t n)
+{
+    RETURN_IF_INVALID_FLOAT(float1);
+    if (float1 == 0) return 0;
+
+    if (n < 2)
+        return INVALID_ARGUMENT;
+
+    uint64_t man1 = get_mantissa(float1);
+    int32_t exp1 = get_exponent(float1);
+    if (is_negative(float1))
+        return COMPLEX_NOT_SUPPORTED;
+
+    double result = pow(man1, 1.0/((double)(n)));
+    
+    if (exp1 != 0)
+        result *= pow(1, ((double)(exp1))/((double)(n)));
+    
+    if (result == 0)
+        return 0;
+    
+    int32_t exp_out = 0;
+    while (result * 10 < maxMantissa)
+    {
+        result *= 10;
+        exp_out--;
+    }
+
+    return make_float((int64_t)result, exp_out);    
+
 }
 
 DEFINE_HOOK_FUNCTION(

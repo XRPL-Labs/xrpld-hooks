@@ -151,6 +151,8 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign,         int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set,     int64_t float1,     uint32_t negative );
     DECLARE_HOOK_FUNCTION(int64_t,  float_int,          int64_t float1,     uint32_t decimal_places, uint32_t abs );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_log,          int64_t float1 );
+    DECLARE_HOOK_FUNCTION(int64_t,  float_root,         int64_t float1, uint32_t n );
 
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len, int32_t hook_no );
@@ -563,6 +565,8 @@ namespace hook
             ADD_HOOK_FUNCTION(float_sign, ctx);
             ADD_HOOK_FUNCTION(float_sign_set, ctx);
             ADD_HOOK_FUNCTION(float_int, ctx);
+            ADD_HOOK_FUNCTION(float_log, ctx);
+            ADD_HOOK_FUNCTION(float_root, ctx);
 
             ADD_HOOK_FUNCTION(otxn_burden, ctx);
             ADD_HOOK_FUNCTION(otxn_generation, ctx);
