@@ -27,8 +27,7 @@ inline uint64_t
 parseLeb128(
     std::vector<unsigned char> const& buf,
     int start_offset,
-    int* end_offset,
-    bool is_signed = false)
+    int* end_offset)
 {
     uint64_t val = 0, shift = 0, i = start_offset;
     while (i < buf.size())
@@ -50,7 +49,40 @@ parseLeb128(
             continue;
         }
         *end_offset = i;
-        if (is_signed && shift < 64 && (b&0x40U))
+
+        return val;
+    }
+    return 0;
+}
+
+inline int64_t
+parseSignedLeb128(
+    std::vector<unsigned char> const& buf,
+    int start_offset,
+    int* end_offset)
+{
+    int64_t val = 0;
+    uint64_t shift = 0, i = start_offset;
+    while (i < buf.size())
+    {
+        uint64_t b = (uint64_t)(buf[i]);
+        int64_t last = val;
+        val += (b & 0x7FU) << shift;
+        if (val < last)
+        {
+            // overflow
+            throw std::overflow_error { "leb128 overflow" };
+        }
+        ++i;
+        if (b & 0x80U)
+        {
+            shift += 7;
+            if (!(i < buf.size()))
+                throw std::length_error { "leb128 short or invalid" };
+            continue;
+        }
+        *end_offset = i;
+        if (shift < 64 && (b&0x40U))
             val |= (~0 << shift);
 
         return val;
@@ -91,10 +123,10 @@ parseLeb128(
 }
 
 #define LEB()\
-    parseLeb128(hook, i, &i, false)
+    parseLeb128(hook, i, &i)
 
 #define SIGNED_LEB()\
-    parseLeb128(hook, i, &i, true)
+    parseSignedLeb128(hook, i, &i)
 
 #define GUARD_ERROR(msg)\
 {\
@@ -129,14 +161,15 @@ uint64_t compute_wce (const WasmBlkInf* blk)
                 worst_case_execution += compute_wce(&child);
         }
 
-        if (blk->parent == 0)
+        if (blk->parent == 0 || 
+            blk->parent->iteration_bound == 0)  // this condtion should never occur [defensively programmed]
             return worst_case_execution;
 
         // if the block has a parent then the quotient of its guard and its parent's guard
         // gives us the loop iterations and thus the multiplier for the instruction count
         double multiplier = 
             ((double)(blk->iteration_bound)) /
-            ((double)(blk->parent->iteration_bound));
+            ((double)(blk->parent->iteration_bound)); 
 
         if (multiplier < 1.0)
             return worst_case_execution;
@@ -257,6 +290,9 @@ check_guard(
 
                 printf("iteration_bound: %d, call_func_idx: %ld, guard_func_idx: %d\n",
                         iteration_bound, call_func_idx, guard_func_idx);
+
+                if (iteration_bound == 0)
+                    GUARD_ERROR("Guard call cannot specify 0 maxiter.");
 
                 if (call_func_idx != guard_func_idx)
                     GUARD_ERROR("Call after first and second i32.const at loop start was not _g");
@@ -463,7 +499,7 @@ check_guard(
             {
                 ADVANCE(1);
             }
-            else if (fc_type >= 0 && fc_type <= 7)  // numeric instructions
+            else if (fc_type <= 7)  // numeric instructions
             {
                 // do nothing, these have no parameters
             }
@@ -557,7 +593,7 @@ check_guard(
             REQUIRE(1);
             uint64_t v = LEB();
 
-            if (v >= 0 && v <= 11)  // memargs only
+            if (v <= 11)  // memargs only
             {
                 REQUIRE(1); LEB();
                 REQUIRE(1); LEB();
