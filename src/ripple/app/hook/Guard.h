@@ -258,7 +258,7 @@ check_guard(
                 SIGNED_LEB();
             }
 
-            uint32_t iteration_bound = 1;
+            uint32_t iteration_bound = (current->parent == 0 ? 1 : current->parent->iteration_bound);
             if (instr == 0x03U)
             {
                 // now look for the guard call
