@@ -162,6 +162,9 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  ledger_last_hash,   uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	ledger_nonce,       uint32_t write_ptr, uint32_t write_len );
 
+    DECLARE_HOOK_FUNCTION(int64_t,  ledger_keylet,      uint32_t write_ptr,  uint32_t write_len,
+                                                        uint32_t lread_ptr,  uint32_t lread_len,
+                                                        uint32_t hread_ptr,  uint32_t hread_len );
 
     DECLARE_HOOK_FUNCTION(int64_t,  hook_param_set,     uint32_t read_ptr,  uint32_t read_len,
                                                         uint32_t kread_ptr, uint32_t kread_len,
@@ -583,6 +586,7 @@ namespace hook
             ADD_HOOK_FUNCTION(ledger_last_hash, ctx);
             ADD_HOOK_FUNCTION(ledger_last_time, ctx);
             ADD_HOOK_FUNCTION(ledger_nonce, ctx);
+            ADD_HOOK_FUNCTION(ledger_keylet, ctx);
 
             ADD_HOOK_FUNCTION(hook_param, ctx);
             ADD_HOOK_FUNCTION(hook_param_set, ctx);

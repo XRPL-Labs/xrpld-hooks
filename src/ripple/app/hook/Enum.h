@@ -215,7 +215,8 @@ namespace hook_api
         TOO_MANY_PARAMS = -36,
         INVALID_TXN = -37,
         RESERVE_INSUFFICIENT = -38,     // setting a new state object would exceed account reserve 
-        COMPLEX_NOT_SUPPORTED = -39
+        COMPLEX_NOT_SUPPORTED = -39,
+        DOES_NOT_MATCH = -40,           // two keylets were required to be the same type but werent
 
     };
 
@@ -244,6 +245,7 @@ namespace hook_api
         "etxn_fee_base",
         "etxn_generation",
         "etxn_reserve",
+        "etxn_nonce",
         "float_compare",
         "float_divide",
         "float_exponent",
@@ -271,8 +273,8 @@ namespace hook_api
         "ledger_seq",
         "ledger_last_hash",
         "ledger_last_time",
-        "etxn_nonce",
         "ledger_nonce",
+        "ledger_keylet",
         "otxn_burden",
         "otxn_field",
         "otxn_slot",

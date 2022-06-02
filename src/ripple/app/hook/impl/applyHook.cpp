@@ -2938,6 +2938,48 @@ DEFINE_HOOK_FUNCTION(
     return 32;
 }
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    ledger_keylet,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t lread_ptr, uint32_t lread_len,
+    uint32_t hread_ptr, uint32_t hread_len )
+{
+    HOOK_SETUP();
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
+        NOT_IN_BOUNDS(lread_ptr, lread_len, memory_length) ||
+        NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (lread_len < 34U || hread_len < 34U || write_len < 34U)
+        return TOO_SMALL;
+    if (lread_len > 34U || hread_len > 34U || write_len > 34U)
+        return TOO_BIG;
+
+    std::optional<ripple::Keylet> klLo = unserialize_keylet(memory + lread_ptr, lread_len);
+    if (!klLo)
+        return INVALID_ARGUMENT;
+
+    std::optional<ripple::Keylet> klHi = unserialize_keylet(memory + hread_ptr, hread_len);
+    if (!klHi)
+        return INVALID_ARGUMENT;
+
+    // keylets must be the same type!
+    if ((*klLo).type != (*klHi).type)
+        return DOES_NOT_MATCH;
+
+    std::optional<ripple::uint256> found =
+        view.succ((*klLo).key, (*klHi).key.next());
+
+    if (!found)
+        return DOESNT_EXIST;
+    
+    Keylet kl_out{(*klLo).type, *found};
+
+    return serialize_keylet(kl_out, memory, write_ptr, write_len);
+}
+
 // Reserve one or more transactions for emission from the running hook
 DEFINE_HOOK_FUNCTION(
     int64_t,

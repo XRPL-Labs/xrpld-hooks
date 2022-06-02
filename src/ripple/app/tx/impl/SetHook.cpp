@@ -602,6 +602,15 @@ SetHook::preflight(PreflightContext const& ctx)
             return temMALFORMED;
         }
 
+        if (hookSetObj->isFieldPresent(sfCreateCode) &&
+            hookSetObj->getFieldVL(sfCreateCode).size() > hook::maxHookWasmSize())
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::WASM_TOO_BIG << ")[" << HS_ACC()
+                << "]: Malformed transaction: SetHook operation would create blob larger than max";
+            return temMALFORMED;
+        }
+
         if (hookSetObj->getCount() == 0) // skip blanks
             continue;
 
