@@ -13,7 +13,7 @@ using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>
 
 #define DEBUG_GUARD 1
 #define DEBUG_GUARD_VERBOSE 0
-#define DEBUG_GUARD_VERBOSE_VERBOSE 0
+#define DEBUG_GUARD_VERY_VERBOSE 0
 
 #define GUARDLOG(logCode)\
         if (!guardLog)\
@@ -27,7 +27,8 @@ inline uint64_t
 parseLeb128(
     std::vector<unsigned char> const& buf,
     int start_offset,
-    int* end_offset)
+    int* end_offset,
+    bool is_signed = false)
 {
     uint64_t val = 0, shift = 0, i = start_offset;
     while (i < buf.size())
@@ -44,9 +45,14 @@ parseLeb128(
         if (b & 0x80U)
         {
             shift += 7;
+            if (!(i < buf.size()))
+                throw std::length_error { "leb128 short or invalid" };
             continue;
         }
         *end_offset = i;
+        if (is_signed && shift < 64 && (b&0x40U))
+            val |= (~0 << shift);
+
         return val;
     }
     return 0;
@@ -66,11 +72,84 @@ parseLeb128(
     }\
 }
 
+
+#define REQUIRE(x)\
+{\
+    if (i + (x) > hook.size())\
+    {\
+        \
+        GUARDLOG(hook::log::SHORT_HOOK) \
+            << "Malformed transaction: Hook truncated or otherwise invalid. "\
+            << "SetHook.cpp:" << __LINE__ << "\n";\
+        return {};\
+    }\
+}
+
+#define ADVANCE(x)\
+{\
+    i += (x);\
+}
+
+#define LEB()\
+    parseLeb128(hook, i, &i, false)
+
+#define SIGNED_LEB()\
+    parseLeb128(hook, i, &i, true)
+
+#define GUARD_ERROR(msg)\
+{\
+    char hex[64];\
+    hex[0] = '\0';\
+    snprintf(hex, 64, "%x", i);\
+    GUARDLOG(hook::log::GUARD_MISSING)\
+        << "GuardCheck "\
+        << (msg) << " "\
+        << "codesec: " << codesec << " hook byte offset: " << i << " [0x" << hex << "]\n";\
+    return {};\
+}
+
+
+struct WasmBlkInf
+{
+    uint32_t iteration_bound;
+    uint32_t instruction_count;
+    WasmBlkInf* parent;
+    std::vector<WasmBlkInf> children;
+};
+    
+// compute worst case execution time    
+inline
+uint64_t compute_wce (const WasmBlkInf* blk)
+{
+        uint64_t worst_case_execution = blk->instruction_count;
+
+        if (blk->children.size() > 0)
+        {
+            for (auto const& child : blk->children)
+                worst_case_execution += compute_wce(&child);
+        }
+
+        if (blk->parent == 0)
+            return worst_case_execution;
+
+        // if the block has a parent then the quotient of its guard and its parent's guard
+        // gives us the loop iterations and thus the multiplier for the instruction count
+        double multiplier = 
+            ((double)(blk->iteration_bound)) /
+            ((double)(blk->parent->iteration_bound));
+
+        if (multiplier < 1.0)
+            return worst_case_execution;
+
+        worst_case_execution *= multiplier;
+        return worst_case_execution;
+    };
+
+
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
 // returns {worst case instruction count} if valid or {} if invalid
-// may throw overflow_error
-// RH TODO: change this to a REQUIRE/ADVANCE model to avoid overrun exploits
+// may throw overflow_error, length_error
 inline
 std::optional<uint64_t>
 check_guard(
@@ -91,20 +170,10 @@ check_guard(
 
     if (end_offset <= 0) end_offset = hook.size();
     int block_depth = 0;
-    int mode = 1; // controls the state machine for searching for guards
-                  // 0 = looking for guard from a trigger point (loop or function start)
-                  // 1 = looking for a new trigger point (loop);
-                  // currently always starts at 1 no-top-of-func check, see above block comment
 
-    std::stack<uint64_t> stack; // we track the stack in mode 0 to work out if constants end up in the guard function
-    std::map<uint32_t, uint64_t> local_map; // map of local variables since the trigger point
-    std::map<uint32_t, uint64_t> global_map; // map of global variables since the trigger point
+    WasmBlkInf root { .iteration_bound = 1, .instruction_count = 0, .parent = 0, .children = {} };
 
-    // block depth level -> { largest guard, rolling instruction count } 
-    std::map<int, std::pair<uint32_t, uint64_t>> instruction_count;
-
-                        // largest guard  // instr ccount
-    instruction_count[0] = {1,                  0};
+    WasmBlkInf* current = &root;
 
     if (DEBUG_GUARD)
         printf("\n\n\nstart of guard analysis for codesec %d\n", codesec);
@@ -112,7 +181,7 @@ check_guard(
     for (int i = start_offset; i < end_offset; )
     {
 
-        if (DEBUG_GUARD_VERBOSE_VERBOSE)
+        if (DEBUG_GUARD_VERY_VERBOSE)
         {
             printf("->");
             for (int z = i; z < 16 + i && z < end_offset; ++z)
@@ -120,17 +189,145 @@ check_guard(
             printf("\n");
         }
 
-        CHECK_SHORT_HOOK();
-        int instr = hook[i++];
+        REQUIRE(1);
+        uint8_t instr = hook[i];
+        ADVANCE(1);
 
-        instruction_count[block_depth].second++;
+        current->instruction_count++;
 
-        if (instr == 0x10) // call instr
+        // unreachable and nop instructions
+        if (instr == 0x00U ||   // unreachable
+            instr == 0x01U ||   // nop
+            instr == 0x05U)     // else
+            continue;
+
+        if (instr == 0x02U ||   // block
+            instr == 0x03U ||   // loop
+            instr == 0x04U)     // if
         {
-            int callee_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - call instruction at %d -- call funcid: %d\n", mode, i, callee_idx);
+                printf("%s instruction at %d [%x]\n",
+                    (instr == 0x02U ? "Block" : (instr == 0x03U ? "Loop" : "If")), i, i);
 
+            // there must be at least a one byte block return type here
+            REQUIRE(1);
+
+            // discard the block return type
+            uint8_t block_type = hook[i];
+            if ((block_type >= 0x7CU && block_type <= 0x7FU) ||
+                 block_type == 0x7BU || block_type == 0x70U  ||
+                 block_type == 0x7BU || block_type == 0x40U)
+            {
+                ADVANCE(1);
+            }
+            else
+            {
+                SIGNED_LEB();
+            }
+
+            uint32_t iteration_bound = 1;
+            if (instr == 0x03U)
+            {
+                // now look for the guard call
+                // this comprises 3 web assembly instructions, as per below example
+                // 0001d8: 41 81 80 90 01             |   i32.const 2359297
+                // 0001dd: 41 15                      |   i32.const 21
+                // 0001df: 10 06                      |   call 6 <env._g>
+
+                // first i32
+                REQUIRE(1);
+                if (hook[i] != 0x41U)
+                    GUARD_ERROR("Missing first i32.const after loop instruction");
+                ADVANCE(1);
+                SIGNED_LEB();          // this is the ID, we don't need it here
+                
+                // second i32
+                REQUIRE(1);
+                if (hook[i] != 0x41U)
+                    GUARD_ERROR("Missing second i32.const after loop instruction");
+                ADVANCE(1);
+                iteration_bound = LEB();   // second param is the iteration bound, which is important here
+
+                // guard call
+                REQUIRE(1);
+                if (hook[i] != 0x10U)
+                    GUARD_ERROR("Missing call to _g after first and second i32.const at loop start");
+                ADVANCE(1);
+                uint64_t call_func_idx = LEB();     // the function being called *must* be the _g function
+
+                printf("iteration_bound: %d, call_func_idx: %ld, guard_func_idx: %d\n",
+                        iteration_bound, call_func_idx, guard_func_idx);
+
+                if (call_func_idx != guard_func_idx)
+                    GUARD_ERROR("Call after first and second i32.const at loop start was not _g");
+            }
+
+            current->children.push_back(
+            {
+                .iteration_bound = iteration_bound,
+                .instruction_count = 0, 
+                .parent = current,
+                .children = {}
+            });
+
+            block_depth++;
+            current = &(current->children[current->children.size()-1]);
+            continue;
+        }
+
+        if (instr == 0x0BU)     // block end
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - block end instruction at %d [%x]\n", i, i);
+
+            block_depth--;
+            current = current->parent;
+            if (current == 0 && block_depth == -1 && (i >= end_offset))
+                break;          // codesec end
+            else if (current == 0 || block_depth < 0)
+                GUARD_ERROR("Illegal block end");
+            continue;
+        }
+
+        if (instr == 0x0CU ||   // br
+            instr == 0x0DU)     // br_if
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - %s instruction at %d [%x]\n",
+                    (instr == 0x0CU ? "br" : "br_if"), i, i);
+
+            REQUIRE(1);
+            LEB();
+            continue;
+        }
+
+        if (instr == 0x0EU)     // br_table
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - br_table instruction at %d [%x]\n", i, i);
+
+            int vec_count = LEB();
+            for (int v = 0; v < vec_count; ++v)
+            {
+                REQUIRE(1);
+                LEB();
+            }
+            REQUIRE(1);
+            LEB();
+            continue;
+        }
+       
+        if (instr == 0x0FU)     // return 
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - return instruction at %d [%x]\n", i, i);
+            continue;
+        }
+
+        if (instr == 0x10U)     // call
+        {
+            REQUIRE(1);
+            uint64_t callee_idx = LEB();
             // disallow calling of user defined functions inside a hook
             if (callee_idx > last_import_idx)
             {
@@ -141,235 +338,163 @@ check_guard(
 
                 return {};
             }
-
-            if (callee_idx == guard_func_idx)
-            {
-                // found!
-                if (mode == 0)
-                {
-
-                    if (stack.size() < 2)
-                    {
-                        GUARDLOG(hook::log::GUARD_PARAMETERS)
-                            << "GuardCheck "
-                            << "_g() called but could not detect constant parameters "
-                            << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return {};
-                    }
-
-                    uint64_t a = stack.top();
-                    stack.pop();
-                    uint64_t b = stack.top();
-                    stack.pop();
-                    if (DEBUG_GUARD)
-                        printf("FOUND: GUARD(%lu, %lu), codesec: %d offset %d\n", a, b, codesec, i);
-
-                    if (b <= 0)
-                    {
-                        // 0 has a special meaning, generally it's not a constant value
-                        // < 0 is a constant but negative, either way this is a reject condition
-                         GUARDLOG(hook::log::GUARD_PARAMETERS)
-                            << "GuardCheck "
-                            << "_g() called but could not detect constant parameters "
-                            << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                        return {};
-                    }
-
-                    // update the instruction count for this block depth to the largest possible guard
-                    if (instruction_count[block_depth].first < a)
-                    {
-                        instruction_count[block_depth].first = a;
-                        if (DEBUG_GUARD)
-                        {
-                            std::cout
-                                << "HookDebug GuardCheck "
-                                << "Depth " << block_depth << " guard: " << a << "\n";
-                        }
-                    }
-
-                    // clear stack and maps
-                    while (stack.size() > 0)
-                        stack.pop();
-                    local_map.clear();
-                    global_map.clear();
-                    mode = 1;
-                }
-            }
             continue;
         }
 
-        if (instr == 0x11) // call indirect [ we don't allow guard to be called this way ]
+        if (instr == 0x11U)     // call indirect
         {
              GUARDLOG(hook::log::CALL_INDIRECT) << "GuardCheck "
                 << "Call indirect detected and is disallowed in hooks "
                 << "codesec: " << codesec << " hook byte offset: " << i << "\n";
             return {};
-            /*
-            if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - call_indirect instruction at %d\n", mode, i);
-            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-            ++i; CHECK_SHORT_HOOK(); //absorb 0x00 trailing
-            continue;
-            */
         }
+        
 
-        // unreachable and nop instructions
-        if (instr == 0x00 || instr == 0x01)
+        // reference instructions
+        if (instr >= 0xD0U && instr <= 0xD2)   
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - unreachable/nop instruction at %d\n", mode, i);
-            continue;
-        }
+                printf("Guard checker - reference instruction at %d [%x]\n", i, i);
 
-        // branch loop block instructions
-        if ((instr >= 0x02 && instr <= 0x0F) || instr == 0x11)
-        {
-            if (mode == 0 && instr >= 0x03)
+            if (instr == 0x0D0U)
             {
-                 GUARDLOG(hook::log::GUARD_MISSING)
-                    << "GuardCheck "
-                    << "_g() did not occur at start of loop statement "
-                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                return {};
+                REQUIRE(1);
+                // if it's a ref type it's a single byte
+                if (!(hook[i] == 0x70U || hook[i] == 0x6FU))
+                    GUARD_ERROR("Invalid reftype in 0xD0 instruction");
+                ADVANCE(1);
             }
-
-            // block instruction
-            // RH NOTE: block instructions *are* allowed between a loop and a guard
-            if (instr == 0x02)
+            else
+            if (instr == 0x0D2U)
             {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - block instruction at %d\n", mode, i);
-
-                ++i; CHECK_SHORT_HOOK();
-                block_depth++;
-                instruction_count[block_depth] = {1, 0};
-                continue;
+                REQUIRE(1);
+                LEB();
             }
             
-            // execution to here means we are in 'search mode' for loop instructions
-
-            // loop instruction
-            if (instr == 0x03)
-            {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - loop instruction at %d\n", mode, i);
-
-                ++i; CHECK_SHORT_HOOK();
-                mode = 0; // we now search for a guard()
-                block_depth++;
-                instruction_count[block_depth] = {1, 0};
-                continue;
-            }
-
-            // if instr
-            if (instr == 0x04)
-            {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - if instruction at %d\n", mode, i);
-                ++i; CHECK_SHORT_HOOK();
-                block_depth++;
-                instruction_count[block_depth] = {1, 0};
-                continue;
-            }
-
-            // else instr
-            if (instr == 0x05)
-            {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - else instruction at %d\n", mode, i);
-                continue;
-            }
-
-            // branch instruction
-            if (instr == 0x0C || instr == 0x0D)
-            {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - br instruction at %d\n", mode, i);
-                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                continue;
-            }
-
-            // branch table instr
-            if (instr == 0x0E)
-            {
-                if (DEBUG_GUARD_VERBOSE)
-                    printf("    Mode: %d - br_table instruction at %d\n", mode, i);
-                int vec_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                for (int v = 0; v < vec_count; ++v)
-                {
-                    parseLeb128(hook, i, &i);
-                    CHECK_SHORT_HOOK();
-                }
-                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                continue;
-            }
+            continue;
         }
 
-
-        // parametric instructions | no operands
-        if (instr == 0x1A || instr == 0x1B)
+        // parametric instructions
+        if (instr == 0x1AU ||   // drop
+            instr == 0x1BU ||   // select
+            instr == 0x1CU)     // select t*
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - parametric  instruction at %d\n", mode, i);
+                printf("Guard checker - parametric instruction at %d [%x]\n", i, i);
+           
+            if (instr == 0x1CU)     // select t*
+            {
+                REQUIRE(1);
+                uint64_t vec_count = LEB();
+                for (uint64_t n = 0; n < vec_count; ++n)
+                {
+                    REQUIRE(1);
+                    uint8_t v = hook[i];
+                    if ((v >= 0x7BU && v <= 0x7FU) || v == 0x70U || v == 0x6FU)
+                    {
+                        // fine
+                    }
+                    else
+                        GUARD_ERROR("Invalid value type in select t* vector");
+                    ADVANCE(1);
+                }
+            }
             continue;
         }
 
         // variable instructions
-        if (instr >= 0x20 && instr <= 0x24)
+        if (instr >= 0x20U && instr <= 0x24U)
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - variable local/global instruction at %d\n", mode, i);
+                printf("Guard checker - variable instruction at %d [%x]\n", i, i);
 
-            int idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-
-            if (mode == 1)
-                continue;
-
-            // we need to do stack and map manipualtion to track any possible constants before guard call
-            if (instr == 0x20 || instr == 0x23) // local.get idx or global.get idx
-            {
-                auto& map = ( instr == 0x20 ? local_map : global_map );
-                if (map.find(idx) == map.end())
-                    stack.push(0); // we always put a 0 in place of a local or global we don't know the value of
-                else
-                    stack.push(map[idx]);
-                continue;
-            }
-
-            if (instr == 0x21 || instr == 0x22 || instr == 0x24) // local.set idx or global.set idx
-            {
-                auto& map = ( instr == 0x21 || instr == 0x22 ? local_map : global_map );
-
-                uint64_t to_store = (stack.size() == 0 ? 0 : stack.top());
-                map[idx] = to_store;
-                if (instr != 0x22)
-                    stack.pop();
-
-                continue;
-            }
+            REQUIRE(1);
+            LEB();
+            continue;
         }
 
-        // RH TODO support guard consts being passed through memory functions (maybe)
+        // table instructions + 0xFC instructions
+        if (instr == 0x25U ||   // table.get
+            instr == 0x26U ||   // table.set
+            instr == 0xFCU)
+        {
 
-        //memory instructions
-        if (instr >= 0x28 && instr <= 0x3E)
+            REQUIRE(1);
+            if (instr != 0xFCU)
+            {
+                if (DEBUG_GUARD_VERBOSE)
+                    printf("Guard checker - table instruction at %d [%x]\n", i, i);
+                LEB();
+                continue;
+            }
+            
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - 0xFC instruction at %d [%x]\n", i, i);
+
+            uint64_t fc_type = LEB();
+            REQUIRE(1);
+            
+            if (fc_type >= 12 && fc_type <= 17)     // table instructions
+            {
+                LEB();
+                if (fc_type == 12 ||    // table.init
+                    fc_type == 14)      // table.copy
+                {
+                    REQUIRE(1);
+                    LEB();
+                }
+            }
+            else if (fc_type == 8)      // memory.init
+            {
+                LEB();
+                REQUIRE(1);
+                ADVANCE(1);
+            }
+            else if (fc_type == 9)      // data.drop
+            {
+                LEB();
+            }
+            else if (fc_type == 10)     // memory.copy
+            {
+                REQUIRE(2);
+                ADVANCE(2);
+            }
+            else if (fc_type == 11)     // memory.fill
+            {
+                ADVANCE(1);
+            }
+            else if (fc_type >= 0 && fc_type <= 7)  // numeric instructions
+            {
+                // do nothing, these have no parameters
+            }
+            else
+                GUARD_ERROR("Illegal 0xFC instruction");
+
+            continue;
+        }
+
+        // memory instructions
+        if (instr >= 0x28U && instr <= 0x3EU)   // various loads and stores
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - variable memory instruction at %d\n", mode, i);
+                printf("Guard checker - memory instruction at %d [%x]\n", i, i);
 
-            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+            REQUIRE(1);
+            LEB();
+            REQUIRE(1);
+            LEB();
             continue;
         }
 
         // more memory instructions
-        if (instr == 0x3F || instr == 0x40)
+        if (instr == 0x3FU || instr == 0x40U)
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - memory instruction at %d\n", mode, i);
+                printf("Guard checker - memory instruction 2 at %d [%x]\n", i, i);
 
-            ++i; CHECK_SHORT_HOOK();
-            if (instr == 0x40) // disallow memory.grow
+            REQUIRE(1);
+
+            if (instr == 0x40U) // disallow memory.grow
             {
                 GUARDLOG(hook::log::MEMORY_GROW)
                     << "GuardCheck "
@@ -377,115 +502,114 @@ check_guard(
                     << "codesec: " << codesec << " hook byte offset: " << i << "\n";
                 return {};
             }
+
+            ADVANCE(1);
             continue;
         }
 
-        // int const instrs
-        // numeric instructions with immediates
-        if (instr == 0x41 || instr == 0x42)
-        {
-
-            if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - const instruction at %d\n", mode, i);
-
-            uint64_t immediate = parseLeb128(hook, i, &i);
-            CHECK_SHORT_HOOK(); // RH TODO enforce i32 i64 size limit
-
-            // in mode 0 we should be stacking our constants and tracking their movement in
-            // and out of locals and globals
-            stack.push(immediate);
-            continue;
-        }
-
-        // const instr
-        // more numerics with immediates
-        if (instr == 0x43 || instr == 0x44)
-        {
-
-            if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - const float instruction at %d\n", mode, i);
-
-            i += ( instr == 0x43 ? 4 : 8 );
-            CHECK_SHORT_HOOK();
-            continue;
-        }
-
-        // numerics no immediates
-        if (instr >= 0x45 && instr <= 0xC4)
+        // numeric instructions (i32, i64)
+        if (instr == 0x41U || instr == 0x42U)   // i32/64.const
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - numeric instruction at %d\n", mode, i);
+                printf("Guard checker - i.const at %d [%x]\n", i, i);
+            REQUIRE(1);
+            LEB();
             continue;
         }
 
-        // truncation instructions
-        if (instr == 0xFC)
+        // more numeric instructions
+        if (instr == 0x43U)     // f32.const
         {
             if (DEBUG_GUARD_VERBOSE)
-                printf("    Mode: %d - truncation instruction at %d\n", mode, i);
-            i++; CHECK_SHORT_HOOK();
-            parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                printf("Guard checker - f32.const at %d [%x]\n", i, i);
+
+            REQUIRE(4);
+            ADVANCE(4);
+            continue;
+        } 
+        
+        if (instr == 0x44U)     // f64.const
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - f64.const at %d [%x]\n", i, i);
+
+            REQUIRE(8);
+            ADVANCE(8);
+            continue;
+        } 
+
+        // even more numeric instructions
+        if (instr >= 0x45U && instr <= 0xC4U)
+        {
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - numeric instruction at %d [%x]\n", i, i);
+            
+            // these have no arguments   
             continue;
         }
 
-        if (instr == 0x0B)
+        // vector instructions
+        if (instr == 0xFDU)
         {
-            if (DEBUG_GUARD)
-                printf("    Mode: %d - block end instruction at %d\n", mode, i);
+            if (DEBUG_GUARD_VERBOSE)
+                printf("Guard checker - vector instruction at %d [%x]\n", i, i);
 
-            // end of expression
-            if (block_depth == 0)
-            break;
+            REQUIRE(1);
+            uint64_t v = LEB();
 
-            block_depth--;
-
-            if (block_depth < 0)
+            if (v >= 0 && v <= 11)  // memargs only
             {
-                
-                    GUARDLOG(hook::log::BLOCK_ILLEGAL) << "GuardCheck "
-                    << "Unexpected 0x0B instruction, malformed"
-                    << "codesec: " << codesec << " hook byte offset: " << i << "\n";
-                return {};
+                REQUIRE(1); LEB();
+                REQUIRE(1); LEB();
             }
-
-            // perform the instruction count * guard accounting
-
-            if (DEBUG_GUARD)
-                printf("Offset %d(0x%x) block end. instruction_count[block_depth=%d].second was: %ld now: %ld\n",
-                        i,i,
-                        block_depth,
-                        instruction_count[block_depth].second,
-                        instruction_count[block_depth].second +
-                        instruction_count[block_depth+1].second * instruction_count[block_depth+1].first);
-            instruction_count[block_depth].second +=
-                instruction_count[block_depth+1].second * instruction_count[block_depth+1].first;
-            instruction_count.erase(block_depth+1);
+            else if (v >= 84U && v <= 91U)  // memargs + laneidx (1b)
+            {
+                REQUIRE(1); LEB();
+                REQUIRE(1); LEB();
+                REQUIRE(1); ADVANCE(1);
+            }
+            else if (v >= 21U && v <= 34U)  // laneidx (1b)
+            {
+                REQUIRE(1);
+                ADVANCE(1);
+            }
+            else if (v == 12U || v == 13U)
+            {
+                REQUIRE(16);
+                ADVANCE(16);
+            }
+            else
+            {
+                // no params do nothing
+            }
+            continue;
+        }
+        
+        // execution to here is an error, unknown instruction
+        {
+            char ihex[64];
+            ihex[0] = '\0';
+            snprintf(ihex, 64, "Unknown instruction opcode: %d [%x]", instr, instr);
+            GUARD_ERROR(ihex);
         }
     }
 
-    
-    GUARDLOG(hook::log::INSTRUCTION_COUNT) << "GuardCheck "
-        << "Total worse-case execution count: " << instruction_count[0].second << "\n";
+    uint64_t wce = compute_wce(&root);
 
-    // RH TODO: don't hardcode this
-    if (instruction_count[0].second > 0xFFFFF)
+    GUARDLOG(hook::log::INSTRUCTION_COUNT) << "GuardCheck "
+        << "Total worse-case execution count: " << wce << "\n";
+
+    if (wce >= 0xFFFFU)
     {
         GUARDLOG(hook::log::INSTRUCTION_EXCESS) << "GuardCheck "
-            << "Maximum possible instructions exceed 1048575, please make your hook smaller "
+            << "Maximum possible instructions exceed 65535, please make your hook smaller "
             << "or check your guards!" << "\n";
         return {};
     }
-
-    // if we reach the end of the code looking for another trigger the guards are installed correctly
-    if (mode == 1)
-        return instruction_count[0].second;
-
-    GUARDLOG(hook::log::GUARD_MISSING) << "GuardCheck "
-        << "Guard did not occur before end of loop / function. "
-        << "Codesec: " << codesec << "\n";
-    return {};
+    return wce;
 }
 
+// RH TODO: reprogram this function to use REQUIRE/ADVANCE
 // may throw overflow_error
 inline
 std::optional<  // unpopulated means invalid
@@ -543,7 +667,7 @@ validateGuards(
         {
             // if the loop iterates twice with the same value for i then
             // it's an infinite loop edge case
-            GUARDLOG(hook::log::WASM_PARSE_LOOP) 
+            GUARDLOG(hook::log::WASM_PARSE_LOOP)
                 << "Malformed transaction: Hook is invalid WASM binary." << "\n";
             return {};
         }
@@ -602,7 +726,7 @@ validateGuards(
                 int name_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 if (name_length < 1 || name_length > (hook.size() - i))
                 {
-                    GUARDLOG(hook::log::IMPORT_NAME_BAD) 
+                    GUARDLOG(hook::log::IMPORT_NAME_BAD)
                         << "Malformed transaction. "
                         << "Hook attempted to specify nil or invalid import name" << "\n";
                     return {};
@@ -691,7 +815,7 @@ validateGuards(
                         hook_func_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                         continue;
                     }
-                    
+
                     if (hook[i] == 'c' && hook[i+1] == 'b' && hook[i+2] == 'a' && hook[i+3] == 'k')
                     {
                         i += name_len; CHECK_SHORT_HOOK();
@@ -746,7 +870,7 @@ validateGuards(
         continue;
     }
 
-    // we must subtract import_count from the hook and cbak function in order to be able to 
+    // we must subtract import_count from the hook and cbak function in order to be able to
     // look them up in the functions section. this is a rule of the webassembly spec
     // note that at this point in execution we are guarenteed these are populated
     *hook_func_idx -= import_count;
@@ -778,7 +902,7 @@ validateGuards(
     int64_t maxInstrCountCbak = 0;
 
 /*    printf( "hook_func_idx: %d\ncbak_func_idx: %d\n"
-            "hook_type_idx: %d\ncbak_type_idx: %d\n", 
+            "hook_type_idx: %d\ncbak_type_idx: %d\n",
             *hook_func_idx,
             *cbak_func_idx,
             hook_type_idx, *cbak_type_idx);
@@ -798,10 +922,10 @@ validateGuards(
         {
             int type_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             for (int j = 0; j < type_count; ++j)
-            { 
+            {
                 if (hook[i++] != 0x60)
                 {
-                    GUARDLOG(hook::log::FUNC_TYPE_INVALID) 
+                    GUARDLOG(hook::log::FUNC_TYPE_INVALID)
                         << "Invalid function type. "
                         << "Codesec: " << section_type << " "
                         << "Local: " << j << " "
@@ -809,7 +933,7 @@ validateGuards(
                     return {};
                 }
                 CHECK_SHORT_HOOK();
-                
+
                 int param_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
                 if (j == hook_type_idx && param_count != 1)
                 {
@@ -837,9 +961,9 @@ validateGuards(
                         return {};
                     }
 
-                    if (DEBUG_GUARD) 
+                    if (DEBUG_GUARD)
                         printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
-                               "param_count: %d param_type: %x\n", 
+                               "param_count: %d param_type: %x\n",
                                j, *hook_func_idx, *cbak_func_idx, param_count, param_type);
 
                     // hook and cbak parameter check here
@@ -853,7 +977,7 @@ validateGuards(
                 }
 
                 int result_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                
+
                 // RH TODO: enable this for production
                 // this needs a reliable hook cleaner otherwise it will catch most compilers out
                 if (strict && result_count != 1)
@@ -883,12 +1007,12 @@ validateGuards(
                             << "Offset: " << i << "\n";
                         return {};
                     }
-                    
+
                     if (DEBUG_GUARD)
                         printf("Function type idx: %d, hook_func_idx: %d, cbak_func_idx: %d "
-                               "result_count: %d result_type: %x\n", 
+                               "result_count: %d result_type: %x\n",
                                j, *hook_func_idx, *cbak_func_idx, result_count, result_type);
-                        
+
                     // hook and cbak return type check here
                     if (j == hook_type_idx && (result_count != 1 || result_type != 0x7E /* i64 */))
                     {
@@ -976,7 +1100,7 @@ validateGuards(
         << "Trying to wasm instantiate proposed hook "
         << "size = " <<  hook.size() << "\n";
 
-    std::optional<std::string> result = 
+    std::optional<std::string> result =
         hook::HookExecutor::validateWasm(hook.data(), (size_t)hook.size());
 
     if (result)
