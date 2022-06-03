@@ -148,33 +148,47 @@ struct WasmBlkInf
     WasmBlkInf* parent;
     std::vector<WasmBlkInf> children;
 };
-    
+
+#define PRINT_WCE(x)\
+{\
+    if (DEBUG_GUARD)\
+        printf("[%u]%.*swce=%ld | g=%u, pg=%u, m=%g\n",\
+            x,\
+            level, "                                                                                  ",\
+            worst_case_execution,\
+            blk->iteration_bound,\
+            (blk->parent ? blk->parent->iteration_bound : -1),\
+            multiplier);\
+}
 // compute worst case execution time    
 inline
-uint64_t compute_wce (const WasmBlkInf* blk)
+uint64_t compute_wce (const WasmBlkInf* blk, int level = 0)
 {
         uint64_t worst_case_execution = blk->instruction_count;
+        double multiplier = 1.0;
 
         if (blk->children.size() > 0)
-        {
             for (auto const& child : blk->children)
-                worst_case_execution += compute_wce(&child);
-        }
+                worst_case_execution += compute_wce(&child, level + 1);
 
         if (blk->parent == 0 || 
             blk->parent->iteration_bound == 0)  // this condtion should never occur [defensively programmed]
+        {
+            PRINT_WCE(1);
             return worst_case_execution;
+        }
 
         // if the block has a parent then the quotient of its guard and its parent's guard
         // gives us the loop iterations and thus the multiplier for the instruction count
-        double multiplier = 
+        multiplier = 
             ((double)(blk->iteration_bound)) /
             ((double)(blk->parent->iteration_bound)); 
 
-        if (multiplier < 1.0)
-            return worst_case_execution;
-
         worst_case_execution *= multiplier;
+        if (worst_case_execution < 1.0)
+            worst_case_execution = 1.0;
+
+        PRINT_WCE(3);
         return worst_case_execution;
     };
 
