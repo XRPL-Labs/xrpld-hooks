@@ -10,8 +10,8 @@
 #define HOOKMACROS_INCLUDED 1
 
 // hook developers should use this guard macro, simply GUARD(<maximum iterations>)
-#define GUARD(maxiter) _g(__LINE__, (maxiter)+1)
-#define GUARDM(maxiter, n) _g(((__LINE__ << 16) + n), (maxiter)+1)
+#define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+#define GUARDM(maxiter, n) _g(( (1ULL << 31U) + (__LINE__ << 16) + n), (maxiter)+1)
 
 #define SBUF(str) (uint32_t)(str), sizeof(str)
 

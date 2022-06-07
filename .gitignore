@@ -13,6 +13,9 @@ bin/project-cache.jam
 # Ignore python compiled files.
 *.pyc
 
+# Ignore wasm files
+*.wasm
+
 # Ignore Macintosh Desktop Services Store files.
 .DS_Store
 

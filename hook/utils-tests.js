@@ -64,7 +64,7 @@ module.exports = {
 
                 };
 
-                
+
 
                 const fee = (tx_blob) =>
                 {
@@ -192,13 +192,13 @@ module.exports = {
                 const wasm = (x) =>
                 {
                     console.log('wasm(' + x + ')');
-                    try 
+                    try
                     {
                         return fs.readFileSync(x).toString('hex').toUpperCase();
                     }
                     catch (e) {}
 
-                    try 
+                    try
                     {
                         return fs.readFileSync('wasm/' + x).toString('hex').toUpperCase();
                     }
@@ -298,7 +298,6 @@ module.exports = {
                 const randomAccount = ()=>
                 {
                     const acc = xrpljs.Wallet.fromSeed(kp.generateSeed());
-                    console.log(acc)
                     return acc
                 };
 
@@ -537,9 +536,40 @@ module.exports = {
                       console.dir(m, {depth:null});
                 }
 
+
+                const hex_memos = (x) =>
+                {
+                    if (!("Memos" in x))
+                        return;
+
+                    for (y in x["Memos"])
+                    {
+                        for (a in x["Memos"][y])
+                        {
+                            let Fields = ["MemoFormat", "MemoType", "MemoData"];
+                            for (z in Fields)
+                            {
+                                if (Fields[z] in x["Memos"][y][a])
+                                {
+                                    let u = x["Memos"][y][a][Fields[z]].toUpperCase()
+                                    if (u.match(/^[0-9A-F]+$/))
+                                    {
+                                        x["Memos"][y][a][Fields[z]] = u;
+                                        continue;
+                                    }
+
+                                    x["Memos"][y][a][Fields[z]] =
+                                            ""+Buffer.from(x["Memos"][y][a][Fields[z]]).toString('hex').toUpperCase();
+                                }
+                            }
+                        }
+                    }
+                }
+
                 api.connect().then(()=>
                 {
                     resolve({
+                        hex_memos: hex_memos,
                         rbc: rbc,
                         api: api,
                         xrpljs: xrpljs,
