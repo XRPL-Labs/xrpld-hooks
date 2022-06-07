@@ -4,6 +4,7 @@
 #ifndef HOOK_EXTERN
 
 extern int32_t 
+__attribute__((noduplicate))
 _g(
     uint32_t guard_id,
     uint32_t maxiter
