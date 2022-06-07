@@ -2648,7 +2648,6 @@ DEFINE_HOOK_FUNCTION(
         !emitDetails.isFieldPresent(sfEmitBurden) ||
         !emitDetails.isFieldPresent(sfEmitParentTxnID) ||
         !emitDetails.isFieldPresent(sfEmitNonce) ||
-        !emitDetails.isFieldPresent(sfEmitCallback) ||
         !emitDetails.isFieldPresent(sfEmitHookHash))
     {
         JLOG(j.trace())
@@ -2668,7 +2667,11 @@ DEFINE_HOOK_FUNCTION(
     uint64_t bur = emitDetails.getFieldU64(sfEmitBurden);
     ripple::uint256 const& pTxnID = emitDetails.getFieldH256(sfEmitParentTxnID);
     ripple::uint256 const& nonce = emitDetails.getFieldH256(sfEmitNonce);
-    auto const& callback = emitDetails.getAccountID(sfEmitCallback);
+    
+    std::optional<ripple::AccountID> callback;
+    if (emitDetails.isFieldPresent(sfEmitCallback))
+        callback = emitDetails.getAccountID(sfEmitCallback);
+
     auto const& hash = emitDetails.getFieldH256(sfEmitHookHash);
 
     uint32_t gen_proper = etxn_generation(hookCtx, memoryCtx);
@@ -2708,7 +2711,7 @@ DEFINE_HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
-    if (callback != hookCtx.result.account)
+    if (callback && *callback != hookCtx.result.account)
     {
         JLOG(j.trace())
             << "HookEmit[" << HC_ACC() << "]: sfEmitCallback account must be the account "
