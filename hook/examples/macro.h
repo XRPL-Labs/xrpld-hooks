@@ -481,7 +481,12 @@ int out_len = 0;\
     ENCODE_SIGNING_PUBKEY_NULL(buf_out );
 
 
-#define PREPARE_PAYMENT_SIMPLE_SIZE 270
+#ifdef HAS_CALLBACK
+#define PREPARE_PAYMENT_SIMPLE_SIZE 270U
+#else
+#define PREPARE_PAYMENT_SIMPLE_SIZE 248U
+#endif
+
 #define PREPARE_PAYMENT_SIMPLE(buf_out_master, drops_amount_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
@@ -504,12 +509,16 @@ int out_len = 0;\
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        etxn_details((uint32_t)buf_out, 138);                                               /* emitdet | size 138 */ \
-        int64_t fee = etxn_fee_base(buf_out_master, 270);                                                            \ 
+        int64_t edlen = etxn_details((uint32_t)buf_out, PREPARE_PAYMENT_SIMPLE_SIZE);       /* emitdet | size 1?? */ \
+        int64_t fee = etxn_fee_base(buf_out_master, PREPARE_PAYMENT_SIMPLE_SIZE);                                    \ 
         _06_08_ENCODE_DROPS_FEE            (fee_ptr, fee                            );                               \
     }
 
+#ifdef HAS_CALLBACK
 #define PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE 309
+#else
+#define PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE 287
+#endif
 #define PREPARE_PAYMENT_SIMPLE_TRUSTLINE(buf_out_master, tlamt, drops_fee_raw, to_address, dest_tag_raw, src_tag_raw)\
     {\
         uint8_t* buf_out = buf_out_master;\
@@ -532,8 +541,8 @@ int out_len = 0;\
         _07_03_ENCODE_SIGNING_PUBKEY_NULL  (buf_out                                 );      /* pk      | size  35 */ \
         _08_01_ENCODE_ACCOUNT_SRC          (buf_out, acc                            );      /* account | size  22 */ \
         _08_03_ENCODE_ACCOUNT_DST          (buf_out, to_address                     );      /* account | size  22 */ \
-        etxn_details((uint32_t)buf_out, 138);                                               /* emitdet | size 138 */ \
-        int64_t fee = etxn_fee_base(buf_out_master, 309);                                                            \ 
+        etxn_details((uint32_t)buf_out, PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);             /* emitdet | size 1?? */  \
+        int64_t fee = etxn_fee_base(buf_out_master, PREPARE_PAYMENT_SIMPLE_TRUSTLINE_SIZE);                          \ 
         _06_08_ENCODE_DROPS_FEE            (fee_ptr, fee                            );                               \
     }
 

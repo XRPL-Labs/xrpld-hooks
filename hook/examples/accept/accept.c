@@ -1,6 +1,7 @@
 /**
  * This hook just accepts any transaction coming through it
  */
+#define HAS_CALLBACK
 #include "../hookapi.h"
 
 int64_t cbak(uint32_t reserved) { 

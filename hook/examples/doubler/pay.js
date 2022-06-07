@@ -7,7 +7,7 @@ const secret  = process.argv[2];
 const amount = BigInt(process.argv[3]) * 1000000n
 const dest = process.argv[4];
 
-require('../utils-tests.js').TestRig('ws://localhost:6005').then(t=>
+require('../../utils-tests.js').TestRig('ws://localhost:6005').then(t=>
 {
     t.pay(secret, amount, dest).then(x=>
     {

@@ -1,3 +1,4 @@
+#define HAS_CALLBACK
 #include <stdint.h>
 #include "hookapi.h"
 
