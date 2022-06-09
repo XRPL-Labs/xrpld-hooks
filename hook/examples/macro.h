@@ -9,6 +9,18 @@
 #ifndef HOOKMACROS_INCLUDED
 #define HOOKMACROS_INCLUDED 1
 
+
+#ifdef NDEBUG
+#define DEBUG 0
+#else
+#define DEBUG 1
+#endif
+
+#define TRACEVAR(v) if (DEBUG) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v) - 1), (int64_t)v);
+#define TRACEHEX(v) if (DEBUG) trace((uint32_t)(#v), (uint32_t)(sizeof(#v) - 1), (uint32_t)(v), (uint32_t)(sizeof(v)), 1);
+#define TRACEXFL(v) if (DEBUG) trace_float((uint32_t)(#v), (uint32_t)(sizeof(#v) - 1), (int64_t)v);
+#define TRACESTR(v) if (DEBUG) trace((uint32_t)(#v), (uint32_t)(sizeof(#v) - 1), (uint32_t)(v), sizeof(v), 0);
+
 // hook developers should use this guard macro, simply GUARD(<maximum iterations>)
 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
 #define GUARDM(maxiter, n) _g(( (1ULL << 31U) + (__LINE__ << 16) + n), (maxiter)+1)
@@ -91,11 +103,6 @@ int out_len = 0;\
     (buf)[i] = '\0';\
     out_len += i;\
 }
-
-#define TRACEVAR(v) trace_num((uint32_t)(#v), (uint32_t)(sizeof(#v) - 1), (int64_t)v);
-#define TRACEHEX(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), (uint32_t)(v), (uint32_t)(sizeof(v)), 1);
-#define TRACEXFL(v) trace_float((uint32_t)(#v), (uint32_t)(sizeof(#v)), (int64_t)v);
-#define TRACESTR(v) trace((uint32_t)(#v), (uint32_t)(sizeof(#v)), (uint32_t)(v), sizeof(v), 0);
 
 #define CLEARBUF(b)\
 {\
