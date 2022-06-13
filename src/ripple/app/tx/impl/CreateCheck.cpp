@@ -175,7 +175,17 @@ CreateCheck::doApply()
     // Note that we use the value from the sequence or ticket as the
     // Check sequence.  For more explanation see comments in SeqProxy.h.
     std::uint32_t const seq = ctx_.tx.getSeqProxy().value();
-    Keylet const checkKeylet = keylet::check(account_, seq);
+
+    bool hooksEnabled = ctx_.view().rules().enabled(featureHooks);
+    std::optional<STObject> emitDetails;
+    if (hooksEnabled && ctx_.tx.isFieldPresent(sfEmitDetails))
+        emitDetails = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
+
+    Keylet const checkKeylet = 
+        emitDetails
+            ? keylet::check(account_, (*emitDetails).getFieldH256(sfEmitNonce))
+            : keylet::check(account_, seq);
+
     auto sleCheck = std::make_shared<SLE>(checkKeylet);
 
     sleCheck->setAccountID(sfAccount, account_);
