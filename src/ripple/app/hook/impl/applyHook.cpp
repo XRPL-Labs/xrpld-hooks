@@ -2856,6 +2856,151 @@ DEFINE_HOOK_FUNCTION(
         memory, memory_length);
 }
 
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    hook_namespace,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t aread_ptr, uint32_t aread_len,
+    uint32_t hread_ptr, uint32_t hread_len
+    )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (write_len < 32)
+        return TOO_SMALL;
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    return NOT_IMPLEMENTED;
+/*
+    // check for invalid accid parameter combinations
+    if (aread_ptr == 0 && aread_len == 0)
+    {
+        // valid, asking about own account
+    }
+    else if (aread_ptr != 0 && aread_len == 20)
+    {
+        // valid, asking about another account 
+        if (NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length))
+            return OUT_OF_BOUNDS;
+    }
+    else
+    {
+        // invalid
+        return INVALID_PARAMETERS;
+    }
+
+    // check for invalid hash parameter
+    if (hread_ptr == 0 && hread_len == 0)
+    {
+        // hash not specified
+        if (aread_ptr == 0)
+        {
+            // valid, asking for own hook hash
+        }
+        else
+        {
+            return INVALID_PARAMETERS;
+        }
+    }
+    else
+    if (hread_ptr == 1 && hread_len <= 3)
+    {
+        // valid, they are asking for a hook number
+    }
+    else
+    if (hread_ptr > 1 && hread_len == 32)
+    {
+        // valid, they are asking for a hook hash
+        if (NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length))
+            return OUT_OF_BOUNDS;
+    }
+    else
+    {
+        return INVALID_PARAMETERS;
+    }
+    
+    std::optional<Keylet> kl;
+    if (hread_len == 32 && !(NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length)))
+        kl = Keylet(ltHOOK_DEFINITION, ripple::uint256::fromVoid(memory + hread_ptr));
+
+    std::optional<uint8_t> hookno;
+    if (hread_ptr == 1 && hread_len <= 3)
+        hookno = hread_len;
+
+    std::optional<Account> acc = hookCtx.result.account;
+    if (aread_len == 20 && !(NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length)))
+        acc = ripple::base_uint<160, ripple::detail::AccountIDTag>::fromVoid(memory + aread_ptr);
+
+    assert(kl || hookno);
+
+    // RH UPTO: finish hook_namespace api
+
+    if (!kl)
+    {
+        // special case, asking for self namespace
+        if (aread_ptr == 0)
+        {
+            WRITE_WASM_MEMORY_AND_RETURN(
+                write_ptr, 32,
+                hookCtx.result.hookNamespace.data(), 32,
+                memory, memory_length);
+        }
+
+        if (!hookno)
+            return INVALID_PARAMETERS;
+
+        std::shared_ptr<SLE> hookSLE = applyCtx.view().read(hookCtx.result.);
+        if (!hookSLE || !hookSLE->isFieldPresent(sfHooks))
+            return INTERNAL_ERROR;
+
+        ripple::STArray const& hooks = hookSLE->getFieldArray(sfHooks);
+        if (hook_no >= hooks.size())
+            return DOESNT_EXIST;
+        
+        auto const& hook = hooks[hook_no];
+        if (!hook.isFieldPresent(sfHookHash))
+            return DOESNT_EXIST;
+        }
+
+
+
+    }
+    else
+    if (!kl && acc)
+    {
+    }
+    else
+    if (kl &&
+    {
+    }
+
+
+    
+
+
+    std::shared_ptr<SLE> hookSLE = applyCtx.view().peek(hookCtx.result.hookKeylet);
+    if (!hookSLE || !hookSLE->isFieldPresent(sfHooks))
+        return INTERNAL_ERROR;
+
+    ripple::STArray const& hooks = hookSLE->getFieldArray(sfHooks);
+    if (hook_no >= hooks.size())
+        return DOESNT_EXIST;
+    
+    auto const& hook = hooks[hook_no];
+    if (!hook.isFieldPresent(sfHookHash))
+        return DOESNT_EXIST;
+
+    ripple::uint256 const& hash = hook.getFieldH256(sfHookHash);
+
+    WRITE_WASM_MEMORY_AND_RETURN(
+        write_ptr, write_len,
+        hash.data(), hash.size(),
+        memory, memory_length);
+*/
+}
+
 // Write the account id that the running hook is installed on into write_ptr
 DEFINE_HOOK_FUNCTION(
     int64_t,
