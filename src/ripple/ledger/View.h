@@ -494,6 +494,9 @@ trustAdjustLockedBalance(
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
         return tefINTERNAL;
 
+    if (!sleLine)
+        return tecINTERNAL;
+
     auto const currency = deltaAmt.getCurrency();
     auto const issuer   = deltaAmt.getIssuer();
 
@@ -989,12 +992,12 @@ trustTransferLockedBalance(
         STAmount priorBalance =
             dstHigh ? -((*sleDstLine)[sfBalance]) : (*sleDstLine)[sfBalance];
 
-        STAmount finalBalance = priorBalance + (flipDstAmt ? -dstAmt : dstAmt);
+        STAmount finalBalance = priorBalance + dstAmt;
 
         if (finalBalance < priorBalance)
         {
             JLOG(j.warn())
-                << "trustTransferLockedBalance resulted in a lower final balance on dest line";
+                << "trustTransferLockedBalance resulted in a lower/equal final balance on dest line";
             return tecINTERNAL;
         }
 

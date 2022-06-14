@@ -224,7 +224,7 @@ int out_len = 0;\
 
 
 #define INT64_FROM_BUF(buf)\
-   ((((uint64_t)((buf)[0]&7FU) << 56) +\
+   ((((uint64_t)((buf)[0] & 0x7FU) << 56) +\
      ((uint64_t)((buf)[1]) << 48) +\
      ((uint64_t)((buf)[2]) << 40) +\
      ((uint64_t)((buf)[3]) << 32) +\

@@ -261,6 +261,15 @@ EscrowCreate::doApply()
         // perform the lock as a dry run before
         // we modify anything on-ledger
         sleLine = ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
+        if (!sleLine)
+        {
+            JLOG(ctx_.journal.trace())
+                << "EscrowCreate::doApply trustAdjustLockedBalance trustline missing "
+                << account << "-" 
+                << amount.getIssuer() << "/"
+                << amount.getCurrency(); 
+            return tecUNFUNDED;
+        }
 
         {
             TER result = 
