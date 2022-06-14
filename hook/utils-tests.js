@@ -368,7 +368,7 @@ module.exports = {
                             feeSubmitAccept(genesis.seed, {
                                 Account: genesis.classicAddress,        // fund account from genesis
                                 TransactionType: "Payment",
-                                Amount: "1000000000",
+                                Amount: "100000000000",
                                 Destination: acc,
                             }).then(x=>
                             {
