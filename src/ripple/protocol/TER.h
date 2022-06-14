@@ -293,6 +293,7 @@ enum TECcodes : TERUnderlyingType {
     tecOBJECT_NOT_FOUND = 160,
     tecINSUFFICIENT_PAYMENT = 161,
     tecREQUIRES_FLAG = 162,
+    tecPRECISION_LOSS = 163,
 };
 
 //------------------------------------------------------------------------------

@@ -108,6 +108,8 @@ LedgerFormats::LedgerFormats()
             {sfHighNode,             soeOPTIONAL},
             {sfHighQualityIn,        soeOPTIONAL},
             {sfHighQualityOut,       soeOPTIONAL},
+            {sfLockedBalance,        soeOPTIONAL},
+            {sfLockCount,            soeOPTIONAL},
         },
         commonFields);
 
