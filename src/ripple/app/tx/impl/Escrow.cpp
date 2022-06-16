@@ -475,7 +475,7 @@ EscrowFinish::doApply()
 
     Keylet k =        
         escrowID
-        ? keylet::escrow(ctx_.tx[sfOwner], *escrowID)
+        ? Keylet(ltESCROW, *escrowID)
         : keylet::escrow(ctx_.tx[sfOwner], ctx_.tx[sfOfferSequence]);
 
     auto const slep = ctx_.view().peek(k);
@@ -706,7 +706,7 @@ EscrowCancel::doApply()
 
     Keylet k =        
         escrowID
-        ? keylet::escrow(ctx_.tx[sfOwner], *escrowID)
+        ? Keylet(ltESCROW, *escrowID)
         : keylet::escrow(ctx_.tx[sfOwner], ctx_.tx[sfOfferSequence]);
     
     auto const slep = ctx_.view().peek(k);

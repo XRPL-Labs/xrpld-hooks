@@ -101,7 +101,7 @@ CancelOffer::doApply()
 
     Keylet cancel =
         hooksEnabled && offerID && offerSequence == 0
-            ? keylet::offer(account_, *offerID)
+            ? Keylet(ltOFFER, *offerID)
             : keylet::offer(account_, offerSequence);
 
     if (auto sleOffer = view().peek(cancel))
