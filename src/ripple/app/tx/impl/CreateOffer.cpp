@@ -952,7 +952,7 @@ CreateOffer::applyGuts(Sandbox& sb, Sandbox& sbCancel)
     if (cancelSequence || offerID)
     {
         Keylet cancel = offerID
-            ? keylet::offer(account_, *offerID)
+            ? Keylet(ltOFFER, *offerID)
             : keylet::offer(account_, *cancelSequence);
 
         auto const sleCancel = sb.peek(cancel);
@@ -1163,15 +1163,8 @@ CreateOffer::applyGuts(Sandbox& sb, Sandbox& sbCancel)
         }
     }
 
-    std::optional<STObject> emitDetails;
-    if (hooksEnabled && ctx_.tx.isFieldPresent(sfEmitDetails))
-        emitDetails = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
-
     // We need to place the remainder of the offer into its order book.
-    Keylet offer_index = 
-        emitDetails 
-            ? keylet::offer(account_, (*emitDetails).getFieldH256(sfEmitNonce))
-            : keylet::offer(account_, offerSequence);
+    Keylet offer_index = keylet::offer(account_, seqID(ctx_)); 
 
     // Add offer to owner's directory.
     auto const ownerNode = sb.dirInsert(

@@ -174,15 +174,7 @@ NFTokenCreateOffer::doApply()
 
     auto const nftokenID = ctx_.tx[sfNFTokenID];
 
-    bool hooksEnabled = ctx_.view().rules().enabled(featureHooks);
-    std::optional<STObject> emitDetails;
-    if (hooksEnabled && ctx_.tx.isFieldPresent(sfEmitDetails))
-        emitDetails = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
-
-    Keylet const offerID =
-        emitDetails
-            ? keylet::nftoffer(account_, (*emitDetails).getFieldH256(sfEmitNonce))
-            : keylet::nftoffer(account_, ctx_.tx.getSeqProxy().value());
+    Keylet const offerID = keylet::nftoffer(account_, seqID(ctx_));
 
     // Create the offer:
     {

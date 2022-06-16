@@ -3035,11 +3035,21 @@ DEFINE_HOOK_FUNCTION(
     if (hookCtx.emit_nonce_counter > hook_api::max_nonce)
         return TOO_MANY_NONCES;
 
+
+    // in some cases the same hook might execute multiple times
+    // on one txn, therefore we need to pass this information to the nonce
+    uint32_t flags = 0;
+    flags |= hookCtx.result.isStrong    ? 0b10U: 0;
+    flags |= hookCtx.result.isCallback  ? 0b01U: 0;
+    flags |= (hookCtx.result.hookChainPosition << 2U);
+
     auto hash = ripple::sha512Half(
             ripple::HashPrefix::emitTxnNonce,
             applyCtx.tx.getTransactionID(),
             hookCtx.emit_nonce_counter++,
-            hookCtx.result.account
+            hookCtx.result.account,
+            hookCtx.result.hookHash,
+            flags
     );
 
     hookCtx.nonce_used[hash] = true;

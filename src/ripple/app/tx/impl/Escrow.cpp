@@ -231,8 +231,12 @@ EscrowCreate::doApply()
         return tecINSUFFICIENT_RESERVE;
 
     // Check reserve and funds availability
-    if (isXRP(amount) && balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
-        return tecUNFUNDED;
+    if (isXRP(amount))
+    {
+        if (balance < reserve + STAmount(ctx_.tx[sfAmount]).xrp())
+            return tecUNFUNDED;
+        // pass
+    }
     else
     {
         // preflight will prevent this ever firing, included
@@ -310,15 +314,7 @@ EscrowCreate::doApply()
     // Create escrow in ledger.  Note that we we use the value from the
     // sequence or ticket.  For more explanation see comments in SeqProxy.h.
     
-    bool hooksEnabled = ctx_.view().rules().enabled(featureHooks);
-    std::optional<STObject> emitDetails;
-    if (hooksEnabled && ctx_.tx.isFieldPresent(sfEmitDetails))
-        emitDetails = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
-
-    Keylet const escrowKeylet =
-        emitDetails
-            ? keylet::escrow(account, (*emitDetails).getFieldH256(sfEmitNonce))
-            : keylet::escrow(account, ctx_.tx.getSeqProxy().value());
+    Keylet const escrowKeylet = keylet::escrow(account, seqID(ctx_));
 
     auto const slep = std::make_shared<SLE>(escrowKeylet);
     (*slep)[sfAmount] = ctx_.tx[sfAmount];

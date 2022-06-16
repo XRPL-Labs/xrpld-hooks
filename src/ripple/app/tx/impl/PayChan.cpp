@@ -362,15 +362,8 @@ PayChanCreate::doApply()
     //
     // Note that we we use the value from the sequence or ticket as the
     // payChan sequence.  For more explanation see comments in SeqProxy.h.
-    bool hooksEnabled = ctx_.view().rules().enabled(featureHooks);
-    std::optional<STObject> emitDetails;
-    if (hooksEnabled && ctx_.tx.isFieldPresent(sfEmitDetails))
-        emitDetails = const_cast<ripple::STTx&>(ctx_.tx).getField(sfEmitDetails).downcast<STObject>();
 
-    Keylet const payChanKeylet =
-        emitDetails
-            ? keylet::payChan(account, dst, (*emitDetails).getFieldH256(sfEmitNonce))
-            : keylet::payChan(account, dst, ctx_.tx.getSeqProxy().value());
+    Keylet const payChanKeylet = keylet::payChan(account, dst, seqID(ctx_));
 
     auto const slep = std::make_shared<SLE>(payChanKeylet);
 
