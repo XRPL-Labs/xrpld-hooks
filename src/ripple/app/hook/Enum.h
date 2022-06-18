@@ -316,6 +316,7 @@ namespace hook_api
         "hook_param_set",
         "hook_skip",
         "hook_again",
+        "hook_namespace",
         "meta_slot"
     };
 };

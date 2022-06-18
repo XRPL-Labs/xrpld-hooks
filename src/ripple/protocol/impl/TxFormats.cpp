@@ -78,6 +78,7 @@ TxFormats::TxFormats()
             {sfTakerGets, soeREQUIRED},
             {sfExpiration, soeOPTIONAL},
             {sfOfferSequence, soeOPTIONAL},
+            {sfOfferID, soeOPTIONAL},              // keylet as alternative to offerseq
             {sfTicketSequence, soeOPTIONAL},
         },
         commonFields);
@@ -86,6 +87,7 @@ TxFormats::TxFormats()
         ttOFFER_CANCEL,
         {
             {sfOfferSequence, soeREQUIRED},
+            {sfOfferID, soeOPTIONAL},              // keylet as alternative to offerseq
             {sfTicketSequence, soeOPTIONAL},
         },
         commonFields);
@@ -130,6 +132,7 @@ TxFormats::TxFormats()
         {
             {sfOwner, soeREQUIRED},
             {sfOfferSequence, soeREQUIRED},
+            {sfEscrowID, soeOPTIONAL},              // keylet as alternative to offerseq
             {sfFulfillment, soeOPTIONAL},
             {sfCondition, soeOPTIONAL},
             {sfTicketSequence, soeOPTIONAL},
@@ -141,6 +144,7 @@ TxFormats::TxFormats()
         {
             {sfOwner, soeREQUIRED},
             {sfOfferSequence, soeREQUIRED},
+            {sfEscrowID, soeOPTIONAL},              // keylet as alternative to offerseq
             {sfTicketSequence, soeOPTIONAL},
         },
         commonFields);

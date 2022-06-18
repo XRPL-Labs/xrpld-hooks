@@ -20,13 +20,14 @@
 #ifndef RIPPLE_APP_TX_TRANSACTOR_H_INCLUDED
 #define RIPPLE_APP_TX_TRANSACTOR_H_INCLUDED
 
-#include <ripple/app/hook/applyHook.h> 
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/app/tx/applySteps.h>
 #include <ripple/app/tx/impl/ApplyContext.h>
 #include <ripple/basics/XRPAmount.h>
 #include <ripple/beast/utility/Journal.h>
 #include <ripple/ledger/PaymentSandbox.h>
 #include <ripple/ledger/detail/ApplyViewBase.h>
+#include <variant>
 
 namespace hook {
     // RH TODO: fix applyHook.h so this prototype isn't needed
@@ -186,7 +187,7 @@ public:
     // Hooks
 
     static FeeUnit64
-    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet, 
+    calculateHookChainFee(ReadView const& view, STTx const& tx, Keylet const& hookKeylet,
             bool collectCallsOnly = false);
 
 protected:
@@ -225,8 +226,8 @@ protected:
 
 
     void
-    addWeakTSHFromSandbox(detail::ApplyViewBase const& pv); 
-    
+    addWeakTSHFromSandbox(detail::ApplyViewBase const& pv);
+
     // hooks amendment fields, these are unpopulated and unused unless featureHooks is enabled
     int executedHookCount_ = 0;              // record how many hooks have executed across the whole transactor
     std::set<AccountID> additionalWeakTSH_;  // any TSH that needs weak hook execution at the end
@@ -288,6 +289,18 @@ preflight1(PreflightContext const& ctx);
 /** Checks whether the signature appears valid */
 NotTEC
 preflight2(PreflightContext const& ctx);
+
+template<class C>
+inline
+static
+std::variant<uint32_t, uint256>
+seqID(C const& ctx_)
+{
+    if (ctx_.view().rules().enabled(featureHooks) && ctx_.tx.isFieldPresent(sfEmitDetails))
+        return ctx_.tx.getTransactionID();
+
+    return ctx_.tx.getSeqProxy().value();
+}
 
 }  // namespace ripple
 

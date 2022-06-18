@@ -156,6 +156,9 @@ namespace hook_api
 
     DECLARE_HOOK_FUNCTION(int64_t,	hook_account,       uint32_t write_ptr, uint32_t write_len );
     DECLARE_HOOK_FUNCTION(int64_t,	hook_hash,          uint32_t write_ptr, uint32_t write_len, int32_t hook_no );
+    DECLARE_HOOK_FUNCTION(int64_t,  hook_namespace,     uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t aread_ptr, uint32_t aread_len,
+                                                        uint32_t hread_ptr, uint32_t hread_len);
     DECLARE_HOOK_FUNCNARG(int64_t,	fee_base            );
     DECLARE_HOOK_FUNCNARG(int64_t,	ledger_seq          );
     DECLARE_HOOK_FUNCNARG(int64_t,  ledger_last_time    );
@@ -592,6 +595,7 @@ namespace hook
             ADD_HOOK_FUNCTION(hook_param_set, ctx);
             ADD_HOOK_FUNCTION(hook_skip, ctx);
             ADD_HOOK_FUNCTION(hook_pos, ctx);
+            ADD_HOOK_FUNCTION(hook_namespace, ctx);
 
             ADD_HOOK_FUNCTION(state, ctx);
             ADD_HOOK_FUNCTION(state_foreign, ctx);
