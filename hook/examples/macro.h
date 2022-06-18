@@ -524,7 +524,26 @@ int out_len = 0;\
 #define _02_42_ENCODE_NFTOKEN_TAXON(buf_out, taxon )\
     ENCODE_NFTOKEN_TAXON(buf_out, taxon );
 
-// VL COMMON
+// VL UNUNCOMMON
+#define ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, field, field2, field3)\
+    {\
+        buf_out[0] = 0x75U;\
+        buf_out[1] = field;\
+        buf_out[2] = field2;\
+        buf_out[3] = field3;\
+        *(uint64_t*)(buf_out +  2) = *(uint64_t*)(vl +  0);\
+        *(uint64_t*)(buf_out + 10) = *(uint64_t*)(vl +  8);\
+        *(uint64_t*)(buf_out + 18) = *(uint64_t*)(vl + 16);\
+        *(uint64_t*)(buf_out + 26) = *(uint64_t*)(vl + 24);\
+        *(uint64_t*)(buf_out + 34) = *(uint64_t*)(vl + 32);\
+        *(uint64_t*)(buf_out + 42) = *(uint64_t*)(vl + 40);\
+        *(uint64_t*)(buf_out + 50) = *(uint64_t*)(vl + 48);\
+        buf_out += vl_len;\
+    }
+#define _07_XX_ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, field, field2, field3)\
+    ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, field, field2, field3)\
+
+// VL UNCOMMON
 #define ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, field, field2)\
     {\
         buf_out[0] = 0x75U;\
@@ -542,6 +561,7 @@ int out_len = 0;\
 #define _07_XX_ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, field, field2)\
     ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, field, field2)\
 
+// VL COMMON
 #define ENCODE_VL_COMMON(buf_out, vl, vl_len)\
     {\
         buf_out[0] = 0x75U;\
@@ -559,17 +579,22 @@ int out_len = 0;\
     ENCODE_VL_COMMON(buf_out, vl, vl_len)\
 
 // URI
-// TODO: There are 3 outcomes.
-// #define ENCODE_URI_SIZE ?
+// URI_SIZE is included in the macro.
 #define ENCODE_URI(buf_out, vl, vl_len) \
-    if (vl_len <= 192) {\
+    if (vl_len <= 193) {\
         ENCODE_VL_COMMON(buf_out, vl, vl_len);\
     }\
     else if (vl_len <= 12480) {\
         vl_len -= 193;\
         int byte1 = (vl_len >> 8) + 193;\
         int byte2 = vl_len & 0xFFU;\
-        ENCODE_VL_UNCOMMON(buf_out, vl, byte1, byte2, vl_len);\
+        ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, byte1, byte2);\
+    else if (vl_len <= 918744) {\
+        vl_len -= 12481;\
+        int byte1 = 241 + (vl_len >> 16);\
+        int byte2 = (vl_len >> 8) & 0xFFU;\
+        int byte3 = vl_len & 0xFFU;\
+        ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, byte1, byte2, byte3);\
     }
 #define _07_05_ENCODE_URI(buf_out, vl, vl_len)\
     ENCODE_URI(buf_out, vl, vl_len);
@@ -711,10 +736,15 @@ int out_len = 0;\
         _06_08_ENCODE_DROPS_FEE            (fee_ptr, fee                            );                               \
     }
 
+
 // NFT MINT
 // NOTE: Transfer Fee DNE
 // NOTE: Issuer DNE
-#define PREPARE_NFT_MINT_SIMPLE_SIZE 235U // 97 + 116
+#ifdef HAS_CALLBACK
+#define PREPARE_NFT_MINT_SIMPLE_SIZE 235U // 97 + 116 + 22
+#else
+#define PREPARE_NFT_MINT_SIMPLE_SIZE 213U // 97 + 116 + 22
+#endif
 #define PREPARE_NFT_MINT_SIMPLE(buf_out_master, flags, taxon, uri, uri_len) \
 {                                                                                            \
     uint8_t *buf_out = buf_out_master;                                                       \
@@ -738,7 +768,11 @@ int out_len = 0;\
 // NFT SELL OFFER
 // NOTE: Destination DNE
 // NOTE: Expiration DNE
+#ifdef HAS_CALLBACK
 #define PREPARE_NFT_CREATE_OFFER_SELL_SIZE 271U // 133 + 116 + 22
+#else
+#define PREPARE_NFT_CREATE_OFFER_SELL_SIZE 249U // 97 + 116 + 22
+#endif
 #define PREPARE_NFT_CREATE_OFFER_SELL(\
     buf_out_master,\
     flags,\
