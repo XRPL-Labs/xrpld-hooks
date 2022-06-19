@@ -644,24 +644,41 @@ int out_len = 0;\
 
 // NEXT NFT ID
 // TODO: Fix buf_out[1] => The flags should be 2 bytes. I think I pass in only 1
-#define GET_NEXT_NFT_ID_SIZE 33U
+#define GET_NEXT_NFT_ID_SIZE 32U
 #define GET_NEXT_NFT_ID(buf_out, flags, fee, hook_accid, taxon, sequence)\
     {\
-        (buf_out)[1] = 0x00;\
-        (buf_out)[2] = flags;\
-        (buf_out)[3] = (fee)[0];\
-        (buf_out)[4] = (fee)[1];\
-        *(uint64_t*)(buf_out +  2) = *(uint64_t*)(hook_accid +  0);\
-        *(uint64_t*)(buf_out + 10) = *(uint64_t*)(hook_accid +  8);\
-        *(uint32_t*)(buf_out + 18) = *(uint32_t*)(hook_accid + 16);\
-        (buf_out)[25] = ((taxon) >> 24) & 0xFFU;\
-        (buf_out)[26] = ((taxon) >> 16) & 0xFFU;\
-        (buf_out)[27] = ((taxon) >> 8) & 0xFFU;\
-        (buf_out)[28] = ((taxon) >> 0) & 0xFFU;\
-        (buf_out)[29] = ((sequence) >> 24) & 0xFFU;\
-        (buf_out)[30] = ((sequence) >> 16) & 0xFFU;\
-        (buf_out)[31] = ((sequence) >> 8) & 0xFFU;\
-        (buf_out)[32] = ((sequence) >> 0) & 0xFFU;\
+        (buf_out)[0] = 0x00;\
+        (buf_out)[1] = flags;\
+        (buf_out)[2] = (fee)[0];\
+        (buf_out)[3] = (fee)[1];\
+        (buf_out)[4] = (hook_accid)[0];\
+        (buf_out)[5] = (hook_accid)[1];\
+        (buf_out)[6] = (hook_accid)[2];\
+        (buf_out)[7] = (hook_accid)[3];\
+        (buf_out)[8] = (hook_accid)[4];\
+        (buf_out)[9] = (hook_accid)[5];\
+        (buf_out)[10] = (hook_accid)[6];\
+        (buf_out)[11] = (hook_accid)[7];\
+        (buf_out)[12] = (hook_accid)[8];\
+        (buf_out)[13] = (hook_accid)[9];\
+        (buf_out)[14] = (hook_accid)[10];\
+        (buf_out)[15] = (hook_accid)[11];\
+        (buf_out)[16] = (hook_accid)[12];\
+        (buf_out)[17] = (hook_accid)[13];\
+        (buf_out)[18] = (hook_accid)[14];\
+        (buf_out)[29] = (hook_accid)[15];\
+        (buf_out)[30] = (hook_accid)[16];\
+        (buf_out)[21] = (hook_accid)[17];\
+        (buf_out)[22] = (hook_accid)[18];\
+        (buf_out)[23] = (hook_accid)[19];\
+        (buf_out)[24] = ((taxon) >> 24) & 0xFFU;\
+        (buf_out)[25] = ((taxon) >> 16) & 0xFFU;\
+        (buf_out)[26] = ((taxon) >> 8) & 0xFFU;\
+        (buf_out)[27] = ((taxon) >> 0) & 0xFFU;\
+        (buf_out)[28] = ((sequence) >> 24) & 0xFFU;\
+        (buf_out)[29] = ((sequence) >> 16) & 0xFFU;\
+        (buf_out)[30] = ((sequence) >> 8) & 0xFFU;\
+        (buf_out)[31] = ((sequence) >> 0) & 0xFFU;\
         (buf_out) += GET_NEXT_NFT_ID_SIZE;\
     }
 
