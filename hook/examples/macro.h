@@ -595,9 +595,11 @@ int out_len = 0;\
         int byte2 = (vl_len >> 8) & 0xFFU;\
         int byte3 = vl_len & 0xFFU;\
         ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, byte1, byte2, byte3);\
-    }
+
 #define _07_05_ENCODE_URI(buf_out, vl, vl_len)\
     ENCODE_URI(buf_out, vl, vl_len);
+
+    
 
 // HASH256 COMMON
 #define ENCODE_HASH256_COMMON_SIZE 33U
@@ -627,7 +629,7 @@ int out_len = 0;\
         (buf_out)[20] = i[19]; \
         (buf_out)[21] = i[20]; \
         (buf_out)[22] = i[21]; \
-        (buf_out)[23] = i[21]; \
+        (buf_out)[23] = i[22]; \
         (buf_out)[24] = i[23]; \
         (buf_out)[25] = i[24]; \
         (buf_out)[26] = i[25]; \
@@ -666,8 +668,8 @@ int out_len = 0;\
         (buf_out)[16] = (hook_accid)[12];\
         (buf_out)[17] = (hook_accid)[13];\
         (buf_out)[18] = (hook_accid)[14];\
-        (buf_out)[29] = (hook_accid)[15];\
-        (buf_out)[30] = (hook_accid)[16];\
+        (buf_out)[19] = (hook_accid)[15];\
+        (buf_out)[20] = (hook_accid)[16];\
         (buf_out)[21] = (hook_accid)[17];\
         (buf_out)[22] = (hook_accid)[18];\
         (buf_out)[23] = (hook_accid)[19];\
