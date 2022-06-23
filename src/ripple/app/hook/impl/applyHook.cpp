@@ -932,13 +932,9 @@ lookup_state_cache(
     if (stateMap.find(acc) == stateMap.end())
         return std::nullopt;
 
-    printf("here1\n");
-
-    auto& stateMapAcc = stateMap[acc];
+    auto& stateMapAcc = stateMap[acc].second;
     if (stateMapAcc.find(ns) == stateMapAcc.end())
         return std::nullopt;
-    
-    printf("here2\n");
 
     auto& stateMapNs = stateMapAcc[ns];
 
@@ -947,8 +943,6 @@ lookup_state_cache(
     if (ret == stateMapNs.end())
         return std::nullopt;
     
-    printf("here3\n");
-
     return std::cref(ret->second);
 }
 
@@ -957,41 +951,77 @@ lookup_state_cache(
 // RH TODO: add an accumulator for newly reserved state to the state map so canReserveNew can be computed
 // correctly when more than one new state is reserved.
 inline
-bool                                    // true unless a new hook state was required and canReserveNew = false
+bool                                    // true unless a new hook state was required and the acc has insufficent reserve
 set_state_cache(
         hook::HookContext& hookCtx,
         ripple::AccountID const& acc,
         ripple::uint256 const& ns,
         ripple::uint256 const& key,
         ripple::Blob& data,
-        bool modified,
-        bool canReserveNew)             // true iff there's sufficient xrp to reserve a new hook state
+        bool modified)
 {
 
     auto& stateMap = hookCtx.result.stateMap;
     if (stateMap.find(acc) == stateMap.end())
     {
-        if (modified && !canReserveNew)
+
+        // if this is the first time this account has been interacted with
+        // we will compute how many available reserve positions there are
+        auto const& fees = hookCtx.applyCtx.view().fees();
+
+        auto const accSLE = hookCtx.applyCtx.view().read(ripple::keylet::account(acc));
+        if (!accSLE)
             return false;
 
+        STAmount bal = accSLE->getFieldAmount(sfBalance);
+
+        int64_t availableForReserves =
+            bal.xrp().drops() - fees.accountReserve(accSLE->getFieldU32(sfOwnerCount)).drops();
+
+        int64_t increment = fees.increment.drops();
+
+        if (increment <= 0)
+            increment = 1;
+
+        availableForReserves /= increment;
+
+        if (availableForReserves < 1 && modified)
+            return false;
+        
         stateMap[acc] =
         {
-            { ns,
+            availableForReserves - 1,
+            {
                 {
-                      { key,
-                                 { modified, data }
-                      }
+                    ns,
+                    {
+                        {
+                            key,
+                            {
+                               modified,
+                               data
+                            }
+                        }
+                    }
                 }
             }
         };
         return true;
     }
 
-    auto& stateMapAcc = stateMap[acc];
+    auto& stateMapAcc = stateMap[acc].second;
+    auto& availableForReserves = stateMap[acc].first;
+    bool const canReserveNew = 
+        availableForReserves > 0;
+
     if (stateMapAcc.find(ns) == stateMapAcc.end())
     {
-        if (modified && !canReserveNew)
-            return false;
+        if (modified)
+        {   
+            if (!canReserveNew)
+                return false;
+            availableForReserves--;
+        }
 
         stateMapAcc[ns] =
         {
@@ -999,14 +1029,19 @@ set_state_cache(
                        { modified, data }
             }
         };
+
         return true;
     }
 
     auto& stateMapNs = stateMapAcc[ns];
     if (stateMapNs.find(key) == stateMapNs.end())
     {
-        if (modified && !canReserveNew)
-            return false;
+        if (modified)
+        {   
+            if (!canReserveNew)
+                return false;
+            availableForReserves--;
+        }
 
         stateMapNs[key] = { modified, data };
         hookCtx.result.changedStateCount++;
@@ -1104,22 +1139,10 @@ DEFINE_HOOK_FUNCTION(
 
     ripple::Blob data {memory + read_ptr,  memory + read_ptr + read_len};
 
-
-    bool canReserveNew = false;
-    {
-        auto const accSLE = view.read(ripple::keylet::account(acc));
-        if (!accSLE)
-            return INVALID_ACCOUNT;
-
-        STAmount bal = accSLE->getFieldAmount(sfBalance);
-        uint32_t oldOwnerCount = accSLE->getFieldU32(sfOwnerCount);
-        canReserveNew = (bal >= view.fees().accountReserve(oldOwnerCount + 1));
-    }
-
     // local modifications are always allowed
     if (aread_len == 0 || acc == hookCtx.result.account)
     {
-        if (!set_state_cache(hookCtx, acc, ns, *key, data, true, canReserveNew))
+        if (!set_state_cache(hookCtx, acc, ns, *key, data, true))
             return RESERVE_INSUFFICIENT;
 
         return read_len;
@@ -1134,7 +1157,7 @@ DEFINE_HOOK_FUNCTION(
     if (cacheEntry && cacheEntry->get().first)
     {
         // if a cache entry already exists and it has already been modified don't check grants again
-        if (!set_state_cache(hookCtx, acc, ns, *key, data, true, canReserveNew))
+        if (!set_state_cache(hookCtx, acc, ns, *key, data, true))
             return RESERVE_INSUFFICIENT;
 
         return read_len;
@@ -1200,7 +1223,7 @@ DEFINE_HOOK_FUNCTION(
             ns,
             *key,
             data,
-            true, canReserveNew))
+            true))
         return RESERVE_INSUFFICIENT;
 
     return read_len;
@@ -1221,7 +1244,7 @@ finalizeHookState(
     for (const auto& accEntry : stateMap)
     {
         const auto& acc = accEntry.first;
-        for (const auto& nsEntry : accEntry.second)
+        for (const auto& nsEntry : accEntry.second.second)
         {
             const auto& ns = nsEntry.first;
             for (const auto& cacheEntry : nsEntry.second)
@@ -1528,7 +1551,7 @@ DEFINE_HOOK_FUNCTION(
     Blob b = hsSLE->getFieldVL(sfHookStateData);
 
     // it exists add it to cache and return it
-    if (!set_state_cache(hookCtx, acc, ns, *key, b, false, false))
+    if (!set_state_cache(hookCtx, acc, ns, *key, b, false))
         return INTERNAL_ERROR; // should never happen
 
     if (write_ptr == 0)
@@ -2795,7 +2818,17 @@ DEFINE_HOOK_FUNCTION(
             << "HookEmit[" << HC_ACC() << "]: tpTrans->getStatus() != NEW";
         return EMISSION_FAILURE;
     }
+/*
+    auto preflightResult = 
+        ripple::preflight(applyCtx.app, applyCtx.view().rules(), *stpTrans, ripple::ApplyFlags::tapNONE, j);
 
+    if (preflightResult.ter != tesSUCCESS)
+    {
+        JLOG(j.trace())
+            << "HookEmit[" << HC_ACC() << "]: Transaction preflight failure: " << preflightResult.ter;
+        return EMISSION_FAILURE;
+    }
+*/
     hookCtx.result.emittedTxn.push(tpTrans);
 
     auto const& txID =
