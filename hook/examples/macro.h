@@ -524,6 +524,10 @@ int out_len = 0;\
 #define _02_42_ENCODE_NFTOKEN_TAXON(buf_out, taxon )\
     ENCODE_NFTOKEN_TAXON(buf_out, taxon );
 
+#define COPY_BUFM(lhsbuf, lhsbuf_spos, rhsbuf, rhsbuf_spos, len, n) \
+    for (int i = 0; GUARDM(len, n), i < len; ++i)                   \
+        lhsbuf[lhsbuf_spos + i] = rhsbuf[rhsbuf_spos + i];
+
 // VL UNUNCOMMON
 #define ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, field, field2, field3)\
     {\
@@ -531,13 +535,8 @@ int out_len = 0;\
         buf_out[1] = field;\
         buf_out[2] = field2;\
         buf_out[3] = field3;\
-        *(uint64_t*)(buf_out +  2) = *(uint64_t*)(vl +  0);\
-        *(uint64_t*)(buf_out + 10) = *(uint64_t*)(vl +  8);\
-        *(uint64_t*)(buf_out + 18) = *(uint64_t*)(vl + 16);\
-        *(uint64_t*)(buf_out + 26) = *(uint64_t*)(vl + 24);\
-        *(uint64_t*)(buf_out + 34) = *(uint64_t*)(vl + 32);\
-        *(uint64_t*)(buf_out + 42) = *(uint64_t*)(vl + 40);\
-        *(uint64_t*)(buf_out + 50) = *(uint64_t*)(vl + 48);\
+        uint8_t *ptr = (uint8_t *)&vl;\
+        COPY_BUFM(buf_out, 4, ptr, 0, vl_len, vl_len);\
         buf_out += vl_len;\
     }
 #define _07_XX_ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, field, field2, field3)\
@@ -549,13 +548,8 @@ int out_len = 0;\
         buf_out[0] = 0x75U;\
         buf_out[1] = field;\
         buf_out[2] = field2;\
-        *(uint64_t*)(buf_out +  2) = *(uint64_t*)(vl +  0);\
-        *(uint64_t*)(buf_out + 10) = *(uint64_t*)(vl +  8);\
-        *(uint64_t*)(buf_out + 18) = *(uint64_t*)(vl + 16);\
-        *(uint64_t*)(buf_out + 26) = *(uint64_t*)(vl + 24);\
-        *(uint64_t*)(buf_out + 34) = *(uint64_t*)(vl + 32);\
-        *(uint64_t*)(buf_out + 42) = *(uint64_t*)(vl + 40);\
-        *(uint64_t*)(buf_out + 50) = *(uint64_t*)(vl + 48);\
+        uint8_t *ptr = (uint8_t *)&vl;\
+        COPY_BUFM(buf_out, 3, ptr, 0, vl_len, vl_len);\
         buf_out += vl_len;\
     }
 #define _07_XX_ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, field, field2)\
@@ -566,13 +560,8 @@ int out_len = 0;\
     {\
         buf_out[0] = 0x75U;\
         buf_out[1] = vl_len;\
-        *(uint64_t*)(buf_out +  2) = *(uint64_t*)(vl +  0);\
-        *(uint64_t*)(buf_out + 10) = *(uint64_t*)(vl +  8);\
-        *(uint64_t*)(buf_out + 18) = *(uint64_t*)(vl + 16);\
-        *(uint64_t*)(buf_out + 26) = *(uint64_t*)(vl + 24);\
-        *(uint64_t*)(buf_out + 34) = *(uint64_t*)(vl + 32);\
-        *(uint64_t*)(buf_out + 42) = *(uint64_t*)(vl + 40);\
-        *(uint64_t*)(buf_out + 50) = *(uint64_t*)(vl + 48);\
+        uint8_t *ptr = (uint8_t *)&vl;\
+        COPY_BUFM(buf_out, 2, ptr, 0, vl_len, vl_len);\
         buf_out += vl_len;\
     }
 #define _07_XX_ENCODE_VL_COMMON(buf_out, vl, vl_len)\
@@ -589,16 +578,17 @@ int out_len = 0;\
         int byte1 = (vl_len >> 8) + 193;\
         int byte2 = vl_len & 0xFFU;\
         ENCODE_VL_UNCOMMON(buf_out, vl, vl_len, byte1, byte2);\
+    }\
     else if (vl_len <= 918744) {\
         vl_len -= 12481;\
         int byte1 = 241 + (vl_len >> 16);\
         int byte2 = (vl_len >> 8) & 0xFFU;\
         int byte3 = vl_len & 0xFFU;\
         ENCODE_VL_UNUNCOMMON(buf_out, vl, vl_len, byte1, byte2, byte3);\
+    }
 
 #define _07_05_ENCODE_URI(buf_out, vl, vl_len)\
     ENCODE_URI(buf_out, vl, vl_len);
-
     
 
 // HASH256 COMMON
