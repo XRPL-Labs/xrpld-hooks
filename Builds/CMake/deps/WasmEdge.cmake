@@ -3,6 +3,9 @@
 #]===================================================================]
 
 if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion build
+  find_package(LLVM REQUIRED CONFIG)
+  message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
+  message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")    
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(OLD_DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
     set(CMAKE_DEBUG_POSTFIX _d)
@@ -20,6 +23,8 @@ if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion bu
     -DWASMEDGE_BUILD_SHARED_LIB=OFF
     -DWASMEDGE_BUILD_STATIC_LIB=ON
     -DWASMEDGE_BUILD_AOT_RUNTIME=ON
+    -DLLVM_DIR=${LLVM_DIR}
+    -DLLVM_LIBRARY_DIR=${LLVM_LIBRARY_DIR}
     $<$<NOT:$<BOOL:${is_multiconfig}>>:-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}>
     $<$<BOOL:${MSVC}>:
       "-DCMAKE_C_FLAGS=-GR -Gd -fp:precise -FS -MP"
