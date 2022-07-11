@@ -4050,7 +4050,7 @@ inline int64_t mulratio_internal
     }
     catch (std::overflow_error& e)
     {
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
     }
 }
 
@@ -4084,7 +4084,7 @@ inline int64_t float_multiply_internal_parts(
     while (man_lo > maxMantissa)
     {
         if (exp_out > maxExponent)
-            return OVERFLOW;
+            return OVERFLOW_FLOAT;
         man_lo /= 10;
         exp_out++;
     }
@@ -4096,11 +4096,11 @@ inline int64_t float_multiply_internal_parts(
     {
         man_shifted -=32;
         if (mulratio_internal(man_out, exp_out, false, 0xFFFFFFFFU, 1) < 0)
-            return OVERFLOW;
+            return OVERFLOW_FLOAT;
     }
 
     if (mulratio_internal(man_out, exp_out, false, 1U << man_shifted, 1) < 0)
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
 
     // now we have our product
     return make_float(man_out, exp_out);
@@ -4136,7 +4136,7 @@ DEFINE_HOOK_FUNCTION(
     }
 
     if (exp1 > dp)
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
 
     while (exp1 < dp && man1 > 0)
     {
@@ -4195,7 +4195,7 @@ DEFINE_HOOK_FUNCTION(
     int32_t exp1 = get_exponent(float1);
 
     if (mulratio_internal(man1, exp1, round_up > 0, numerator, denominator) < 0)
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
 
     return make_float(man1, exp1);
 }
@@ -4251,7 +4251,7 @@ DEFINE_HOOK_FUNCTION(
     }
     catch (std::overflow_error& e)
     {
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
     }
 
 }
@@ -4281,7 +4281,7 @@ DEFINE_HOOK_FUNCTION(
     }
     catch (std::overflow_error& e)
     {
-        return OVERFLOW;
+        return OVERFLOW_FLOAT;
     }
 }
 
