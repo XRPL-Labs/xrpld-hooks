@@ -17,6 +17,9 @@ if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion bu
     -DCMAKE_C_COMPILER=${CMAKE_C_COMPILER}
     $<$<BOOL:${CMAKE_VERBOSE_MAKEFILE}>:-DCMAKE_VERBOSE_MAKEFILE=ON>
     -DCMAKE_DEBUG_POSTFIX=_d
+    -DWASMEDGE_BUILD_SHARED_LIB=OFF
+    -DWASMEDGE_BUILD_STATIC_LIB=ON
+    -DWASMEDGE_BUILD_AOT_RUNTIME=ON
     $<$<NOT:$<BOOL:${is_multiconfig}>>:-DCMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}>
     $<$<BOOL:${MSVC}>:
       "-DCMAKE_C_FLAGS=-GR -Gd -fp:precise -FS -MP"
@@ -33,7 +36,7 @@ if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion bu
     TEST_COMMAND ""
     INSTALL_COMMAND ""
     BUILD_BYPRODUCTS
-      <BINARY_DIR>/lib/api/libwasmedge_c_${CMAKE_DEBUG_POSTFIX}.so
+        <BINARY_DIR>/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.a
   )
   ExternalProject_Get_Property (wasmedge_src BINARY_DIR)
   set (wasmedge_src_BINARY_DIR "${BINARY_DIR}")
@@ -44,7 +47,7 @@ if (is_root_project) # WasmEdge not needed in the case of xrpl_core inclusion bu
       Boost::thread
       Boost::system)
   target_link_libraries (wasmedge INTERFACE
-      "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.so")
+      "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.a")
   target_link_libraries (ripple_libs INTERFACE wasmedge)
   if (CMAKE_BUILD_TYPE STREQUAL "Debug")
     set(CMAKE_DEBUG_POSTFIX ${OLD_DEBUG_POSTFIX})
