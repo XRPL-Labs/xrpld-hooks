@@ -477,7 +477,6 @@ Transactor::consumeSeqProxy(SLE::pointer const& sleAccount)
 {
     assert(sleAccount);
 
-    // RH TODO: determine what interactions between hooks and tickets might cause issues
     // do not update sequence of sfAccountTxnID for emitted tx
     if (ctx_.emitted()) 
         return tesSUCCESS;

@@ -29,13 +29,6 @@
 #include <ripple/ledger/detail/ApplyViewBase.h>
 #include <variant>
 
-namespace hook {
-    // RH TODO: fix applyHook.h so this prototype isn't needed
-    struct HookContext;
-    struct HookResult;
-    bool isEmittedTxn(ripple::STTx const& tx);
-}
-
 namespace ripple {
 
 /** State information when preflighting a tx. */

@@ -28,12 +28,14 @@ namespace hook
     // only upon tesSuccess for the otxn.
     using HookStateMap =
         std::map<
-            ripple::AccountID,             // account that owns the state
-            std::map<ripple::uint256,      // namespace
-            std::map<ripple::uint256,      // key
+            ripple::AccountID,                  // account that owns the state
             std::pair<
-                bool,                      // is modified from ledger value
-                ripple::Blob>>>>;          // the value
+                int64_t,                        // remaining available ownercount
+                std::map<ripple::uint256,       // namespace
+                std::map<ripple::uint256,       // key
+                std::pair<
+                    bool,                       // is modified from ledger value
+                    ripple::Blob>>>>>;          // the value
 
     
     using namespace ripple;

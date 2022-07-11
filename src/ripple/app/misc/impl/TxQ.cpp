@@ -1423,7 +1423,8 @@ TxQ::accept(Application& app, OpenView& view)
     std::lock_guard lock(mutex_);
 
     auto const metricsSnapshot = feeMetrics_.getSnapshot();
-    // inject emitted transactions if any
+
+    // Inject emitted transactions if any
     if (view.rules().enabled(featureHooks))
     do { 
         Keylet const emittedDirKeylet { keylet::emittedDir() };

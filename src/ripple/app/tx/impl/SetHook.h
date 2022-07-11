@@ -74,7 +74,6 @@ public:
     static TER
     preclaim(PreclaimContext const&);
 
-    // RH TODO: compute fee in transactor on chain execution
     static FeeUnit64
     calculateBaseFee(ReadView const& view, STTx const& tx);
 
