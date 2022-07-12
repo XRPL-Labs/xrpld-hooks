@@ -133,6 +133,7 @@ target_compile_options (xrpl_core
     $<$<BOOL:${is_gcc}>:-Wno-maybe-uninitialized>)
 target_link_libraries (xrpl_core
   PUBLIC
+    wasmedge
     OpenSSL::Crypto
     Ripple::boost
     Ripple::syslibs
