@@ -34,6 +34,10 @@ ExternalProject_Add (wasmedge_src
   >
   LOG_BUILD ON
   LOG_CONFIGURE ON
+  COMMAND
+    pwd
+  COMMAND 
+    sed -iE 's/uint64_t Index;/uint64_t Index = 0;/g' ../lib/aot/compiler.cpp
   BUILD_COMMAND
     ${CMAKE_COMMAND}
     --build .
@@ -66,4 +70,4 @@ target_link_libraries (ripple_libs INTERFACE wasmedge)
 if (CMAKE_BUILD_TYPE STREQUAL "Debug")
   set(CMAKE_DEBUG_POSTFIX ${OLD_DEBUG_POSTFIX})
 endif ()
-add_library (NIH::wasmedge ALIAS wasmedge)
+add_library (NIH::WasmEdge ALIAS wasmedge)
