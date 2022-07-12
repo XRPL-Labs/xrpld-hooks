@@ -5,10 +5,6 @@
 find_package(LLVM REQUIRED CONFIG)
 message(STATUS "Found LLVM ${LLVM_PACKAGE_VERSION}")
 message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(OLD_DEBUG_POSTFIX ${CMAKE_DEBUG_POSTFIX})
-  set(CMAKE_DEBUG_POSTFIX _d)
-endif ()
 add_library (wasmedge STATIC IMPORTED GLOBAL)
 ExternalProject_Add (wasmedge_src
   PREFIX ${nih_cache_path}
@@ -46,28 +42,18 @@ ExternalProject_Add (wasmedge_src
   TEST_COMMAND ""
   INSTALL_COMMAND ""
   BUILD_BYPRODUCTS
-      <BINARY_DIR>/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.a
+      <BINARY_DIR>/lib/api/libwasmedge_c.a
 )
 ExternalProject_Get_Property (wasmedge_src BINARY_DIR)
 set (wasmedge_src_BINARY_DIR "${BINARY_DIR}")
 add_dependencies (wasmedge wasmedge_src)
 target_include_directories (ripple_libs SYSTEM INTERFACE "${wasmedge_src_BINARY_DIR}/include/api")
-#target_link_libraries (wasmedge
-#  INTERFACE
-#    Boost::thread
-#    Boost::system)
-#target_link_libraries (wasmedge INTERFACE
-#    "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.a")
 set_target_properties (wasmedge PROPERTIES
   IMPORTED_LOCATION_DEBUG
-    "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c${CMAKE_DEBUG_POSTFIX}.a"
+    "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c.a"
   IMPORTED_LOCATION_RELEASE
     "${wasmedge_src_BINARY_DIR}/lib/api/libwasmedge_c.a"
   INTERFACE_INCLUDE_DIRECTORIES
     "${BINARY_DIR}/include/api")
-
 target_link_libraries (ripple_libs INTERFACE wasmedge)
-if (CMAKE_BUILD_TYPE STREQUAL "Debug")
-  set(CMAKE_DEBUG_POSTFIX ${OLD_DEBUG_POSTFIX})
-endif ()
 add_library (NIH::WasmEdge ALIAS wasmedge)
