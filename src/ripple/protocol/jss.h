@@ -201,8 +201,8 @@ JSS(converge_time_s);        // out: NetworkOPs
 JSS(cookie);                 // out: NetworkOPs
 JSS(count);                  // in: AccountTx*, ValidatorList
 JSS(counters);               // in/out: retrieve counters
-JSS(cur_a);                  // out: BookChanges
-JSS(cur_b);                  // out: BookChanges
+JSS(currency_a);             // out: BookChanges
+JSS(currency_b);             // out: BookChanges
 JSS(currentShard);           // out: NodeToShardStatus
 JSS(currentShardIndex);      // out: NodeToShardStatus
 JSS(currency);               // in: paths/PathRequest, STAmount
@@ -655,8 +655,8 @@ JSS(validator_sites);         // out: ValidatorSites
 JSS(value);                   // out: STAmount
 JSS(version);                 // out: RPCVersion
 JSS(vetoed);                  // out: AmendmentTableImpl
-JSS(vol_a);                   // out: BookChanges
-JSS(vol_b);                   // out: BookChanges
+JSS(volume_a);                // out: BookChanges
+JSS(volume_b);                // out: BookChanges
 JSS(vote);                    // in: Feature
 JSS(warning);                 // rpc:
 JSS(warnings);                // out: server_info, server_state

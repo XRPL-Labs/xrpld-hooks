@@ -18,7 +18,7 @@
 //==============================================================================
 
 #ifndef RIPPLE_RPC_BOOKCHANGES_H_INCLUDED
-#define RIPPLE_RPC_BOOKCAHNGES_H_INCLUDED
+#define RIPPLE_RPC_BOOKCHANGES_H_INCLUDED
 
 namespace Json {
 class Value;
@@ -188,14 +188,14 @@ computeBookChanges(std::shared_ptr<L const> const& lpAccepted)
         STAmount volA = std::get<0>(entry.second);
         STAmount volB = std::get<1>(entry.second);
 
-        inner[jss::cur_a] =
+        inner[jss::currency_a] =
             (isXRP(volA) ? "XRP_drops" : to_string(volA.issue()));
-        inner[jss::cur_b] =
+        inner[jss::currency_b] =
             (isXRP(volB) ? "XRP_drops" : to_string(volB.issue()));
 
-        inner[jss::vol_a] =
+        inner[jss::volume_a] =
             (isXRP(volA) ? to_string(volA.xrp()) : to_string(volA.iou()));
-        inner[jss::vol_b] =
+        inner[jss::volume_b] =
             (isXRP(volB) ? to_string(volB.xrp()) : to_string(volB.iou()));
 
         inner[jss::high] = to_string(std::get<2>(entry.second).iou());
