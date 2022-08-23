@@ -2366,6 +2366,7 @@ DEFINE_HOOK_FUNCTION(
             case keylet_code::OFFER:
             case keylet_code::CHECK:
             case keylet_code::ESCROW:
+            case keylet_code::NFT_OFFER:
             {
                 if (a == 0 || b == 0 || c == 0)
                     return INVALID_ARGUMENT;
@@ -2386,6 +2387,7 @@ DEFINE_HOOK_FUNCTION(
                 ripple::Keylet kl =
                     keylet_type == keylet_code::CHECK       ? ripple::keylet::check(id, c)      :
                     keylet_type == keylet_code::ESCROW      ? ripple::keylet::escrow(id, c)     :
+                    keylet_type == keylet_code::NFT_OFFER   ? ripple::keylet::nftoffer(id, c)   :
                     ripple::keylet::offer(id, c);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);
