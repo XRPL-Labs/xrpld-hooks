@@ -162,7 +162,7 @@ namespace hook_api
             ESCROW = 20,
             PAYCHAN = 21,
             EMITTED = 22,
-            NFT_OFFER 23
+            NFT_OFFER = 23
         };
     }
 
