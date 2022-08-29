@@ -54,6 +54,7 @@ JSS(CheckCancel);            // transaction type.
 JSS(CheckCash);              // transaction type.
 JSS(CheckCreate);            // transaction type.
 JSS(ClearFlag);              // field.
+JSS(CreateCode);             // field.
 JSS(DeliverMin);             // in: TransactionSign
 JSS(DepositPreauth);         // transaction and ledger type.
 JSS(Destination);            // in: TransactionSign; field.
@@ -68,6 +69,10 @@ JSS(Fee);                    // in/out: TransactionSign; field.
 JSS(FeeSettings);            // ledger type.
 JSS(Flags);                  // in/out: TransactionSign; field.
 JSS(incomplete_shards);      // out: OverlayImpl, PeerImp
+JSS(HookApiVersion);         // field
+JSS(HookNamespace);          // field
+JSS(HookOn);                 // field
+JSS(Hooks);                  // field
 JSS(Invalid);                //
 JSS(LastLedgerSequence);     // in: TransactionSign; field
 JSS(LedgerHashes);           // ledger type.

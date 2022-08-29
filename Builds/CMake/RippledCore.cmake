@@ -733,6 +733,7 @@ if (tests)
     src/test/app/ValidatorKeys_test.cpp
     src/test/app/ValidatorList_test.cpp
     src/test/app/ValidatorSite_test.cpp
+    src/test/app/SetHook_test.cpp
     src/test/app/tx/apply_test.cpp
     #[===============================[
        test sources:
@@ -832,6 +833,7 @@ if (tests)
     src/test/jtx/impl/JSONRPCClient.cpp
     src/test/jtx/impl/ManualTimeKeeper.cpp
     src/test/jtx/impl/WSClient.cpp
+    src/test/jtx/impl/hook.cpp
     src/test/jtx/impl/acctdelete.cpp
     src/test/jtx/impl/account_txn_id.cpp
     src/test/jtx/impl/amount.cpp

@@ -63,5 +63,6 @@
 #include <test/jtx/trust.h>
 #include <test/jtx/txflags.h>
 #include <test/jtx/utility.h>
+#include <test/jtx/hook.h>
 
 #endif
