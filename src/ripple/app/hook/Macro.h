@@ -176,37 +176,28 @@
 
 #define RETURN_HOOK_TRACE(read_ptr, read_len, t)\
 {\
-    int rl = read_len;\
-    if (rl > 1024)\
-        rl = 1024;\
-    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
+    if (j.trace())\
     {\
-        return OUT_OF_BOUNDS;\
-    }\
-    else if (read_ptr == 0 && read_len == 0)\
-    {\
-        JLOG(j.trace()) \
-            << "HookTrace[" << HC_ACC() << "]: " << t;\
-    }\
-    else if (is_UTF16LE(memory + read_ptr, rl))\
-    {\
-        uint8_t output[1024];\
-        int len = rl / 2;\
-        for (int i = 0; i < len && i < 512; ++i)\
-            output[i] = memory[read_ptr + i * 2];\
-        JLOG(j.trace()) \
+        int rl = read_len;\
+        if (rl > 1024)\
+            rl = 1024;\
+        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
+            return OUT_OF_BOUNDS;\
+        std::string out;\
+        out.reserve(rl);\
+        if (!(read_ptr == 0 && read_len == 0))\
+        {\
+            out = std::string((const char*)(memory + read_ptr), (size_t)rl);\
+            /* replace all nul chars with spaces */\
+            for (char* ptr = out.data(); ptr < out.data() + out.size(); ++ptr)\
+                if (*ptr == '\0') *ptr = ' ';\
+        }\
+        j.trace()\
             << "HookTrace[" << HC_ACC() << "]: "\
-            << std::string_view((const char*)output, (size_t)(len)) << " "\
+            << out << (out.empty() ? "" : " ")\
             << t;\
+        return 0;\
     }\
-    else\
-    {\
-        JLOG(j.trace()) \
-            << "HookTrace[" << HC_ACC() << "]: "\
-            << std::string_view((const char*)(memory + read_ptr), (size_t)rl) << " "\
-            << t;\
-    }\
-    return 0;\
 }
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\
