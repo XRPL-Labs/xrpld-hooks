@@ -126,7 +126,6 @@ class FeatureBitset : private std::bitset<detail::numFeatures>
 public:
     using base::bitset;
     using base::operator==;
-    using base::operator!=;
 
     using base::all;
     using base::any;
@@ -340,6 +339,7 @@ extern uint256 const fixNFTokenDirV1;
 extern uint256 const featurePaychanAndEscrowForTokens;
 extern uint256 const fixNFTokenNegOffer;
 extern uint256 const featureNonFungibleTokensV1_1;
+extern uint256 const fixTrustLinesToSelf;
 
 }  // namespace ripple
 
