@@ -869,7 +869,10 @@ SetHook::destroyNamespace(
         return tefBAD_LEDGER;
     }
 
-    sleAccount->setFieldU32(sfHookStateCount, stateCount);
+    if (stateCount == 0)
+        sleAccount->makeFieldAbsent(sfHookStateCount);
+    else
+        sleAccount->setFieldU32(sfHookStateCount, stateCount);
 
     view.update(sleAccount);
 
