@@ -147,7 +147,7 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
 // infer which operation the user is attempting to execute from the present and absent fields
 HookSetOperation inferOperation(STObject const& hookSetObj)
 {
-    uint64_t wasmByteCount = hookSetObj.isFieldPresent(sfCreateCode) ? 
+    uint64_t wasmByteCount = hookSetObj.isFieldPresent(sfCreateCode) ?
             hookSetObj.getFieldVL(sfCreateCode).size() : 0;
     bool hasHash = hookSetObj.isFieldPresent(sfHookHash);
     bool hasCode = hookSetObj.isFieldPresent(sfCreateCode);
@@ -168,7 +168,7 @@ HookSetOperation inferOperation(STObject const& hookSetObj)
         !hookSetObj.isFieldPresent(sfHookApiVersion) &&
         !hookSetObj.isFieldPresent(sfFlags))
         return hsoNOOP;
-    
+
     return hookSetObj.isFieldPresent(sfHookNamespace) ? hsoNSDELETE : hsoUPDATE;
 
 }
@@ -269,7 +269,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             if (hookSetObj.isFieldPresent(sfHookGrants) &&
                 !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
                 return false;
-            
+
             // api version not allowed in update
             if (hookSetObj.isFieldPresent(sfHookApiVersion))
             {
@@ -278,7 +278,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "]: Malformed transaction: SetHook install operation sfHookApiVersion must not be included.";
                 return false;
             }
-    
+
             // namespace may be valid, if the user so chooses
             // hookon may be present if the user so chooses
             // flags may be present if the user so chooses
@@ -289,7 +289,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
         case hsoUPDATE:
         {
             // must not specify override flag
-            if ((flags & hsfOVERRIDE) || 
+            if ((flags & hsfOVERRIDE) ||
                 ((flags & hsfNSDELETE) && !hookSetObj.isFieldPresent(sfHookNamespace)))
             {
                 JLOG(ctx.j.trace())
@@ -308,7 +308,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
             if (hookSetObj.isFieldPresent(sfHookGrants) &&
                 !validateHookGrants(ctx, hookSetObj.getFieldArray(sfHookGrants)))
                 return false;
-            
+
             // api version not allowed in update
             if (hookSetObj.isFieldPresent(sfHookApiVersion))
             {
@@ -355,7 +355,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "]: Malformed transaction: SetHook sfHookApiVersion must be included.";
                 return false;
             }
-                
+
             auto version = hookSetObj.getFieldU16(sfHookApiVersion);
             if (version != 0)
             {
@@ -374,7 +374,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     << "]: Malformed transaction: SetHook must include sfHookOn when creating a new hook.";
                 return false;
             }
-            
+
             // finally validate web assembly byte code
             {
                 if (!hookSetObj.isFieldPresent(sfCreateCode))
@@ -384,7 +384,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 
                 // RH NOTE: validateGuards has a generic non-rippled specific interface so it can be
                 // used in other projects (i.e. tooling). As such the calling here is a bit convoluted.
-                
+
                 std::optional<std::reference_wrapper<std::basic_ostream<char>>> logger;
                 std::ostringstream loggerStream;
                 std::string hsacc {""};
@@ -401,7 +401,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                         hook,   // wasm to verify
                         true,   // strict (should have gone through hook cleaner!)
                         logger,
-                        hsacc 
+                        hsacc
                     );
 
                 if (ctx.j.trace())
@@ -410,7 +410,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                     // split on new line and feed each line one by one into the trace stream
                     // beast::Journal should be updated to inherit from basic_ostream<char>
                     // then this wouldn't be necessary.
-                    
+
                     // is this a needless copy or does the compiler do copy elision here?
                     std::string s = loggerStream.str();
 
@@ -428,21 +428,21 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                             last = data + i;
                         }
                     }
-    
+
                     if (last < data + i)
                         ctx.j.trace() << last;
                 }
 
                 if (!result)
                     return false;
-            
+
                 JLOG(ctx.j.trace())
                     << "HookSet(" << hook::log::WASM_SMOKE_TEST << ")[" << HS_ACC()
                     << "]: Trying to wasm instantiate proposed hook "
                     << "size = " <<  hook.size();
 
 
-                std::optional<std::string> result2 = 
+                std::optional<std::string> result2 =
                     hook::HookExecutor::validateWasm(hook.data(), (size_t)hook.size());
 
                 if (result2)
@@ -457,7 +457,7 @@ validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 return *result;
             }
         }
-        
+
         case hsoINVALID:
         default:
         {
@@ -596,7 +596,7 @@ SetHook::preflight(PreflightContext const& ctx)
         if (!hookSetObj || (hookSetObj->getFName() != sfHook))
         {
             JLOG(ctx.j.trace())
-                << "HookSet(" << hook::log::HOOKS_ARRAY_BAD << ")[" 
+                << "HookSet(" << hook::log::HOOKS_ARRAY_BAD << ")["
                 << HS_ACC()
                 << "]: Malformed transaction: SetHook sfHooks contains obj other than sfHook.";
             return temMALFORMED;
@@ -694,18 +694,7 @@ SetHook::destroyNamespace(
     JLOG(ctx.j.trace())
         << "HookSet(" << hook::log::NSDELETE << ")[" << HS_ACC() << "]: DeleteState "
         << "Destroying Hook Namespace for " << account << " namespace " << ns;
-
-    Keylet dirKeylet = keylet::hookStateDir(account, ns);
-
-    std::shared_ptr<SLE const> sleDirNode{};
-    unsigned int uDirEntry{0};
-    uint256 dirEntry{beast::zero};
-
-    auto sleDir = view.peek(dirKeylet);
     
-    if (!sleDir || dirIsEmpty(view, dirKeylet))
-        return tesSUCCESS;
-
     auto sleAccount = view.peek(keylet::account(account));
     if (!sleAccount)
     {
@@ -716,6 +705,83 @@ SetHook::destroyNamespace(
     }
 
 
+    bool sleAccChanged = false;
+
+    if (!sleAccount->isFieldPresent(sfHookNamespaces))
+    {
+        // NSDELETE is an opportunistic deleter, following "delete if exists" logic
+        // this way the flag can't block the SetHook transaction just because, for example, the namespace was
+        // deleted in the previous transaction but the hsFlags have not changed.
+        // Thus this is not an error.
+        // Allow fall through to below in case, for some reason, the namespace directory *does* exist
+        // but does not appear in the vector.
+    }
+    else
+    {
+        STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
+        if (vec.size() == 0)
+        {
+            // clean up structure if it's present but empty
+            sleAccount->makeFieldAbsent(sfHookNamespaces);
+            sleAccChanged = true;
+        }
+        else
+        {
+            // defensively ensure the uniqueness of the namespace array
+            std::set<uint256> spaces;
+
+            for (auto u : vec.value())
+                if (u != ns)
+                    spaces.emplace(u);
+
+            // drop through if it wasn't present (see comment block 20 lines above)
+            if (spaces.size() != vec.size())
+            {
+                sleAccChanged = true;
+
+                if (spaces.size() == 0)
+                    sleAccount->makeFieldAbsent(sfHookNamespaces);
+                else
+                {
+                    std::vector<uint256> nv;
+                    nv.reserve(spaces.size());
+
+                    for (auto u : spaces)
+                        nv.push_back(u);
+
+                    sleAccount->setFieldV256(sfHookNamespaces, STVector256 { std::move(nv) } );
+                }
+            }
+        }
+    }
+
+    Keylet dirKeylet = keylet::hookStateDir(account, ns);
+
+    std::shared_ptr<SLE const> sleDirNode{};
+    unsigned int uDirEntry{0};
+    uint256 dirEntry{beast::zero};
+
+    auto sleDir = view.peek(dirKeylet);
+
+    if (!sleDir)
+    {
+        // directory doesn't exist, this is a success condition
+        if (sleAccChanged)
+            view.update(sleAccount);
+        return tesSUCCESS;
+    }
+
+    if (dirIsEmpty(view, dirKeylet))
+    {
+        // directory exists but is empty, so remove the root page
+        if (sleAccChanged)
+            view.update(sleAccount);
+
+        view.erase(sleDir);
+        return tesSUCCESS;
+    }
+
+    // fall through to here means we must prune the entries from the directory
     if (!cdirFirst(
             view,
             dirKeylet.key,
@@ -728,7 +794,7 @@ SetHook::destroyNamespace(
         return tefINTERNAL;
     }
 
-    uint32_t stateCount =sleAccount->getFieldU32(sfHookStateCount);
+    uint32_t stateCount = sleAccount->getFieldU32(sfHookStateCount);
     uint32_t oldStateCount = stateCount;
 
     std::vector<uint256> toDelete;
@@ -761,7 +827,6 @@ SetHook::destroyNamespace(
             return tefBAD_LEDGER;
         }
 
-
         toDelete.push_back(uint256::fromVoid(itemKeylet.key.data()));
 
     } while (cdirNext(view, dirKeylet.key, sleDirNode, uDirEntry, dirEntry));
@@ -769,9 +834,8 @@ SetHook::destroyNamespace(
     // delete it!
     for (auto const& itemKey: toDelete)
     {
-
         auto const& sleItem = view.peek({ltHOOK_STATE, itemKey});
-    
+
         if (!sleItem)
         {
             JLOG(ctx.j.warn())
@@ -806,22 +870,6 @@ SetHook::destroyNamespace(
     }
 
     sleAccount->setFieldU32(sfHookStateCount, stateCount);
-
-    STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
-    if (vec.size() - 1 == 0)
-    {
-        sleAccount->makeFieldAbsent(sfHookNamespaces);
-    }
-    else
-    {
-        std::vector<uint256> nv { vec.size() - 1 };
-    
-        for (uint256 u : vec.value())
-            if (u != ns)
-                nv.push_back(u);
-
-        sleAccount->setFieldV256(sfHookNamespaces, STVector256 { std::move(nv) } );
-    }
 
     view.update(sleAccount);
 
@@ -864,7 +912,7 @@ updateHookParameters(
 {
     const int  paramKeyMax = hook::maxHookParameterKeySize();
     const int  paramValueMax = hook::maxHookParameterValueSize();
-    
+
     std::map<ripple::Blob, ripple::Blob> parameters;
 
     // first pull the parameters into a map
@@ -927,7 +975,7 @@ updateHookParameters(
 struct KeyletComparator
 {
     bool operator()(const Keylet& lhs, const Keylet& rhs) const
-    { 
+    {
         return lhs.type < rhs.type || (lhs.type == rhs.type && lhs.key < rhs.key);
     }
 };
@@ -1024,17 +1072,17 @@ SetHook::setHook()
          */
 
         std::optional<uint32_t> flags;
-        
+
         if (hookSetObj && hookSetObj->get().isFieldPresent(sfFlags))
             flags = hookSetObj->get().getFieldU32(sfFlags);
 
 
         HookSetOperation op = hsoNOOP;
-        
+
         if (hookSetObj)
             op = inferOperation(hookSetObj->get());
-           
-        
+
+
         // these flags are not able to be passed onto the ledger object
         int newFlags = 0;
         if (flags)
@@ -1048,7 +1096,7 @@ SetHook::setHook()
         }
 
 
-        printf("HookSet operation %d: %s\n", hookSetNumber, 
+        printf("HookSet operation %d: %s\n", hookSetNumber,
                 (op == hsoNSDELETE ? "hsoNSDELETE" :
                 (op == hsoDELETE ? "hsoDELETE" :
                 (op == hsoCREATE ? "hsoCREATE" :
@@ -1131,7 +1179,7 @@ SetHook::setHook()
 
         switch (op)
         {
-            
+
             case hsoNOOP:
             {
                 // if a hook already exists here then migrate it to the new array
@@ -1139,7 +1187,7 @@ SetHook::setHook()
                 newHooks.push_back( oldHook ? oldHook->get() : ripple::STObject{sfHook} );
                 continue;
             }
-           
+
             // every case below here is guarenteed to have a populated hookSetObj
             // by the assert statement above
 
@@ -1148,7 +1196,7 @@ SetHook::setHook()
                 // this case is handled directly above already
                 continue;
             }
-            
+
             case hsoDELETE:
             {
 
@@ -1159,8 +1207,8 @@ SetHook::setHook()
                         << "]: SetHook delete operation requires hsfOVERRIDE flag";
                     return tecREQUIRES_FLAG;
                 }
-               
-                // place an empty corresponding Hook 
+
+                // place an empty corresponding Hook
                 newHooks.push_back(ripple::STObject{sfHook});
 
                 if (!oldHook)
@@ -1195,7 +1243,7 @@ SetHook::setHook()
                     newHook.setFieldU64(sfHookOn, *newHookOn);
 
                 // parameters
-                TER result = 
+                TER result =
                     updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, newHook);
 
                 if (result != tesSUCCESS)
@@ -1208,7 +1256,7 @@ SetHook::setHook()
 
                 if (flags)
                     newHook.setFieldU32(sfFlags, *flags);
-                
+
 
                 newHooks.push_back(std::move(newHook));
                 continue;
@@ -1224,7 +1272,7 @@ SetHook::setHook()
                         << "]: SetHook create operation would override but hsfOVERRIDE flag wasn't specified";
                     return tecREQUIRES_FLAG;
                 }
-                
+
 
                 ripple::Blob wasmBytes = hookSetObj->get().getFieldVL(sfCreateCode);
 
@@ -1247,7 +1295,7 @@ SetHook::setHook()
                 {
                     newDefSLE = view().peek(keylet);
                     newDefKeylet = keylet;
-        
+
                     // this falls through to hsoINSTALL
                 }
                 else if (slesToInsert.find(keylet) != slesToInsert.end())
@@ -1295,7 +1343,7 @@ SetHook::setHook()
                             << "]: Malformed transaction: SetHook operation would create invalid hook wasm";
                         return tecINTERNAL;
                     }
-                        
+
                     // decrement the hook definition and mark it for deletion if appropriate
                     if (oldDefSLE)
                     {
@@ -1313,12 +1361,12 @@ SetHook::setHook()
                             hookSetObj->get().isFieldPresent(sfHookParameters)
                             ? hookSetObj->get().getFieldArray(sfHookParameters)
                             : STArray {} );
-                    newHookDef->setFieldU16(    sfHookApiVersion, 
+                    newHookDef->setFieldU16(    sfHookApiVersion,
                             hookSetObj->get().getFieldU16(sfHookApiVersion));
                     newHookDef->setFieldVL(     sfCreateCode, wasmBytes);
                     newHookDef->setFieldH256(   sfHookSetTxnID, ctx.tx.getTransactionID());
                     newHookDef->setFieldU64(    sfReferenceCount, 1);
-                    newHookDef->setFieldAmount(sfFee,  
+                    newHookDef->setFieldAmount(sfFee,
                             XRPAmount {hook::computeExecutionFee(maxInstrCountHook)});
                     if (maxInstrCountCbak > 0)
                     newHookDef->setFieldAmount(sfHookCallbackFee,
@@ -1336,7 +1384,7 @@ SetHook::setHook()
                 }
                 [[fallthrough]];
             }
-        
+
             // the create operation above falls through to this install operation if the sfCreateCode that would
             // otherwise be created already exists on the ledger
             case hsoINSTALL:
@@ -1468,14 +1516,14 @@ SetHook::setHook()
         JLOG(j_.trace())
             << "SetHook: "
             << "newHookReserve: " << newHookReserve << " "
-            << "oldHookReserve: " << oldHookReserve << " " 
+            << "oldHookReserve: " << oldHookReserve << " "
             << "reserveDelta: " << reserveDelta;
 
         int64_t newOwnerCount = (int64_t)(accountSLE->getFieldU32(sfOwnerCount)) + reserveDelta;
-        
+
         if (newOwnerCount < 0 || newOwnerCount > 0xFFFFFFFFUL)
             return tefINTERNAL;
-       
+
 
         auto const requiredDrops = view().fees().accountReserve((uint32_t)(newOwnerCount));
         if (mSourceBalance < requiredDrops)
@@ -1487,7 +1535,7 @@ SetHook::setHook()
         // do any pending insertions
         for (auto const& [_, s] : slesToInsert)
             view().insert(s);
-        
+
         // do any pending updates
         for (auto const& [_, s] : slesToUpdate)
             view().update(s);
@@ -1523,7 +1571,7 @@ SetHook::setHook()
                 break;
             }
         }
-        
+
         newHookSLE->setFieldArray(sfHooks, newHooks);
         newHookSLE->setAccountID(sfAccount, account_);
 
@@ -1553,13 +1601,13 @@ SetHook::setHook()
             view().insert(newHookSLE);
         }
         else if (!oldHookSLE && !newHooksEmpty)
-        {       
+        {
             // CREATE ltHOOK
             auto const page = view().dirInsert(
                 keylet::ownerDir(account_),
                 hookKeylet,
                 describeOwnerDir(account_));
-            
+
             JLOG(j_.trace())
                 << "HookSet(" << hook::log::HOOK_ADD << ")[" << HS_ACC()
                 << "]: Adding ltHook to account directory "
