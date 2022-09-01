@@ -196,8 +196,8 @@
             << "HookTrace[" << HC_ACC() << "]: "\
             << out << (out.empty() ? "" : " ")\
             << t;\
-        return 0;\
     }\
+    return 0;\
 }
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\

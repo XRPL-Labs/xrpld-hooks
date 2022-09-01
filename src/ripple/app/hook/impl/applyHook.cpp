@@ -553,6 +553,70 @@ inline bool is_UTF16LE(const uint8_t* buffer, size_t len)
     return true;
 }
 
+// return true if sleAccount has been modified as a result of the call
+bool
+hook::addHookNamespaceEntry(
+    ripple::SLE& sleAccount,
+    ripple::uint256 ns)
+{
+    STVector256 vec = sleAccount.getFieldV256(sfHookNamespaces);
+    for (auto u : vec.value())
+        if (u == ns)
+            return false;
+
+    vec.push_back(ns);
+    sleAccount.setFieldV256(sfHookNamespaces, vec);
+    return true;
+}
+
+// return true if sleAccount has been modified as a result of the call
+bool
+hook::removeHookNamespaceEntry(
+   ripple::SLE& sleAccount,
+   ripple::uint256 ns)
+{
+    if (sleAccount.isFieldPresent(sfHookNamespaces))
+    {
+        STVector256 const& vec = sleAccount.getFieldV256(sfHookNamespaces);
+        if (vec.size() == 0)
+        {
+            // clean up structure if it's present but empty
+            sleAccount.makeFieldAbsent(sfHookNamespaces);
+            return true;
+        }
+        else
+        {
+            // defensively ensure the uniqueness of the namespace array
+            // RH TODO: consider removing this for production
+            std::set<uint256> spaces;
+
+            for (auto u : vec.value())
+                if (u != ns)
+                    spaces.emplace(u);
+
+            // drop through if it wasn't present (see comment block 20 lines above)
+            if (spaces.size() != vec.size())
+            {
+
+                if (spaces.size() == 0)
+                    sleAccount.makeFieldAbsent(sfHookNamespaces);
+                else
+                {
+                    std::vector<uint256> nv;
+                    nv.reserve(spaces.size());
+
+                    for (auto u : spaces)
+                        nv.push_back(u);
+
+                    sleAccount.setFieldV256(sfHookNamespaces, STVector256 { std::move(nv) } );
+                }
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
 
 // Called by Transactor.cpp to determine if a transaction type can trigger a given hook...
 // The HookOn field in the SetHook transaction determines which transaction types (tt's) trigger the hook.
@@ -569,7 +633,7 @@ bool hook::canHook(ripple::TxType txType, uint64_t hookOn) {
 }
 
 
-// Update HookState ledger objects for the hook... only called after accept() or rollback()
+// Update HookState ledger objects for the hook... only called after accept()
 // assumes the specified acc has already been checked for authoriation (hook grants)
 TER
 hook::setHookState(
@@ -634,19 +698,7 @@ hook::setHookState(
 
 
         if (nsDestroyed)
-        {
-            STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
-            if (vec.size() - 1 == 0)
-                sleAccount->makeFieldAbsent(sfHookNamespaces);
-            else
-            {
-                std::vector<uint256> nv { vec.size() - 1 };
-                for (uint256 u : vec.value())
-                    if (u != ns)
-                        nv.push_back(u);
-                sleAccount->setFieldV256(sfHookNamespaces, STVector256{std::move(nv)});
-            }
-        }
+            hook::removeHookNamespaceEntry(*sleAccount, ns);
 
         view.update(sleAccount);
 
@@ -720,10 +772,8 @@ hook::setHookState(
         // update namespace vector where necessary
         if (!nsExists)
         {
-            STVector256 vec = sleAccount->getFieldV256(sfHookNamespaces);
-            vec.push_back(ns);
-            sleAccount->setFieldV256(sfHookNamespaces, vec);
-            view.update(sleAccount);
+            if (addHookNamespaceEntry(*sleAccount, ns))
+                view.update(sleAccount);
         }
     }
     else

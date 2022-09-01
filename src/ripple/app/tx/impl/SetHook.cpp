@@ -36,6 +36,7 @@
 #include <utility>
 #include <ripple/app/hook/Enum.h>
 #include <ripple/app/hook/Guard.h>
+#include <ripple/app/hook/applyHook.h>
 #include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/app/ledger/OpenLedger.h>
 #include <functional>
@@ -718,41 +719,8 @@ SetHook::destroyNamespace(
     }
     else
     {
-        STVector256 const& vec = sleAccount->getFieldV256(sfHookNamespaces);
-        if (vec.size() == 0)
-        {
-            // clean up structure if it's present but empty
-            sleAccount->makeFieldAbsent(sfHookNamespaces);
-            sleAccChanged = true;
-        }
-        else
-        {
-            // defensively ensure the uniqueness of the namespace array
-            std::set<uint256> spaces;
-
-            for (auto u : vec.value())
-                if (u != ns)
-                    spaces.emplace(u);
-
-            // drop through if it wasn't present (see comment block 20 lines above)
-            if (spaces.size() != vec.size())
-            {
-                sleAccChanged = true;
-
-                if (spaces.size() == 0)
-                    sleAccount->makeFieldAbsent(sfHookNamespaces);
-                else
-                {
-                    std::vector<uint256> nv;
-                    nv.reserve(spaces.size());
-
-                    for (auto u : spaces)
-                        nv.push_back(u);
-
-                    sleAccount->setFieldV256(sfHookNamespaces, STVector256 { std::move(nv) } );
-                }
-            }
-        }
+        sleAccChanged = 
+            hook::removeHookNamespaceEntry(*sleAccount, ns);
     }
 
     Keylet dirKeylet = keylet::hookStateDir(account, ns);

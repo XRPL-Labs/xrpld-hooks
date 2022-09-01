@@ -346,6 +346,15 @@ namespace hook
         const HookExecutor* module = 0;
     };
 
+    bool
+    addHookNamespaceEntry(
+        ripple::SLE& sleAccount,
+        ripple::uint256 ns);
+
+    bool
+    removeHookNamespaceEntry(
+       ripple::SLE& sleAccount,
+       ripple::uint256 ns);
 
     ripple::TER
     setHookState(
