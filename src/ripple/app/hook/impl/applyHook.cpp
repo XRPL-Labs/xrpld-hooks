@@ -58,11 +58,11 @@ namespace hook
             {\
                 if (tshEntries.find(acc_r) != tshEntries.end())\
                 {\
-                    if (tshEntries[acc_r].second == false && rb)\
+                    if (tshEntries[acc_r].second == false && (rb))\
                         tshEntries[acc_r].second = true;\
                 }\
                 else\
-                    tshEntries.emplace(acc_r, std::pair<int, bool>{upto++, rb});\
+                    tshEntries.emplace(acc_r, std::pair<int, bool>{upto++, (rb)});\
             }\
         }
 
@@ -102,8 +102,10 @@ namespace hook
                     return {};
 
                 auto const issuer = nft::getIssuer(nid);
+                
+                bool issuerCanRollback = nft::getFlags(nid) & tfStrongTSH;
 
-                ADD_TSH(issuer, canRollback);
+                ADD_TSH(issuer, issuerCanRollback);
                 if (hasOwner)
                     ADD_TSH(owner, canRollback);
                 break;
@@ -116,6 +118,12 @@ namespace hook
                 
                 if (!bo && !so)
                     return {};
+
+                // issuer only has rollback ability if NFT specifies it in flags
+                uint256 nid = (bo ? bo : so )->getFieldH256(sfNFTokenID);
+                auto const issuer = nft::getIssuer(nid);
+                bool issuerCanRollback = nft::getFlags(nid) & tfStrongTSH;
+                ADD_TSH(issuer, issuerCanRollback);
 
                 if (bo)
                 {
@@ -148,6 +156,12 @@ namespace hook
                         ADD_TSH(offer->getAccountID(sfOwner), canRollback);
                         if (offer->isFieldPresent(sfDestination))
                             ADD_TSH(offer->getAccountID(sfDestination), canRollback);
+
+                        // issuer can't stop people canceling their offers, but can get weak executions
+                        uint256 nid = offer->getFieldH256(sfNFTokenID);
+                        auto const issuer = nft::getIssuer(nid);
+                        ADD_TSH(issuer, false);
+
                     }
                 }
                 break;
