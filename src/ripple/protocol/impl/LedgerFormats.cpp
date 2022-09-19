@@ -277,8 +277,8 @@ LedgerFormats::LedgerFormats()
         },
         commonFields);
 
-    add(jss::Emitted,
-        ltEMITTED,
+    add(jss::EmittedTxn,
+        ltEMITTED_TXN,
         {
             {sfEmittedTxn, soeOPTIONAL},
             {sfOwnerNode, soeREQUIRED},

@@ -117,7 +117,7 @@ public:
     TER
     checkInvariants(TER const result, XRPAmount const fee);
 
-    bool emitted()
+    bool isEmittedTxn()
     {
         return tx.isFieldPresent(sfEmitDetails);
     }

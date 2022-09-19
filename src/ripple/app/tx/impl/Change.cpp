@@ -341,7 +341,7 @@ Change::applyEmitFailure()
         JLOG(j_.warn())
             << "HookEmit[" << txnID << "]: ttEmitFailure removing emitted txn";
 
-        auto key = keylet::emitted(txnID);
+        auto key = keylet::emittedTxn(txnID);
 
         auto const& sle = view().peek(key);
 

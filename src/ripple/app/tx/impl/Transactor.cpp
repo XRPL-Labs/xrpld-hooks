@@ -478,7 +478,7 @@ Transactor::consumeSeqProxy(SLE::pointer const& sleAccount)
     assert(sleAccount);
 
     // do not update sequence of sfAccountTxnID for emitted tx
-    if (ctx_.emitted()) 
+    if (ctx_.isEmittedTxn()) 
         return tesSUCCESS;
 
     SeqProxy const seqProx = ctx_.tx.getSeqProxy();
@@ -1507,7 +1507,7 @@ Transactor::operator()()
         auto const& hooksOriginator = view().read(keylet::hook(accountID));
 
         // First check if the Sending account has any hooks that can be fired
-        if (hooksOriginator && hooksOriginator->isFieldPresent(sfHooks) && !ctx_.emitted())
+        if (hooksOriginator && hooksOriginator->isFieldPresent(sfHooks) && !ctx_.isEmittedTxn())
             result =
                 executeHookChain(
                     hooksOriginator,

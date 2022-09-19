@@ -1460,10 +1460,10 @@ TxQ::accept(Application& app, OpenView& view)
             LedgerEntryType const nodeType{
                 safe_cast<LedgerEntryType>((*sleItem)[sfLedgerEntryType])};
 
-            if (nodeType != ltEMITTED)
+            if (nodeType != ltEMITTED_TXN)
             {
                 JLOG(j_.fatal())
-                    << "EmittedTxn processing: emitted directory contained non ltEMITTED type";
+                    << "EmittedTxn processing: emitted directory contained non ltEMITTED_TXN type";
                 break;
             }
 

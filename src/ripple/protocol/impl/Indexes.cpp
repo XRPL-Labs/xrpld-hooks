@@ -64,7 +64,7 @@ enum class LedgerNameSpace : std::uint16_t {
     HOOK_STATE_DIR = 'J',
     HOOK_STATE = 'v',
     HOOK_DEFINITION = 'D',
-    EMITTED = 'E',
+    EMITTED_TXN = 'E',
     EMITTED_DIR = 'F',
     NFTOKEN_OFFER = 'q',
     NFTOKEN_BUY_OFFERS = 'h',
@@ -150,9 +150,9 @@ hookStateDir(AccountID const& id, uint256 const& ns) noexcept
 }
 
 Keylet
-emitted(uint256 const& id) noexcept
+emittedTxn(uint256 const& id) noexcept
 {
-    return {ltEMITTED, indexHash(LedgerNameSpace::EMITTED, id)};
+    return {ltEMITTED_TXN, indexHash(LedgerNameSpace::EMITTED_TXN, id)};
 }
 
 Keylet

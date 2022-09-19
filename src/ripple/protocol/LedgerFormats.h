@@ -235,7 +235,7 @@ enum LedgerEntryType : std::uint16_t
 
       \sa keylet::emitted
      */
-    ltEMITTED = 'E',
+    ltEMITTED_TXN = 'E',
 };
 // clang-format off
 

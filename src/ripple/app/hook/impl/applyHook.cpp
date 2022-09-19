@@ -858,7 +858,7 @@ hook::apply(
                 isCallback && wasmParam & 1
                 ? std::optional<ripple::STObject>(
                     (*(applyCtx.view().peek(
-                        keylet::emitted(applyCtx.tx.getFieldH256(sfTransactionHash)))
+                        keylet::emittedTxn(applyCtx.tx.getFieldH256(sfTransactionHash)))
                     )).downcast<STObject>())
                 : std::optional<ripple::STObject>()
     };
@@ -1386,7 +1386,7 @@ removeEmissionEntry(ripple::ApplyContext& applyCtx)
     if (!const_cast<ripple::STTx&>(tx).isFieldPresent(sfEmitDetails))
         return tesSUCCESS;
 
-    auto key = keylet::emitted(tx.getTransactionID());
+    auto key = keylet::emittedTxn(tx.getTransactionID());
 
     auto const& sle = applyCtx.view().peek(key);
 
@@ -1444,9 +1444,9 @@ finalizeHookResult(
             ptr->add(s);
             SerialIter sit(s.slice());
 
-            auto emittedId = keylet::emitted(id);
+            auto emittedId = keylet::emittedTxn(id);
+            auto sleEmitted = applyCtx.view().peek(emittedId);
 
-            auto sleEmitted = applyCtx.view().peek(keylet::emitted(id));
             if (!sleEmitted)
             {
                 ++emission_count;
@@ -2355,7 +2355,7 @@ DEFINE_HOOK_FUNCTION(
 
             // keylets that take a 32 byte uint
             case keylet_code::CHILD:
-            case keylet_code::EMITTED:
+            case keylet_code::EMITTED_TXN:
             case keylet_code::UNCHECKED:
             {
                 if (a == 0 || b == 0)
@@ -2376,7 +2376,7 @@ DEFINE_HOOK_FUNCTION(
 
                 ripple::Keylet kl =
                     keylet_type == keylet_code::CHILD        ? ripple::keylet::child(id)            :
-                    keylet_type == keylet_code::EMITTED      ? ripple::keylet::emitted(id)          :
+                    keylet_type == keylet_code::EMITTED_TXN  ? ripple::keylet::emittedTxn(id)          :
                     ripple::keylet::unchecked(id);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);

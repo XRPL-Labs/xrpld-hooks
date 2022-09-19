@@ -389,7 +389,7 @@ LedgerEntryTypesMatch::visitEntry(
             case ltHOOK:
             case ltHOOK_DEFINITION:
             case ltHOOK_STATE:
-            case ltEMITTED:
+            case ltEMITTED_TXN:
             case ltNFTOKEN_PAGE:
             case ltNFTOKEN_OFFER:
                 break;

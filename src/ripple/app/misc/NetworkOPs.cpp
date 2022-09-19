@@ -1206,7 +1206,7 @@ NetworkOPsImp::processTransaction(
     // This function is called by several different parts of the codebase
     // under no circumstances will we ever accept an emitted txn from the network.
     // Emitted txns are *always* and *only* inserted by TxQ::accept, and only 
-    // arise from processing ltEMITTED out of the EMITTED_DIR.
+    // arise from processing ltEMITTED_TXN out of the EMITTED_DIR.
     // This isn't always an error because a fetch pack etc might include an emitted txn
     // and if this is a deliberate attempt to send an emitted txn over the network it was
     // already billed in PeerImp

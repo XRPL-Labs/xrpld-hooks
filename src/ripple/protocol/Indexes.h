@@ -56,7 +56,7 @@ Keylet const&
 emittedDir() noexcept;
 
 Keylet
-emitted(uint256 const& id) noexcept;
+emittedTxn(uint256 const& id) noexcept;
 
 Keylet
 hookDefinition(uint256 const& hash) noexcept;
