@@ -1,4 +1,4 @@
-all: accept.wasm makestate.wasm makestate2.wasm checkstate.wasm rollback.wasm aaw.wasm rmstate.wasm ginv.wasm multiguard.wasm multiescrow.wasm
+all: accept.wasm makestate.wasm makestate2.wasm checkstate.wasm rollback.wasm aaw.wasm rmstate.wasm ginv.wasm multiguard.wasm multiescrow.wasm metacbak.wasm concat.wasm
 accept.wasm: accept.c
 	wasmcc accept.c -o accept.wasm -O2 -Wl,--allow-undefined -I../
 	hook-cleaner accept.wasm
@@ -29,6 +29,9 @@ multiguard.wasm: multiguard.c
 multiescrow.wasm: multiescrow.c
 	wasmcc multiescrow.c -o multiescrow.wasm -O2 -Wl,--allow-undefined -I../
 	hook-cleaner multiescrow.wasm
-
-
-
+metacbak.wasm: metacbak.c
+	wasmcc metacbak.c -o metacbak.wasm -O2 -Wl,--allow-undefined -I../
+	hook-cleaner metacbak.wasm
+concat.wasm: concat.c
+	wasmcc concat.c -o concat.wasm -O2 -Wl,--allow-undefined -I../
+	hook-cleaner concat.wasm
