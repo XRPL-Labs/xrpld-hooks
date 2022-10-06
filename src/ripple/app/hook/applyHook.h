@@ -234,10 +234,6 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  str_compare,        uint32_t fread_ptr, uint32_t fread_len,
                                                         uint32_t sread_ptr, uint32_t sread_len,
                                                         uint32_t mode);
-    DECLARE_HOOK_FUNCTION(int64_t,  str_format,         uint32_t write_ptr, uint32_t write_len,
-                                                        uint32_t fread_ptr, uint32_t fread_len,
-                                                        uint64_t a, uint64_t b, uint64_t c, uint64_t d,
-                                                        uint64_t e, uint64_t f, uint64_t g, uint64_t h);
     DECLARE_HOOK_FUNCTION(int64_t,  str_concat,         uint32_t write_ptr, uint32_t write_len,
                                                         uint32_t read_ptr,  uint32_t read_len,
                                                         uint64_t operand,   uint32_t operand_type);
@@ -656,7 +652,6 @@ namespace hook
             ADD_HOOK_FUNCTION(str_replace, ctx);
             ADD_HOOK_FUNCTION(str_compare, ctx);
             ADD_HOOK_FUNCTION(str_concat, ctx);
-            ADD_HOOK_FUNCTION(str_format, ctx);
 
             WasmEdge_TableInstanceContext* hostTable = WasmEdge_TableInstanceCreate(tableType);
             WasmEdge_ImportObjectAddTable(importObj, tableName, hostTable);

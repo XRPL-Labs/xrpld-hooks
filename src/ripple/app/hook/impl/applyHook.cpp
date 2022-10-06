@@ -5235,36 +5235,6 @@ findNul(const void* vptr, size_t len)
     return found;
 }
 
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    str_format,
-    uint32_t write_ptr, uint32_t write_len,
-    uint32_t fread_ptr, uint32_t fread_len,
-    uint64_t a, uint64_t b, uint64_t c, uint64_t d,
-    uint64_t e, uint64_t f, uint64_t g, uint64_t h)
-{
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
-        NOT_IN_BOUNDS(fread_ptr, fread_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    if (write_len == 0 || fread_len == 0)
-        return TOO_SMALL;
-
-    if (write_len > 1024 || fread_len > 1024)
-        return TOO_BIG;
-
-    // check if there's a nul terminator on format string
-    if (findNul(memory + fread_ptr, fread_len) < 0)
-        return NOT_A_STRING;
-    
-    //int result = snprintf(write_ptr + memory, write_len, fread_ptr + memory, a,b,c,d,e,f,g,h);
-    //RH NOTE: can't do this ^ because string arguments can expose non-wasm memory
-    // will need to parse format string ourselves, or implement our own.
-    return NOT_IMPLEMENTED;
-}
-
 /*
     Overloaded API:
     If operand_type == 0:

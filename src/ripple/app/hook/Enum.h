@@ -323,7 +323,6 @@ namespace hook_api
         "str_find",
         "str_replace",
         "str_concat",
-        "str_format",
         "str_compare"
     };
 };
