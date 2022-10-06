@@ -20,8 +20,8 @@
 #define EMPTY()
 #define DEFER(id) id EMPTY()
 #define OBSTRUCT(...) __VA_ARGS__ DEFER(EMPTY)()
-#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, N, ...) N
-#define VA_NARGS(__drop, ...) VA_NARGS_IMPL(__VA_ARGS__, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
+#define VA_NARGS_IMPL(_1, _2, _3, _4, _5, _6, _7, _8, _9, _10, _11, _12, N, ...) N
+#define VA_NARGS(__drop, ...) VA_NARGS_IMPL(__VA_ARGS__, 12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1)
 #define FIRST(a, b) a
 #define SECOND(a, b) b
 #define STRIP_TYPES(...) FOR_VARS(SECOND, 0, __VA_ARGS__) 
@@ -41,6 +41,8 @@
 #define FOR_VAR_8(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_7(T, S, __VA_ARGS__)
 #define FOR_VAR_9(T, S, a, ...)  FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_8(T, S, __VA_ARGS__)
 #define FOR_VAR_10(T, S, a, ...) FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_9(T, S, __VA_ARGS__)
+#define FOR_VAR_11(T, S, a, ...) FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_10(T, S, __VA_ARGS__)
+#define FOR_VAR_12(T, S, a, ...) FOR_VAR_1(T, S, a) DELIM(S) FOR_VAR_11(T, S, __VA_ARGS__)
 #define FOR_VARS(T, S, ...)\
     DEFER(CAT(FOR_VAR_,VA_NARGS(NULL, __VA_ARGS__))CAT(LPAREN T COMMA S COMMA OBSTRUCT(__VA_ARGS__) RPAREN))
 

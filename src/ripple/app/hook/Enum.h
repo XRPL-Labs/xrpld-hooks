@@ -219,7 +219,7 @@ namespace hook_api
         COMPLEX_NOT_SUPPORTED = -39,
         DOES_NOT_MATCH = -40,           // two keylets were required to be the same type but werent
         INVALID_KEY = -41,              // user supplied key was not valid
-
+        NOT_A_STRING = -42,             // nul terminator missing from a string argument
     };
 
     enum ExitType : uint8_t
@@ -319,7 +319,12 @@ namespace hook_api
         "hook_skip",
         "hook_again",
         "hook_namespace",
-        "meta_slot"
+        "meta_slot",
+        "str_find",
+        "str_replace",
+        "str_concat",
+        "str_format",
+        "str_compare"
     };
 };
 #endif

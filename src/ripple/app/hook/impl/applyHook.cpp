@@ -5058,3 +5058,225 @@ DEFINE_HOOK_FUNCTION(
     return slot_into;
 }
 
+    
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    str_find,
+    uint32_t hread_ptr, uint32_t hread_len,
+    uint32_t nread_ptr, uint32_t nread_len,
+    uint32_t mode,      uint32_t n)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length) ||
+        NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (hread_len > 32*1024)
+        return TOO_BIG;
+
+    if (nread_len > 256)
+        return TOO_BIG;
+
+    if (hread_len == 0)
+        return TOO_SMALL;
+
+    if (mode > 3)
+        return INVALID_ARGUMENT;
+
+    if (n >= hread_len)
+        return INVALID_ARGUMENT;
+
+    // overload for str_len
+    if (nread_ptr == 0)
+    {
+        if (nread_len != 0)
+            return INVALID_ARGUMENT;
+    
+        return strnlen((const char*)(hread_ptr + memory), hread_len);
+    }
+
+    bool insensitive = mode % 2 == 1;
+
+    // just the haystack based on where to start search from
+    hread_ptr += n;
+    hread_len -= n;
+    
+    if (NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    std::string_view haystack{(const char*)(memory + hread_ptr), hread_len};
+    if (mode < 2)
+    {
+        // plain string mode: 0 == case sensitive
+
+        std::string_view needle{(const char*)(memory + nread_ptr), nread_len};
+
+        auto found = std::search(
+            haystack.begin(), haystack.end(),
+            needle.begin(),   needle.end(),
+            insensitive
+            ?   [](char ch1, char ch2)
+                {
+                    return std::toupper(ch1) == std::toupper(ch2);
+                }
+            :   [](char ch1, char ch2)
+                {
+                    return ch1 == ch2;
+                }
+        );
+        
+        if (found == haystack.end())
+            return DOESNT_EXIST;
+        return found - haystack.begin();
+    }
+    else
+    {
+        // regex mode mode: 2 == case sensitive
+
+        return NOT_IMPLEMENTED;
+
+    }
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    str_replace,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t hread_ptr, uint32_t hread_len,
+    uint32_t nread_ptr, uint32_t nread_len,
+    uint32_t rread_ptr, uint32_t rread_len,
+    uint32_t mode,      uint32_t n)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
+        NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length) ||
+        NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length) ||
+        NOT_IN_BOUNDS(rread_ptr, rread_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (hread_len > 32*1024)
+        return TOO_BIG;
+    
+    if (nread_len > 256)
+        return TOO_BIG;
+
+    if (hread_len == 0)
+        return TOO_SMALL;
+
+    if (nread_len == 0)
+        return TOO_SMALL;
+
+    return NOT_IMPLEMENTED;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    str_compare,
+    uint32_t fread_ptr, uint32_t fread_len,
+    uint32_t sread_ptr, uint32_t sread_len,
+    uint32_t mode)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(fread_ptr, fread_len, memory_length) ||
+        NOT_IN_BOUNDS(sread_ptr, sread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (mode > 1)
+        return INVALID_ARGUMENT;
+
+    if (fread_len > 255 || sread_len > 255)
+        return TOO_BIG;
+
+    if (fread_len == 0 || sread_len == 0)
+        return TOO_SMALL;
+
+    bool insensitive = mode == 1;
+
+    const char* it1 = (const char*)(memory + fread_ptr);
+    const char* it2 = (const char*)(memory + sread_ptr);
+    const char* end1 = it1 + fread_len;
+    const char* end2 = it2 + sread_len;
+
+    if (insensitive)
+    for(; it1 < end1 && it2 < end2; ++it1, ++it2)
+    {
+        if (*it1 < *it2)
+            return 0;
+        if (*it1 > *it2)
+            return 2;
+    }
+    else
+    for(; it1 < end1 && it2 < end2; ++it1, ++it2)
+    {
+        if (std::tolower(*it1) < std::tolower(*it2))
+            return 0;
+        if (std::tolower(*it1) > std::tolower(*it2))
+            return 2;
+    }
+    return 1;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    str_format,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t fread_ptr, uint32_t fread_len,
+    uint64_t a, uint64_t b, uint64_t c, uint64_t d,
+    uint64_t e, uint64_t f, uint64_t g, uint64_t h)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
+        NOT_IN_BOUNDS(fread_ptr, fread_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (write_len == 0 || fread_len == 0)
+        return TOO_SMALL;
+
+    if (write_len > 1024 || fread_len > 1024)
+        return TOO_BIG;
+
+    // check if there's a nul terminator on format string
+    bool hasnul = false;
+    const char* fmtptr = (const char*)(memory + fread_ptr);
+    for (int i = 0; i < fread_len; ++i)
+    if (fmtptr[i] == '\0')
+    {
+        hasnul = true;
+        break;
+    }
+
+    if (!hasnul)
+        return NOT_A_STRING;
+    
+    //int result = snprintf(write_ptr + memory, write_len, fread_ptr + memory, a,b,c,d,e,f,g,h);
+    //RH NOTE: can't do this ^ because string arguments can expose non-wasm memory
+    // will need to parse format string ourselves, or implement our own.
+    return NOT_IMPLEMENTED;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
+    str_concat,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr,  uint32_t read_len,
+    uint64_t operand,   uint32_t operand_type)
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
+        NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (write_len > 1024 || read_len > 1024)
+        return TOO_BIG;
+    if (write_len == 0 || read_len == 0)
+        return TOO_SMALL;
+    if (write_len < read_len)
+        return TOO_SMALL;
+
+    return NOT_IMPLEMENTED;
+}
