@@ -655,8 +655,8 @@ hook::setHookState(
     ripple::AccountID const& acc,
     ripple::uint256 const& ns,
     ripple::uint256 const& key,
-    ripple::Slice const& data
-){
+    ripple::Slice const& data)
+{
 
     auto& view = applyCtx.view();
     auto j = applyCtx.app.journal("View");
@@ -5219,6 +5219,22 @@ DEFINE_HOOK_FUNCTION(
     return 1;
 }
 
+
+inline
+ssize_t
+findNul(const void* vptr, size_t len)
+{
+    const char* ptr = (const char*)vptr;
+    ssize_t found = -1;
+    for (size_t i = 0; i < len; ++i)
+    if (ptr[i] == '\0')
+    {
+        found = i;
+        break;
+    }
+    return found;
+}
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     str_format,
@@ -5240,16 +5256,7 @@ DEFINE_HOOK_FUNCTION(
         return TOO_BIG;
 
     // check if there's a nul terminator on format string
-    bool hasnul = false;
-    const char* fmtptr = (const char*)(memory + fread_ptr);
-    for (int i = 0; i < fread_len; ++i)
-    if (fmtptr[i] == '\0')
-    {
-        hasnul = true;
-        break;
-    }
-
-    if (!hasnul)
+    if (findNul(memory + fread_ptr, fread_len) < 0)
         return NOT_A_STRING;
     
     //int result = snprintf(write_ptr + memory, write_len, fread_ptr + memory, a,b,c,d,e,f,g,h);
@@ -5258,6 +5265,28 @@ DEFINE_HOOK_FUNCTION(
     return NOT_IMPLEMENTED;
 }
 
+/*
+    Overloaded API:
+    If operand_type == 0:
+        Copy read_ptr/len to write_ptr/len, do nothing else.
+    If operand_type >  0:
+        Copy read_ptr/len to write_ptr/len up to nul terminator, then
+        If operand_type == 1:
+            Concatenate operand as an i32 to the end of the string in write_ptr
+        If operand_type == 2:
+            Concatenate operand as an u32 to the end of the string in write_ptr
+        If operand_type == 3/4:
+            As above with i/u64
+        If operand_type == 5:
+            As above with operand interpreted as an XFL. Top 4 bits of operand_type are
+            precision for this type.
+        If operand_type == 6:
+            Interpret the four most significant bytes of operand as a ptr, and the
+            four least significant bytes as a length.
+            Write the bytes at this location to the end of write_ptr.
+        Finally:
+            Add a nul terminator to the end of write_ptr.
+*/
 DEFINE_HOOK_FUNCTION(
     int64_t,
     str_concat,
@@ -5277,6 +5306,126 @@ DEFINE_HOOK_FUNCTION(
         return TOO_SMALL;
     if (write_len < read_len)
         return TOO_SMALL;
+    
+    uint8_t precision = (uint8_t)((operand_type & 0xF000U) >> 28U);
+    operand_type &= 0xFU;
 
-    return NOT_IMPLEMENTED;
+    if (operand_type > 6)
+        return INVALID_ARGUMENT;
+
+
+    //copy operation
+    if (operand_type == 0)
+    {
+        size_t bytecount = std::min(write_len, read_len);
+        memcpy(memory + write_ptr, memory + read_ptr, bytecount);
+        return bytecount;
+    }
+
+    ssize_t nuloffset = 
+        findNul(memory + read_ptr, read_len);
+    
+    if (nuloffset < 0)
+        return NOT_A_STRING;
+    else 
+    if (write_len <= nuloffset)
+        return TOO_SMALL;
+
+    uint32_t write_start = write_ptr;
+
+
+    // copy the lhs into the write buffer
+    if (write_ptr != read_ptr)
+    {
+        size_t bytecount = std::min(write_len, std::min(read_len, (uint32_t)nuloffset));
+        memcpy(memory + write_ptr, memory + read_ptr, bytecount);
+        write_ptr += bytecount;
+        write_len -= bytecount;
+    }
+    else
+    {
+        write_ptr += nuloffset;
+        write_len -= nuloffset;
+    }
+
+    if (write_len == 0)
+        return TOO_SMALL;
+
+    const ssize_t lhscount = write_ptr - write_start;
+
+    // defensive check
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    auto write_num = [&]<typename T>(T i, const char* fmt) -> ssize_t
+    {
+        char buf[128];
+        int result = snprintf(buf, 128, fmt, i);
+        if (result < 0)
+            return TOO_BIG;
+        if (result + 1 > write_len)
+            return TOO_SMALL;
+        // defensive
+        size_t bytecount = std::min((uint32_t)result, std::min(127U, write_len - 1));
+        memcpy(memory + write_ptr, buf, bytecount);
+        *(memory + write_ptr + bytecount) = '\0';
+        return bytecount + 1 + lhscount;
+    };
+
+    // rhs
+    switch (operand_type)
+    {
+        case 1:
+            return write_num(( int32_t)operand, "%d");
+        case 2:
+            return write_num((uint32_t)operand, "%u");
+        case 3: 
+            return write_num(( int64_t)operand, "%lld");
+        case 4:
+            return write_num((uint64_t)operand, "%llu");
+        case 5:
+        {
+            // XFL
+            int32_t   e = get_exponent((int64_t)operand);
+            uint64_t  m = get_mantissa((int64_t)operand);
+            bool    neg =  is_negative((int64_t)operand);
+            double out = ((double)m) * pow(10, e);
+            if (neg)
+                out *= -1.0f;
+
+            if (precision > 0)
+            {
+                char fmtstr[10];
+                fmtstr[0] = '%';
+                fmtstr[1] = '.';
+                snprintf(fmtstr+2, 8, "%dg", precision);
+                return write_num(out, fmtstr);
+            }
+            return write_num(out, "%g");
+        }
+        case 6:
+        {
+            // STR
+            uint32_t ptr = (operand) >> 32U;
+            uint32_t len = (operand) & 0xFFFFFFFFU;
+
+            if (NOT_IN_BOUNDS(ptr, len, memory_length))
+                return OUT_OF_BOUNDS;
+
+            ssize_t nul = findNul(memory + ptr, len);
+            if (nul < 0)
+                return NOT_A_STRING;
+
+            if (nul > write_len - 1)
+                return TOO_SMALL;
+
+            // defensive
+            size_t bytecount = std::min((uint32_t)nul, std::min(len, write_len - 1));
+            memcpy(memory + write_ptr, memory + ptr, bytecount);
+            *(memory + write_ptr + bytecount) = '\0';
+            return bytecount + 1 + lhscount;
+        }    
+        default:
+            return INVALID_ARGUMENT;
+    }
 }
