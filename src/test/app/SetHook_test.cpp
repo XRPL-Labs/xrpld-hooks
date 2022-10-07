@@ -75,33 +75,20 @@ public:
                     hso(accept_wasm),
                     hso(accept_wasm)}}, 0), ter(temMALFORMED));
 
-        // If createcode present must be less than 64kib
+        // Cannot have both CreateCode and HookHash
         {
-            std::vector<uint8_t> longbin(0x10000U, 0xFFU);
-            env(ripple::test::jtx::hook(alice, {{hso(longbin)}}, 0), ter(temMALFORMED));
+            Json::Value jv = 
+                ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
+            Json::Value iv = jv[jss::Hooks][0U];
+            iv[jss::Hook][jss::HookHash] = to_string(uint256{beast::zero});
+            env(jv, ter(temMALFORMED));
         }
+
+        // If createcode present must be less than 64kib
+        env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0), ter(temMALFORMED));
         
     }
 
-/*
-            Json::Value jv;
-    
-            jv[jss::Account] = alice.human();
-            jv[jss::TransactionType] = jss::SetHook;
-            jv[jss::Flags] = 0;
-            jv[jss::Hooks] =
-                Json::Value{Json::arrayValue};
-
-            Json::Value iv;
-                    
-            iv[jss::CreateCode] = std::string(65536, 'F');
-            iv[jss::HookOn] = "0000000000000000";
-            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
-            iv[jss::HookApiVersion] = Json::Value{0};
-            
-            jv[jss::Hooks][i][jss::Hook] = iv;
-            env(jv, ter(temMALFORMED));
-*/
     void
     testMalformedWasm()
     {
@@ -119,6 +106,32 @@ public:
         env(ripple::test::jtx::hook(alice, {{hso(illegalfunc_wasm)}}, 0), ter(temMALFORMED));
     }
 
+    void
+    testAccept()
+    {
+        testcase("Test accept() hookapi");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0), ter(tesSUCCESS));
+    }
+    
+    void
+    testRollback()
+    {
+        testcase("Test rollback() hookapi");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        env(ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0), ter(tecHOOK_REJECTED));
+    }
+
         // Trivial single hook
         //env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0));
 
@@ -128,6 +141,8 @@ public:
     {
         //testTicketSetHook();  // RH TODO
         testHooksDisabled();
+        testAccept();
+        testRollback();
         testMalformedTxStructure();
         testMalformedWasm();
     }
@@ -142,8 +157,24 @@ private:
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             int64_t hook(uint32_t reserved )
             {
-                return accept(0,0,0);
                 _g(1,1);
+                return accept(0,0,0);
+            }
+        )[test.hook]"
+    ];
+    
+    TestHook
+    rollback_wasm =
+    wasm[
+        R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            #define SBUF(x) (uint32_t)(x),sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                return rollback(SBUF("Hook Rejected"),0);
             }
         )[test.hook]"
     ];
@@ -155,9 +186,11 @@ private:
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            #define SBUF(x) (uint32_t)(x),sizeof(x)
             int64_t hook(uint32_t reserved )
             {
-                return accept(0,0,0);
+                _g(1,1);
+                return accept(SBUF("Hook Accepted"),0);
             }
         )[test.hook]"
     ];
@@ -171,6 +204,7 @@ private:
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             int64_t hook(uint32_t reserved )
             {
+                _g(1,1);
                 return accept(0,0,0);
             }
             void otherfunc()
@@ -204,3 +238,23 @@ private:
 BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 }  // namespace test
 }  // namespace ripple
+
+/*
+            Json::Value jv;
+    
+            jv[jss::Account] = alice.human();
+            jv[jss::TransactionType] = jss::SetHook;
+            jv[jss::Flags] = 0;
+            jv[jss::Hooks] =
+                Json::Value{Json::arrayValue};
+
+            Json::Value iv;
+                    
+            iv[jss::CreateCode] = std::string(65536, 'F');
+            iv[jss::HookOn] = "0000000000000000";
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            iv[jss::HookApiVersion] = Json::Value{0};
+            
+            jv[jss::Hooks][i][jss::Hook] = iv;
+            env(jv, ter(temMALFORMED));
+*/

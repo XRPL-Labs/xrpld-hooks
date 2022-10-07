@@ -70,6 +70,7 @@ JSS(FeeSettings);            // ledger type.
 JSS(Flags);                  // in/out: TransactionSign; field.
 JSS(incomplete_shards);      // out: OverlayImpl, PeerImp
 JSS(HookApiVersion);         // field
+JSS(HookHash);               // field
 JSS(HookNamespace);          // field
 JSS(HookOn);                 // field
 JSS(Hooks);                  // field
