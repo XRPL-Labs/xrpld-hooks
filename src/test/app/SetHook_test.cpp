@@ -20,47 +20,32 @@
 #include <ripple/protocol/jss.h>
 #include <test/jtx.h>
 #include <test/jtx/hook.h>
+#include <test/app/SetHook_wasm.h>
 
 namespace ripple {
 
 namespace test {
 
+
+using TestHook = std::vector<uint8_t> const&;
+
 class SetHook_test : public beast::unit_test::suite
 {
 private:
-    std::vector<uint8_t> const
-    accept_wasm = 
-    {
-        /*
-        (module
-          (type (;0;) (func (param i32 i32 i64) (result i64)))
-          (type (;1;) (func (param i32 i32) (result i32)))
-          (type (;2;) (func (param i32) (result i64)))
-          (import "env" "accept" (func (;0;) (type 0)))
-          (import "env" "_g" (func (;1;) (type 1)))
-          (func (;2;) (type 2) (param i32) (result i64)
-            (local i32)
-            i32.const 0
-            i32.const 0
-            i64.const 0
-            call 0
-            drop
-            i32.const 1
-            i32.const 1
-            call 1
-            drop
-            i64.const 0)
-          (memory (;0;) 2)
-          (export "hook" (func 2)))
-        */  
-        0x00U,0x61U,0x73U,0x6dU,0x01U,0x00U,0x00U,0x00U,0x01U,0x13U,0x03U,0x60U,0x03U,0x7fU,0x7fU,0x7eU,0x01U,0x7eU,
-        0x60U,0x02U,0x7fU,0x7fU,0x01U,0x7fU,0x60U,0x01U,0x7fU,0x01U,0x7eU,0x02U,0x17U,0x02U,0x03U,0x65U,0x6eU,0x76U,
-        0x06U,0x61U,0x63U,0x63U,0x65U,0x70U,0x74U,0x00U,0x00U,0x03U,0x65U,0x6eU,0x76U,0x02U,0x5fU,0x67U,0x00U,0x01U,
-        0x03U,0x02U,0x01U,0x02U,0x05U,0x03U,0x01U,0x00U,0x02U,0x07U,0x08U,0x01U,0x04U,0x68U,0x6fU,0x6fU,0x6bU,0x00U,
-        0x02U,0x0aU,0x18U,0x01U,0x16U,0x01U,0x01U,0x7fU,0x41U,0x00U,0x41U,0x00U,0x42U,0x00U,0x10U,0x00U,0x1aU,0x41U,
-        0x01U,0x41U,0x01U,0x10U,0x01U,0x1aU,0x42U,0x00U,0x0bU
-    };
-
+    TestHook
+    accept_wasm =
+    wasm[
+        R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            int64_t hook(uint32_t reserved )
+            {
+                accept(0,0,0);
+                _g(1,1);
+            }
+        )[test.hook]"
+    ];
 public:
 
 
@@ -89,7 +74,7 @@ public:
         // Must have a "Hooks" field
         env(ripple::test::jtx::hook(alice, {}, 0), ter(temMALFORMED));
 
-        // Must have at least one non-empty subfield 
+        // Must have at least one non-empty subfield
         env(ripple::test::jtx::hook(alice, {{}}, 0), ter(temMALFORMED));
 
         // Trivial single hook
