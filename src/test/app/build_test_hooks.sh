@@ -14,12 +14,12 @@ std::map<std::string, std::vector<uint8_t>> wasm = {' > SetHook_wasm.h
 cat SetHook_test.cpp | tr '\n' '\f' | 
         grep -Po 'R"\[test\.hook\](.*?)\[test\.hook\]"' | 
         sed -E 's/R"\[test\.hook\]\(//g' | 
-        sed -E 's/\)\[test\.hook\]"[\f \t]*//g' | 
+        sed -E 's/\)\[test\.hook\]"[\f \t]*/\/*end*\//g' | 
         while read -r line
         do
             echo -n '{ R"[test.hook](' >> SetHook_wasm.h
 #            tr '\f' '\n' <<< $line >> SetHook_wasm.h
-            cat <<< $line | tr -d '\n' | tr '\f' '\n' >> SetHook_wasm.h
+            cat <<< $line | sed -E 's/.{7}$//g' | tr -d '\n' | tr '\f' '\n' >> SetHook_wasm.h
             echo ')[test.hook]",' >> SetHook_wasm.h
             echo "{" >> SetHook_wasm.h
             wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 

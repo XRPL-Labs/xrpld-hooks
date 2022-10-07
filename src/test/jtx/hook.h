@@ -32,7 +32,7 @@ Json::Value
 hook(Account const& account, std::optional<std::vector<Json::Value>> hooks, std::uint32_t flags);
 
 Json::Value
-hso(std::vector<uint8_t> wasmBytes, uint64_t hookOn = 0, uint256 ns = beast::zero, uint8_t apiversion = 0);
+hso(std::vector<uint8_t> const& wasmBytes, uint64_t hookOn = 0, uint256 ns = beast::zero, uint8_t apiversion = 0);
 
 }  // namespace jtx
 }  // namespace test
