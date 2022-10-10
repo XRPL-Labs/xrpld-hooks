@@ -18,13 +18,21 @@ cat SetHook_test.cpp | tr '\n' '\f' |
         while read -r line
         do
             echo -n '{ R"[test.hook](' >> SetHook_wasm.h
-#            tr '\f' '\n' <<< $line >> SetHook_wasm.h
             cat <<< $line | sed -E 's/.{7}$//g' | tr -d '\n' | tr '\f' '\n' >> SetHook_wasm.h
             echo ')[test.hook]",' >> SetHook_wasm.h
             echo "{" >> SetHook_wasm.h
-            wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 
-                xxd -p -u -c 19 | 
-                sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
+            WAT=`grep -Eo '\(module' <<< $line | wc -l`
+            if [ "$WAT" -eq "0" ]
+            then
+                wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 
+                    hook-cleaner - - |
+                    xxd -p -u -c 19 | 
+                    sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
+            else
+                wat2wasm - -o /dev/stdout <<< `tr '\f' '\n' <<< $(sed -E 's/.{7}$//g' <<< $line)` |
+                    xxd -p -u -c 19 | 
+                    sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
+            fi
             echo '}},' >> SetHook_wasm.h
             echo >> SetHook_wasm.h
         done
