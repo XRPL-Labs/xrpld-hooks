@@ -8,36 +8,70 @@
 #include <ostream>
 #include <unistd.h>
 #include <sys/stat.h>
+#include <sys/ioctl.h>
 #include <fcntl.h>
+#include <string.h>
 
 int main(int argc, char** argv)
 {
-    if (argc != 2)
+
+    const char* fin = 0;
+
+    if (argc > 2)
         return fprintf(stderr, "Guard Checker\n\tUsage: %s somefile.wasm\n", argv[0]);
-    
+    else if (argc == 1)
+        fin = "-";
+    else
+        fin = argv[1];
 
-    int fd = open(argv[1], O_RDONLY);
+    int fd = 0;
+    if (strcmp(fin, "-") != 0)
+        fd = open(fin, O_RDONLY);
+
     if (fd < 0)
-        return fprintf(stderr, "Could not open file for reading:`%s`\n", argv[1]);
+        return fprintf(stderr, "Could not open file for reading:`%s`\n", fin);
 
-    size_t len = lseek(fd, 0, SEEK_END);
+    off_t len = fd == 0 ? 0 :
+        lseek(fd, 0, SEEK_END);
 
-    lseek(fd, 0, SEEK_SET);
+    if (fd != 0)
+        lseek(fd, 0, SEEK_SET);
 
-    std::vector<uint8_t> hook(len);
+    int length_known = len > 0;
 
-    uint8_t* ptr = hook.data();
+    uint8_t hook_data[0x100000U];
+
+    uint8_t* ptr = hook_data;
 
     size_t upto = 0;
-    while (upto < len)
+
+    fcntl(fd, F_SETFL, fcntl(0, F_GETFL) & ~O_NONBLOCK);
+
+    while (ptr - hook_data < sizeof(hook_data))
     {
+        if (length_known)
+        {
+            if (upto >= len)
+                break;
+        }
+        else
+            len = upto + 1;
+        
         size_t bytes_read = read(fd, ptr + upto, len - upto);
+        
+        if (!length_known && bytes_read == 0)
+            break;
+
         if (bytes_read < 0)
-            return fprintf(stderr, "Error reading file `%s`, only %ld bytes could be read\n", argv[1], upto);
+            return fprintf(stderr, "Error reading file `%s`, only %ld bytes could be read\n", fin, upto);
+
         upto += bytes_read;
     }
 
-    printf("Read %ld bytes from `%s` successfully...\n", upto, argv[1]);
+    std::vector<uint8_t> hook(upto);
+    memcpy(hook.data(), hook_data, upto);
+
+    printf("Read %ld bytes from `%s` successfully...\n", upto, fin);
 
     close(fd);
 
