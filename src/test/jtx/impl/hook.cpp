@@ -33,6 +33,7 @@ hook(Account const& account, std::optional<std::vector<Json::Value>> hooks, std:
     jv[jss::Account] = account.human();
     jv[jss::TransactionType] = jss::SetHook;
     jv[jss::Flags] = flags;
+    
     if (hooks)
     {
         jv[jss::Hooks] =

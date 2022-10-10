@@ -26,6 +26,7 @@ namespace ripple {
 
 namespace test {
 
+#define DEBUG_TESTS 1
 
 using TestHook = std::vector<uint8_t> const&;
 
@@ -33,6 +34,10 @@ class SetHook_test : public beast::unit_test::suite
 {
 public:
 
+    // This is a large fee, large enough that we can set most small test hooks without running into fee issues
+    // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
+    #define HSFEE fee(1'000'000)
+    #define M(m) memo(m, "", "")
     void
     testHooksDisabled()
     {
@@ -41,15 +46,12 @@ public:
         Env env{*this, supported_amendments() - featureHooks};
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
+
         // RH TODO: does it matter that passing malformed txn here gives back temMALFORMED (and not disabled)?
-        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0), ter(temDISABLED));
+        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0),
+            M("Hooks Disabled"),
+            HSFEE, ter(temDISABLED));
     }
-
-//Json::Value
-//hook(Account const& account, std::optional<std::vector<Json::Value>> hooks, std::uint32_t flags);
-
-//Json::Value
-//hso(std::vector<uint8_t> wasmBytes, uint64_t hookOn = 0, uint256 ns = beast::zero, uint8_t apiversion = 0);
 
     void
     testMalformedTxStructure()
@@ -60,32 +62,42 @@ public:
 
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
+        env.close();
 
-        // Must have a "Hooks" field
-        env(ripple::test::jtx::hook(alice, {}, 0), ter(temMALFORMED));
+        env(ripple::test::jtx::hook(alice, {}, 0), 
+            M("Must have a hooks field"),
+            HSFEE, ter(temMALFORMED));
 
-        // Must have at least one non-empty subfield
-        env(ripple::test::jtx::hook(alice, {{}}, 0), ter(temMALFORMED));
 
-        // Must have fewer than 5 entries
+        env(ripple::test::jtx::hook(alice, {{}}, 0), 
+            M("Must have a non-empty hooks field"),
+            HSFEE, ter(temMALFORMED));
+
         env(ripple::test::jtx::hook(alice, {{
                     hso(accept_wasm),
                     hso(accept_wasm),
                     hso(accept_wasm),
                     hso(accept_wasm),
-                    hso(accept_wasm)}}, 0), ter(temMALFORMED));
+                    hso(accept_wasm)}}, 0), 
+            M("Must have fewer than 5 entries"),
+            HSFEE, ter(temMALFORMED));
 
-        // Cannot have both CreateCode and HookHash
         {
             Json::Value jv = 
                 ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
             Json::Value iv = jv[jss::Hooks][0U];
             iv[jss::Hook][jss::HookHash] = to_string(uint256{beast::zero});
-            env(jv, ter(temMALFORMED));
+            jv[jss::Hooks][0U] = iv;
+            env(jv,
+                M("Cannot have both CreateCode and HookHash"),        
+                HSFEE, ter(temMALFORMED));
+            env.close();
         }
 
-        // If createcode present must be less than 64kib
-        env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0), ter(temMALFORMED));
+        env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0),
+                M("If CreateCode is present, then it must be less than 64kib"),
+                HSFEE, ter(temMALFORMED));
+        env.close();
         
     }
 
@@ -98,12 +110,14 @@ public:
 
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
+    
+        env(ripple::test::jtx::hook(alice, {{hso(noguard_wasm)}}, 0),
+                M("Must import guard"),
+                HSFEE, ter(temMALFORMED));
 
-        // Must import guard
-        env(ripple::test::jtx::hook(alice, {{hso(noguard_wasm)}}, 0), ter(temMALFORMED));
-
-        // Must only contain hook and cbak
-        env(ripple::test::jtx::hook(alice, {{hso(illegalfunc_wasm)}}, 0), ter(temMALFORMED));
+        env(ripple::test::jtx::hook(alice, {{hso(illegalfunc_wasm)}}, 0),
+                M("Must only contain hook and cbak"),
+                HSFEE, ter(temMALFORMED));
     }
 
     void
@@ -114,9 +128,20 @@ public:
         Env env{*this, supported_amendments()};
 
         auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
 
-        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0), ter(tesSUCCESS));
+        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0), 
+            M("Install Accept Hook"),
+            HSFEE);
+        env.close();
+
+        env(pay(bob, alice, XRP(1)),
+            M("Test Accept Hook"),
+            fee(XRP(1)));
+        env.close();
+
     }
     
     void
@@ -126,30 +151,37 @@ public:
         using namespace jtx;
         Env env{*this, supported_amendments()};
 
+        auto const bob = Account{"bob"};
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
 
-        env(ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0), ter(tecHOOK_REJECTED));
+        env(ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0),
+            M("Install Rollback Hook"),
+            HSFEE);
+        env.close();
+
+        env(pay(bob, alice, XRP(1)),
+            M("Test Rollback Hook"),
+            fee(XRP(1)), ter(tecHOOK_REJECTED));
+        env.close();
     }
 
-        // Trivial single hook
-        //env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0));
-
-        // RH TODO
     void
     run() override
     {
         //testTicketSetHook();  // RH TODO
         testHooksDisabled();
-        testAccept();
-        testRollback();
         testMalformedTxStructure();
         testMalformedWasm();
+        testAccept();
+        testRollback();
     }
 
 private:
+
     TestHook
-    accept_wasm =
+    accept_wasm =   // WASM: 0
     wasm[
         R"[test.hook](
             #include <stdint.h>
@@ -164,7 +196,7 @@ private:
     ];
     
     TestHook
-    rollback_wasm =
+    rollback_wasm = // WASM: 1
     wasm[
         R"[test.hook](
             #include <stdint.h>
@@ -180,42 +212,63 @@ private:
     ];
     
     TestHook
-    noguard_wasm =
+    noguard_wasm =  // WASM: 2
     wasm[
         R"[test.hook](
-            #include <stdint.h>
-            extern int32_t _g       (uint32_t id, uint32_t maxiter);
-            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            #define SBUF(x) (uint32_t)(x),sizeof(x)
-            int64_t hook(uint32_t reserved )
-            {
-                _g(1,1);
-                return accept(SBUF("Hook Accepted"),0);
-            }
+            (module
+              (type (;0;) (func (param i32 i32 i64) (result i64)))
+              (type (;1;) (func (param i32) (result i64)))
+              (import "env" "accept" (func (;0;) (type 0)))
+              (func (;1;) (type 1) (param i32) (result i64)
+                i32.const 0
+                i32.const 0
+                i64.const 0
+                call 0)
+              (memory (;0;) 2)
+              (export "memory" (memory 0))
+              (export "hook" (func 1)))
         )[test.hook]"
     ];
 
     TestHook
-    illegalfunc_wasm =
+    illegalfunc_wasm = // WASM: 3
     wasm[
         R"[test.hook](
-            #include <stdint.h>
-            extern int32_t _g       (uint32_t id, uint32_t maxiter);
-            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            int64_t hook(uint32_t reserved )
-            {
-                _g(1,1);
-                return accept(0,0,0);
-            }
-            void otherfunc()
-            {
-                _g(1,1);
-            }
+            (module
+              (type (;0;) (func (param i32 i32) (result i32)))
+              (type (;1;) (func (param i32 i32 i64) (result i64)))
+              (type (;2;) (func))
+              (type (;3;) (func (param i32) (result i64)))
+              (import "env" "_g" (func (;0;) (type 0)))
+              (import "env" "accept" (func (;1;) (type 1)))
+              (func (;2;) (type 3) (param i32) (result i64)
+                i32.const 1
+                i32.const 1
+                call 0
+                drop
+                i32.const 0
+                i32.const 0
+                i64.const 0
+                call 1)
+              (func (;3;) (type 2)
+                i32.const 1
+                i32.const 1
+                call 0
+                drop)
+              (memory (;0;) 2)
+              (global (;0;) (mut i32) (i32.const 66560))
+              (global (;1;) i32 (i32.const 1024))
+              (global (;2;) i32 (i32.const 1024))
+              (global (;3;) i32 (i32.const 66560))
+              (global (;4;) i32 (i32.const 1024))
+              (export "memory" (memory 0))
+              (export "hook" (func 2))
+              (export "bad_func" (func 3)))
         )[test.hook]"
     ];
 
     TestHook
-    long_wasm =
+    long_wasm = // WASM: 4
     wasm[
         R"[test.hook](
             #include <stdint.h>
@@ -227,6 +280,7 @@ private:
             #define M_REPEAT_1000(X) M_REPEAT_100(M_REPEAT_10(X)) 
             int64_t hook(uint32_t reserved )
             {
+                _g(1,1);
                 char ret[] = M_REPEAT_1000("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz01234567890123");
                 return accept(SBUF(ret), 0);
             }
