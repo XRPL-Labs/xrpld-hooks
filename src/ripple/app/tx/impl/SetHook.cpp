@@ -146,10 +146,14 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
 }
 
 // infer which operation the user is attempting to execute from the present and absent fields
-HookSetOperation inferOperation(STObject const& hookSetObj)
+HookSetOperation
+SetHook::inferOperation(STObject const& hookSetObj)
 {
-    uint64_t wasmByteCount = hookSetObj.isFieldPresent(sfCreateCode) ?
-            hookSetObj.getFieldVL(sfCreateCode).size() : 0;
+    uint64_t wasmByteCount = 
+            hookSetObj.isFieldPresent(sfCreateCode) 
+                ? hookSetObj.getFieldVL(sfCreateCode).size() 
+                : 0;
+
     bool hasHash = hookSetObj.isFieldPresent(sfHookHash);
     bool hasCode = hookSetObj.isFieldPresent(sfCreateCode);
 
@@ -169,22 +173,19 @@ HookSetOperation inferOperation(STObject const& hookSetObj)
         !hookSetObj.isFieldPresent(sfHookApiVersion) &&
         !hookSetObj.isFieldPresent(sfFlags))
         return hsoNOOP;
+    
+    uint32_t flags = hookSetObj.isFieldPresent(sfFlags) ? hookSetObj.getFieldU32(sfFlags) : 0;
 
-    return hookSetObj.isFieldPresent(sfHookNamespace) ? hsoNSDELETE : hsoUPDATE;
-
+    return hookSetObj.isFieldPresent(sfHookNamespace) && (flags & hsfNSDELETE) 
+            ? hsoNSDELETE 
+            : hsoUPDATE;
 }
 
 // This is a context-free validation, it does not take into account the current state of the ledger
 // returns  < valid, instruction count >
 // may throw overflow_error
-std::variant<
-    bool,           // true = valid
-    std::pair<      // if set implicitly valid, and return instruction counts (hsoCREATE only)
-        uint64_t,   // max instruction count for hook
-        uint64_t    // max instruction count for cbak
-    >
->
-validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
+HookSetValidation
+SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
 {
     uint32_t flags = hookSetObj.isFieldPresent(sfFlags) ? hookSetObj.getFieldU32(sfFlags) : 0;
 

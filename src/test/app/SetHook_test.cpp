@@ -21,6 +21,8 @@
 #include <test/jtx.h>
 #include <test/jtx/hook.h>
 #include <test/app/SetHook_wasm.h>
+#include <ripple/app/tx/impl/SetHook.h>
+#include <unordered_map>
 
 namespace ripple {
 
@@ -30,9 +32,31 @@ namespace test {
 
 using TestHook = std::vector<uint8_t> const&;
 
+class JSSHasher
+{
+public:
+    size_t operator()(const Json::StaticString& n) const
+    {
+        return std::hash<std::string_view>{}(n.c_str());
+    }
+};
+
+class JSSEq
+{
+public:
+    bool operator()(const Json::StaticString& a, const Json::StaticString& b) const
+    {
+        return a == b;
+    }
+};
+
+using JSSMap = std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JSSEq>;
+
 class SetHook_test : public beast::unit_test::suite
 {
 public:
+
+
 
     // This is a large fee, large enough that we can set most small test hooks without running into fee issues
     // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
@@ -64,6 +88,8 @@ public:
         env.fund(XRP(10000), alice);
         env.close();
 
+        // Test outer structure
+
         env(ripple::test::jtx::hook(alice, {}, 0), 
             M("Must have a hooks field"),
             HSFEE, ter(temMALFORMED));
@@ -74,14 +100,32 @@ public:
             HSFEE, ter(temMALFORMED));
 
         env(ripple::test::jtx::hook(alice, {{
-                    hso(accept_wasm),
-                    hso(accept_wasm),
-                    hso(accept_wasm),
-                    hso(accept_wasm),
-                    hso(accept_wasm)}}, 0), 
+                hso(accept_wasm),
+                hso(accept_wasm),
+                hso(accept_wasm),
+                hso(accept_wasm),
+                hso(accept_wasm)}}, 0), 
             M("Must have fewer than 5 entries"),
             HSFEE, ter(temMALFORMED));
 
+        {
+            Json::Value jv;
+            jv[jss::Account] = alice.human();
+            jv[jss::TransactionType] = jss::SetHook;
+            jv[jss::Flags] = 0;
+            jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+            Json::Value iv;
+            iv[jss::MemoData] = "DEADBEEF";
+            iv[jss::MemoFormat] = "";
+            iv[jss::MemoType] = "";
+            jv[jss::Hooks][0U][jss::Memo] = iv;
+            env(jv,
+                M("Hooks Array must contain Hook objects"),        
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+      
         {
             Json::Value jv = 
                 ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
@@ -95,10 +139,127 @@ public:
         }
 
         env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0),
-                M("If CreateCode is present, then it must be less than 64kib"),
-                HSFEE, ter(temMALFORMED));
+            M("If CreateCode is present, then it must be less than 64kib"),
+            HSFEE, ter(temMALFORMED));
         env.close();
+
+    }
+
+    void testMalformedDelete()
+    {
+        testcase("Checks malformed delete operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
         
+        // flag required
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation must include hsfOVERRIDE flag"),        
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // grants, parameters, hookon, hookapiversion, hooknamespace keys must be absent
+        for (auto const& [key, value]: 
+            JSSMap {
+                {jss::HookGrants, Json::arrayValue},
+                {jss::HookParameters, Json::arrayValue},
+                {jss::HookOn, "0"},
+                {jss::HookApiVersion, "0"},
+                {jss::HookNamespace, to_string(uint256{beast::zero})}
+            })
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            iv[key] = value;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation cannot include: grants, params, hookon, apiversion, namespace"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+        
+    }
+
+    void testMalformedInstall()
+    {
+    }
+
+    void testMalformedCreate()
+    {
+    }
+
+    void testMalformedUpdate()
+    {
+    }
+
+
+    void testInferHookSetOperation()
+    {
+        testcase("Test operation inference");
+        
+        // hsoNOOP
+        {
+            STObject hso{sfHook};
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoNOOP);
+        }
+
+        // hsoCREATE
+        {
+            STObject hso{sfHook};
+            hso.setFieldVL(sfCreateCode, {1});  // non-empty create code
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoCREATE);
+        }
+
+        // hsoDELETE
+        {
+            STObject hso{sfHook};
+            hso.setFieldVL(sfCreateCode, ripple::Blob{});  // empty create code
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoDELETE);
+        }
+
+        // hsoINSTALL
+        {
+            STObject hso{sfHook};
+            hso.setFieldH256(sfHookHash, uint256{beast::zero});  // all zeros hook hash
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoINSTALL);
+        }
+
+        // hsoNSDELETE
+        {
+            STObject hso{sfHook};
+            hso.setFieldH256(sfHookNamespace, uint256{beast::zero});  // all zeros hook hash
+            hso.setFieldU32(sfFlags, hsfNSDELETE);
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoNSDELETE);
+
+        }
+
+        // hsoUPDATE
+        {
+            STObject hso{sfHook};
+            hso.setFieldU64(sfHookOn, 1LLU); 
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoUPDATE);
+        }
+       
+        //hsoINVALID
+        {
+            STObject hso{sfHook};
+            hso.setFieldVL(sfCreateCode, {1});  // non-empty create code
+            hso.setFieldH256(sfHookHash, uint256{beast::zero});  // all zeros hook hash
+            BEAST_EXPECT(SetHook::inferOperation(hso) == hsoINVALID);
+        }
     }
 
     void
@@ -173,6 +334,9 @@ public:
         //testTicketSetHook();  // RH TODO
         testHooksDisabled();
         testMalformedTxStructure();
+        testInferHookSetOperation();
+        testMalformedDelete();
+        
         testMalformedWasm();
         testAccept();
         testRollback();

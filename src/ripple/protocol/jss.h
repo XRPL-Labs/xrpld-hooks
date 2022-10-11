@@ -74,6 +74,8 @@ JSS(HookHash);               // field
 JSS(HookNamespace);          // field
 JSS(HookOn);                 // field
 JSS(Hooks);                  // field
+JSS(HookGrants);             // field
+JSS(HookParameters);         // field
 JSS(Invalid);                //
 JSS(LastLedgerSequence);     // in: TransactionSign; field
 JSS(LedgerHashes);           // ledger type.
@@ -412,6 +414,10 @@ JSS(metadata);  // out: TransactionEntry
 JSS(method);    // RPC
 JSS(methods);
 JSS(metrics);                    // out: Peers
+JSS(Memo);                       // Field
+JSS(MemoFormat);                 // Field
+JSS(MemoData);                   // Field
+JSS(MemoType);                   // Field
 JSS(min_count);                  // in: GetCounts
 JSS(min_ledger);                 // in: LedgerCleaner
 JSS(minimum_fee);                // out: TxQ

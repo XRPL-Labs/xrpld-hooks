@@ -11,7 +11,7 @@
 
 using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
-#define DEBUG_GUARD 1
+#define DEBUG_GUARD 0
 #define DEBUG_GUARD_VERBOSE 0
 #define DEBUG_GUARD_VERY_VERBOSE 0
 
@@ -911,7 +911,8 @@ validateGuards(
             for (int j = 0; j < function_count; ++j)
             {
                 int type_idx = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                printf("Function map: func %d -> type %d\n", j, type_idx);
+                if (DEBUG_GUARD)
+                    printf("Function map: func %d -> type %d\n", j, type_idx);
                 func_type_map[j] = type_idx;
             }
         }
@@ -1131,8 +1132,9 @@ validateGuards(
                     maxInstrCountCbak = *valid;
                 else
                 {
-                    printf("code section: %d not hook_func_idx: %d or cbak_func_idx: %d\n",
-                            j, *hook_func_idx, (cbak_func_idx ? *cbak_func_idx : -1));
+                    if (DEBUG_GUARD)
+                        printf("code section: %d not hook_func_idx: %d or cbak_func_idx: %d\n",
+                                j, *hook_func_idx, (cbak_func_idx ? *cbak_func_idx : -1));
                     //   assert(false);
                 }
                 i = code_end;
