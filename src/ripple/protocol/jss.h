@@ -76,6 +76,8 @@ JSS(HookOn);                 // field
 JSS(Hooks);                  // field
 JSS(HookGrants);             // field
 JSS(HookParameters);         // field
+JSS(HookParameterName);      // field
+JSS(HookParameterValue);     // field
 JSS(Invalid);                //
 JSS(LastLedgerSequence);     // in: TransactionSign; field
 JSS(LedgerHashes);           // ledger type.

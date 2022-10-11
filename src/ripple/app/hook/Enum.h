@@ -128,6 +128,7 @@ namespace hook
             WASM_TOO_SMALL       = 80,                                                                                 
             WASM_VALIDATION      = 81,  // a generic error while parsing wasm, usually leb128 overflow
             HOOK_CBAK_DIFF_TYPES = 82,  // hook and cbak function definitions were different
+            PARAMETERS_NAME_REPEATED = 83,
             // RH NOTE: only HookSet msgs got log codes, possibly all Hook log lines should get a code? 
         };
     };

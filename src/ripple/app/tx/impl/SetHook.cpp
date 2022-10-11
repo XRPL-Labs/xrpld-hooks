@@ -101,6 +101,20 @@ validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
 bool
 validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
 {
+    const int  paramKeyMax = hook::maxHookParameterKeySize();
+    const int  paramValueMax = hook::maxHookParameterValueSize();
+
+    int paramCount = (int)(hookParams.size());
+    if (paramCount > 16)
+    {
+        JLOG(ctx.j.trace())
+            << "HookSet(" << hook::log::HOOK_PARAMS_COUNT << ")[" << HS_ACC()
+            << "]: Malformed transaction: Txn would result in too many parameters on hook";
+        return false;
+    }
+
+    std::set<ripple::Blob> alreadySet;
+
     for (auto const& hookParam : hookParams)
     {
         auto const& hookParamObj = dynamic_cast<STObject const*>(&hookParam);
@@ -114,6 +128,8 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
             return false;
         }
 
+        // RH TODO: rippled's template system already does most of these checks, run through and
+        // remove redundant template checking.
         bool nameFound = false;
         for (auto const& paramElement : *hookParamObj)
         {
@@ -140,8 +156,31 @@ validateHookParams(SetHookCtx& ctx, STArray const& hookParams)
                 << "SetHook sfHookParameter must contain at least sfHookParameterName";
             return false;
         }
-    }
 
+        ripple::Blob const& paramName = hookParam.getFieldVL(sfHookParameterName);
+
+        if (paramName.size() > paramKeyMax ||
+            (hookParam.isFieldPresent(sfHookParameterValue) &&
+                hookParam.getFieldVL(sfHookParameterValue).size() > paramValueMax))
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::HOOK_PARAM_SIZE << ")[" << HS_ACC()
+                << "]: Malformed transaction: Txn would result in a too large parameter name/value on hook";
+            return false;
+        }
+
+        if (alreadySet.find(paramName) != alreadySet.end())
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::PARAMETERS_NAME_REPEATED << ")[" << HS_ACC()
+                << "]: Malformed transaction: "
+                << "SetHook sfHookParameters must contain each parameter name at most once";
+            return false;
+        }
+
+        alreadySet.emplace(paramName);
+    }
+    
     return true;
 }
 

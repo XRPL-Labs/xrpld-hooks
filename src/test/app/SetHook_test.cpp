@@ -171,6 +171,18 @@ public:
             env.close();
         }
 
+        // invalid flags
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            iv[jss::Flags] = "2147483648";
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation must include hsfOVERRIDE flag"),        
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
         // grants, parameters, hookon, hookapiversion, hooknamespace keys must be absent
         for (auto const& [key, value]: 
             JSSMap {
@@ -189,16 +201,125 @@ public:
                 M("Hook DELETE operation cannot include: grants, params, hookon, apiversion, namespace"), 
                 HSFEE, ter(temMALFORMED));
             env.close();
-        }
-        
+        } 
     }
 
     void testMalformedInstall()
     {
+        testcase("Checks malformed install operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+        // trying to set api version
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            iv[jss::HookApiVersion] = 1U;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation cannot set apiversion"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+    }
+    
+    void testMalformedParamsGrants()
+    {
+        testcase("Checks malformed grants/params on create operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+
+        // check blank grants
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            iv[jss::HookGrants] = Json::Value{Json::arrayValue};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must include at least one entry in HookGrants when field is present"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        } 
+
+        // check too many parameters
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value params {Json::arrayValue};
+            for (uint32_t i = 0; i < 17; ++i)
+            {
+                params[i] = Json::Value{Json::arrayValue};
+                char buf[10];
+                snprintf(buf, 10, "param%d", i);
+                params[i][jss::HookParameterName] = Json::Value{std::string(buf)};
+                snprintf(buf, 10, "value%d", i);
+                params[i][jss::HookParameterValue] = Json::Value{std::string(buf)};
+            }
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must not include more than 16 parameters"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        } 
+
+        // check repeat parameters
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value params {Json::arrayValue};
+            for (uint32_t i = 0; i < 2; ++i)
+            {
+                params[i] = Json::Value{Json::arrayValue};
+                params[i][jss::HookParameterName] = "param";
+            }
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must not repeat parameter names"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        } 
+       
+        // RH TODO: check too long name, too long value 
+
     }
 
     void testMalformedCreate()
     {
+        testcase("Checks malformed create operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+        // RH UPTO
     }
 
     void testMalformedUpdate()
@@ -336,7 +457,9 @@ public:
         testMalformedTxStructure();
         testInferHookSetOperation();
         testMalformedDelete();
-        
+        testMalformedInstall();
+        testMalformedParamsGrants();
+
         testMalformedWasm();
         testAccept();
         testRollback();
