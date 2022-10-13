@@ -233,9 +233,9 @@ public:
 
     }
     
-    void testMalformedParamsGrants()
+    void testMalformedGrants()
     {
-        testcase("Checks malformed grants/params on create operation");
+        testcase("Checks malformed grants on install operation");
         using namespace jtx;
         Env env{*this, supported_amendments()};
 
@@ -261,6 +261,61 @@ public:
             env.close();
         } 
 
+        // check too many grants
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value grants {Json::arrayValue};
+            for (uint32_t i = 0; i < 9; ++i)
+            {
+                Json::Value pv;
+                Json::Value piv;
+                piv[jss::HookHash] = to_string(uint256{beast::zero});
+                pv[jss::HookGrant] = piv;
+                grants[i] = pv;
+            }
+            iv[jss::HookGrants] = grants;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must not include more than 8 grants"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        } 
+
+        // check wrong inner type
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value grants {Json::arrayValue};
+            grants[0U] = Json::Value{};
+            grants[0U][jss::Memo] = Json::Value{};
+            grants[0U][jss::Memo][jss::MemoFormat] = strHex(std::string(12, 'a'));
+            grants[0U][jss::Memo][jss::MemoData] = strHex(std::string(12, 'a'));
+            iv[jss::HookGrants] = grants;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO grant array can only contain HookGrant objects"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+    }
+
+    void testMalformedParams()
+    {
+        testcase("Checks malformed params on install operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
         // check too many parameters
         {
             Json::Value iv;
@@ -268,12 +323,12 @@ public:
             Json::Value params {Json::arrayValue};
             for (uint32_t i = 0; i < 17; ++i)
             {
-                params[i] = Json::Value{Json::arrayValue};
-                char buf[10];
-                snprintf(buf, 10, "param%d", i);
-                params[i][jss::HookParameterName] = Json::Value{std::string(buf)};
-                snprintf(buf, 10, "value%d", i);
-                params[i][jss::HookParameterValue] = Json::Value{std::string(buf)};
+                Json::Value pv;
+                Json::Value piv;
+                piv[jss::HookParameterName] = strHex("param" + std::to_string(i));
+                piv[jss::HookParameterValue] = strHex("value" + std::to_string(i)); 
+                pv[jss::HookParameter] = piv;
+                params[i] = pv;
             }
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
@@ -290,8 +345,9 @@ public:
             Json::Value params {Json::arrayValue};
             for (uint32_t i = 0; i < 2; ++i)
             {
-                params[i] = Json::Value{Json::arrayValue};
-                params[i][jss::HookParameterName] = "param";
+                params[i] = Json::Value{};
+                params[i][jss::HookParameter] = Json::Value{};
+                params[i][jss::HookParameter][jss::HookParameterName] = strHex(std::string{"param"});
             }
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
@@ -300,8 +356,56 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         } 
-       
-        // RH TODO: check too long name, too long value 
+
+        // check too long parameter name
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value params {Json::arrayValue};
+            params[0U] = Json::Value{};
+            params[0U][jss::HookParameter] = Json::Value{};
+            params[0U][jss::HookParameter][jss::HookParameterName] = strHex(std::string(33, 'a'));
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must must not contain parameter names longer than 32 bytes"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // check too long parameter value       
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value params {Json::arrayValue};
+            params[0U] = Json::Value{};
+            params[0U][jss::HookParameter] = Json::Value{};
+            params[0U][jss::HookParameter][jss::HookParameterName] = strHex(std::string(32, 'a'));
+            params[0U][jss::HookParameter][jss::HookParameterValue] = strHex(std::string(129, 'a'));
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO must must not contain parameter values longer than 128 bytes"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // wrong object type
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = to_string(uint256{beast::zero});
+            Json::Value params {Json::arrayValue};
+            params[0U] = Json::Value{};
+            params[0U][jss::Memo] = Json::Value{};
+            params[0U][jss::Memo][jss::MemoFormat] = strHex(std::string(12, 'a'));
+            params[0U][jss::Memo][jss::MemoData] = strHex(std::string(12, 'a'));
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("HSO parameter array can only contain HookParameter objects"), 
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
 
     }
 
@@ -458,7 +562,8 @@ public:
         testInferHookSetOperation();
         testMalformedDelete();
         testMalformedInstall();
-        testMalformedParamsGrants();
+        testMalformedParams();
+        testMalformedGrants();
 
         testMalformedWasm();
         testAccept();

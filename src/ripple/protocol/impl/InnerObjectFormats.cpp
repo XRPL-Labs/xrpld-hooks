@@ -115,7 +115,7 @@ InnerObjectFormats::InnerObjectFormats()
         sfHookParameter.getCode(),
         {
             {sfHookParameterName,   soeREQUIRED},
-            {sfHookParameterValue,  soeREQUIRED}
+            {sfHookParameterValue,  soeOPTIONAL}
         });
 
 
