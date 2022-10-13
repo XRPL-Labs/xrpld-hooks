@@ -45,7 +45,7 @@ hook(Account const& account, std::optional<std::vector<Json::Value>> hooks, std:
 }
 
 
-inline std::string uint64_hex(uint64_t x)
+std::string uint64_hex(uint64_t x)
 {
     auto const nibble = [](uint64_t n) -> char
     {

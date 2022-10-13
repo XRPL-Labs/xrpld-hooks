@@ -56,8 +56,6 @@ class SetHook_test : public beast::unit_test::suite
 {
 public:
 
-
-
     // This is a large fee, large enough that we can set most small test hooks without running into fee issues
     // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
     #define HSFEE fee(1'000'000)
@@ -78,7 +76,7 @@ public:
     }
 
     void
-    testMalformedTxStructure()
+    testTxStructure()
     {
         testcase("Checks malformed transactions");
         using namespace jtx;
@@ -90,12 +88,12 @@ public:
 
         // Test outer structure
 
-        env(ripple::test::jtx::hook(alice, {}, 0), 
+        env(ripple::test::jtx::hook(alice, {}, 0),
             M("Must have a hooks field"),
             HSFEE, ter(temMALFORMED));
 
 
-        env(ripple::test::jtx::hook(alice, {{}}, 0), 
+        env(ripple::test::jtx::hook(alice, {{}}, 0),
             M("Must have a non-empty hooks field"),
             HSFEE, ter(temMALFORMED));
 
@@ -104,7 +102,7 @@ public:
                 hso(accept_wasm),
                 hso(accept_wasm),
                 hso(accept_wasm),
-                hso(accept_wasm)}}, 0), 
+                hso(accept_wasm)}}, 0),
             M("Must have fewer than 5 entries"),
             HSFEE, ter(temMALFORMED));
 
@@ -121,119 +119,16 @@ public:
             iv[jss::MemoType] = "";
             jv[jss::Hooks][0U][jss::Memo] = iv;
             env(jv,
-                M("Hooks Array must contain Hook objects"),        
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        }
-      
-        {
-            Json::Value jv = 
-                ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
-            Json::Value iv = jv[jss::Hooks][0U];
-            iv[jss::Hook][jss::HookHash] = to_string(uint256{beast::zero});
-            jv[jss::Hooks][0U] = iv;
-            env(jv,
-                M("Cannot have both CreateCode and HookHash"),        
+                M("Hooks Array must contain Hook objects"),
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
 
-        env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0),
-            M("If CreateCode is present, then it must be less than 64kib"),
-            HSFEE, ter(temMALFORMED));
-        env.close();
+
 
     }
 
-    void testMalformedDelete()
-    {
-        testcase("Checks malformed delete operation");
-        using namespace jtx;
-        Env env{*this, supported_amendments()};
-
-        auto const alice = Account{"alice"};
-        env.fund(XRP(10000), alice);
-
-        Json::Value jv;
-        jv[jss::Account] = alice.human();
-        jv[jss::TransactionType] = jss::SetHook;
-        jv[jss::Flags] = 0;
-        jv[jss::Hooks] = Json::Value{Json::arrayValue};
-        
-        // flag required
-        {
-            Json::Value iv;
-            iv[jss::CreateCode] = "";
-            jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Hook DELETE operation must include hsfOVERRIDE flag"),        
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        }
-
-        // invalid flags
-        {
-            Json::Value iv;
-            iv[jss::CreateCode] = "";
-            iv[jss::Flags] = "2147483648";
-            jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Hook DELETE operation must include hsfOVERRIDE flag"),        
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        }
-
-        // grants, parameters, hookon, hookapiversion, hooknamespace keys must be absent
-        for (auto const& [key, value]: 
-            JSSMap {
-                {jss::HookGrants, Json::arrayValue},
-                {jss::HookParameters, Json::arrayValue},
-                {jss::HookOn, "0"},
-                {jss::HookApiVersion, "0"},
-                {jss::HookNamespace, to_string(uint256{beast::zero})}
-            })
-        {
-            Json::Value iv;
-            iv[jss::CreateCode] = "";
-            iv[key] = value;
-            jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Hook DELETE operation cannot include: grants, params, hookon, apiversion, namespace"), 
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        } 
-    }
-
-    void testMalformedInstall()
-    {
-        testcase("Checks malformed install operation");
-        using namespace jtx;
-        Env env{*this, supported_amendments()};
-
-        auto const alice = Account{"alice"};
-        env.fund(XRP(10000), alice);
-
-        Json::Value jv;
-        jv[jss::Account] = alice.human();
-        jv[jss::TransactionType] = jss::SetHook;
-        jv[jss::Flags] = 0;
-        jv[jss::Hooks] = Json::Value{Json::arrayValue};
-
-        // trying to set api version
-        {
-            Json::Value iv;
-            iv[jss::HookHash] = to_string(uint256{beast::zero});
-            iv[jss::HookApiVersion] = 1U;
-            jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Hook Install operation cannot set apiversion"), 
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        }
-
-    }
-    
-    void testMalformedGrants()
+    void testGrants()
     {
         testcase("Checks malformed grants on install operation");
         using namespace jtx;
@@ -256,10 +151,10 @@ public:
             iv[jss::HookGrants] = Json::Value{Json::arrayValue};
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must include at least one entry in HookGrants when field is present"), 
+                M("HSO must include at least one entry in HookGrants when field is present"),
                 HSFEE, ter(temMALFORMED));
             env.close();
-        } 
+        }
 
         // check too many grants
         {
@@ -277,10 +172,10 @@ public:
             iv[jss::HookGrants] = grants;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must not include more than 8 grants"), 
+                M("HSO must not include more than 8 grants"),
                 HSFEE, ter(temMALFORMED));
             env.close();
-        } 
+        }
 
         // check wrong inner type
         {
@@ -294,14 +189,13 @@ public:
             iv[jss::HookGrants] = grants;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO grant array can only contain HookGrant objects"), 
+                M("HSO grant array can only contain HookGrant objects"),
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
-
     }
 
-    void testMalformedParams()
+    void testParams()
     {
         testcase("Checks malformed params on install operation");
         using namespace jtx;
@@ -326,17 +220,17 @@ public:
                 Json::Value pv;
                 Json::Value piv;
                 piv[jss::HookParameterName] = strHex("param" + std::to_string(i));
-                piv[jss::HookParameterValue] = strHex("value" + std::to_string(i)); 
+                piv[jss::HookParameterValue] = strHex("value" + std::to_string(i));
                 pv[jss::HookParameter] = piv;
                 params[i] = pv;
             }
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must not include more than 16 parameters"), 
+                M("HSO must not include more than 16 parameters"),
                 HSFEE, ter(temMALFORMED));
             env.close();
-        } 
+        }
 
         // check repeat parameters
         {
@@ -352,10 +246,10 @@ public:
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must not repeat parameter names"), 
+                M("HSO must not repeat parameter names"),
                 HSFEE, ter(temMALFORMED));
             env.close();
-        } 
+        }
 
         // check too long parameter name
         {
@@ -368,12 +262,12 @@ public:
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must must not contain parameter names longer than 32 bytes"), 
+                M("HSO must must not contain parameter names longer than 32 bytes"),
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
 
-        // check too long parameter value       
+        // check too long parameter value
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
@@ -385,7 +279,7 @@ public:
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must must not contain parameter values longer than 128 bytes"), 
+                M("HSO must must not contain parameter values longer than 128 bytes"),
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
@@ -402,16 +296,110 @@ public:
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO parameter array can only contain HookParameter objects"), 
+                M("HSO parameter array can only contain HookParameter objects"),
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
 
     }
 
-    void testMalformedCreate()
+    void testInstall()
     {
-        testcase("Checks malformed create operation");
+        testcase("Checks malformed install operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), bob);
+
+        // create a hook that we can then install
+        {
+            env(ripple::test::jtx::hook(bob, {{
+                hso(accept_wasm), 
+                hso(rollback_wasm)
+            }}, 0),
+                M("First set = tesSUCCESS"),
+                HSFEE, ter(tesSUCCESS));
+        }
+
+        std::string accept_hash = to_string(ripple::sha512Half_s(
+            ripple::Slice(accept_wasm.data(), accept_wasm.size())
+        ));
+        
+        std::string rollback_hash = to_string(ripple::sha512Half_s(
+            ripple::Slice(accept_wasm.data(), accept_wasm.size())
+        ));
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+        // can't set api version
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = accept_hash;
+            iv[jss::HookApiVersion] = 1U;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation cannot set apiversion"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // can't set non-existent hook
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF";
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation cannot set non existent hook hash"),
+                HSFEE, ter(terNO_HOOK));
+            env.close();
+        }
+
+        // can set extant hook
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = accept_hash;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation can set extant hook hash"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+        }
+
+        // can't set extant hook over other hook without override flag
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = rollback_hash;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation can set extant hook hash"),
+                HSFEE, ter(tecREQUIRES_FLAG));
+            env.close();
+        }
+
+        // can set extant hook over other hook with override flag
+        {
+            Json::Value iv;
+            iv[jss::HookHash] = rollback_hash;
+            iv[jss::Flags] = hsfOVERRIDE;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook Install operation can set extant hook hash"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+        }
+    }
+
+    void testDelete()
+    {
+        testcase("Checks malformed delete operation");
         using namespace jtx;
         Env env{*this, supported_amendments()};
 
@@ -423,18 +411,304 @@ public:
         jv[jss::TransactionType] = jss::SetHook;
         jv[jss::Flags] = 0;
         jv[jss::Hooks] = Json::Value{Json::arrayValue};
-        // RH UPTO
+
+        // flag required
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation must include hsfOVERRIDE flag"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // invalid flags
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            iv[jss::Flags] = "2147483648";
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation must include hsfOVERRIDE flag"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // grants, parameters, hookon, hookapiversion, hooknamespace keys must be absent
+        for (auto const& [key, value]:
+            JSSMap {
+                {jss::HookGrants, Json::arrayValue},
+                {jss::HookParameters, Json::arrayValue},
+                {jss::HookOn, "0"},
+                {jss::HookApiVersion, "0"},
+                {jss::HookNamespace, to_string(uint256{beast::zero})}
+            })
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            iv[key] = value;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook DELETE operation cannot include: grants, params, hookon, apiversion, namespace"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
     }
 
-    void testMalformedUpdate()
+    void testNSDelete()
     {
+        testcase("Checks malformed nsdelete operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), bob);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+        
+        for (auto const& [key, value]:
+            JSSMap {
+                {jss::HookGrants, Json::arrayValue},
+                {jss::HookParameters, Json::arrayValue},
+                {jss::HookOn, "0"},
+                {jss::HookApiVersion, "0"},
+            })
+        {
+            Json::Value iv;
+            iv[key] = value;
+            iv[jss::Flags] = hsfNSDELETE;
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Hook NSDELETE operation cannot include: grants, params, hookon, apiversion"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // create a namespace
+        std::string ns = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
+        {
+            // create hook
+
+            Json::Value jv = 
+                ripple::test::jtx::hook(alice, {{hso(makestate_wasm)}}, 0);
+
+            jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns;
+            env(jv, M("Create makestate hook"), HSFEE, ter(tesSUCCESS));
+
+            // run hook
+                 
+            env(pay(bob, alice, XRP(1)),
+                M("Run create state hook"),
+                fee(XRP(1)));
+            env.close();
+        }
+
+        // RH UPTO
+        // delete the namespace
+
+    }
+
+    void testCreate()
+    {
+        testcase("Checks malformed create operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), bob);
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+
+        // test normal create and missing override flag
+        {
+            env(ripple::test::jtx::hook(bob, {{hso(accept_wasm)}}, 0),
+                    M("First set = tesSUCCESS"),
+                    HSFEE, ter(tesSUCCESS));
+
+            env(ripple::test::jtx::hook(bob, {{hso(accept_wasm)}}, 0),
+                    M("Second set = tecREQUIRES_FLAG"),
+                    HSFEE, ter(tecREQUIRES_FLAG));
+            env.close();
+        }
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+        // payload too large
+        {
+            env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0),
+                M("If CreateCode is present, then it must be less than 64kib"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // namespace missing
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = strHex(accept_wasm);
+            iv[jss::HookApiVersion] = 0U;
+            iv[jss::HookOn] = uint64_hex(0);
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("HSO Create operation must contain namespace"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // api version missing
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = strHex(accept_wasm);
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            iv[jss::HookOn] = uint64_hex(0);
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("HSO Create operation must contain api version"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // api version wrong
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = strHex(accept_wasm);
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            iv[jss::HookApiVersion] = 1U;
+            iv[jss::HookOn] = uint64_hex(0);
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("HSO Create operation must contain valid api version"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // hookon missing
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = strHex(accept_wasm);
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            iv[jss::HookApiVersion] = 0U;
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("HSO Create operation must contain hookon"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // hook hash present
+        {
+            Json::Value jv =
+                ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
+            Json::Value iv = jv[jss::Hooks][0U];
+            iv[jss::Hook][jss::HookHash] = to_string(uint256{beast::zero});
+            jv[jss::Hooks][0U] = iv;
+            env(jv,
+                M("Cannot have both CreateCode and HookHash"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+    }
+
+    void testUpdate()
+    {
+        testcase("Checks malformed update operation");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+        
+        // first create the hook
+        {
+            Json::Value iv;
+            iv[jss::CreateCode] = strHex(accept_wasm);
+            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
+            iv[jss::HookApiVersion] = 0U;
+            iv[jss::HookOn] = uint64_hex(0);
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Create accept"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+        }
+    
+        // all alice operations below are then updates
+
+        // must not specify override flag
+        {
+            Json::Value iv;
+            iv[jss::Flags] = hsfOVERRIDE;
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("Override flag not allowed on update"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // must not specify NSDELETE unless also Namespace
+        {
+            Json::Value iv;
+            iv[jss::Flags] = hsfNSDELETE;
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("NSDELETE flag not allowed on update unless HookNamespace also present"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+
+        // api version not allowed in update
+        {
+            Json::Value iv;
+            iv[jss::HookApiVersion] = 0U;
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("ApiVersion not allowed in update"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
     }
 
 
     void testInferHookSetOperation()
     {
         testcase("Test operation inference");
-        
+
         // hsoNOOP
         {
             STObject hso{sfHook};
@@ -474,10 +748,10 @@ public:
         // hsoUPDATE
         {
             STObject hso{sfHook};
-            hso.setFieldU64(sfHookOn, 1LLU); 
+            hso.setFieldU64(sfHookOn, 1LLU);
             BEAST_EXPECT(SetHook::inferOperation(hso) == hsoUPDATE);
         }
-       
+
         //hsoINVALID
         {
             STObject hso{sfHook};
@@ -488,7 +762,7 @@ public:
     }
 
     void
-    testMalformedWasm()
+    testWasm()
     {
         testcase("Checks malformed hook binaries");
         using namespace jtx;
@@ -496,7 +770,7 @@ public:
 
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
-    
+
         env(ripple::test::jtx::hook(alice, {{hso(noguard_wasm)}}, 0),
                 M("Must import guard"),
                 HSFEE, ter(temMALFORMED));
@@ -518,7 +792,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0), 
+        env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0),
             M("Install Accept Hook"),
             HSFEE);
         env.close();
@@ -529,7 +803,7 @@ public:
         env.close();
 
     }
-    
+
     void
     testRollback()
     {
@@ -558,14 +832,20 @@ public:
     {
         //testTicketSetHook();  // RH TODO
         testHooksDisabled();
-        testMalformedTxStructure();
+        testTxStructure();
         testInferHookSetOperation();
-        testMalformedDelete();
-        testMalformedInstall();
-        testMalformedParams();
-        testMalformedGrants();
+        testParams();
+        testGrants();
 
-        testMalformedWasm();
+        testDelete();
+        testInstall();
+        testCreate();
+
+        testUpdate();
+
+        testNSDelete();
+
+        testWasm();
         testAccept();
         testRollback();
     }
@@ -586,7 +866,7 @@ private:
             }
         )[test.hook]"
     ];
-    
+
     TestHook
     rollback_wasm = // WASM: 1
     wasm[
@@ -602,7 +882,7 @@ private:
             }
         )[test.hook]"
     ];
-    
+
     TestHook
     noguard_wasm =  // WASM: 2
     wasm[
@@ -668,8 +948,8 @@ private:
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             #define SBUF(x) (uint32_t)(x), sizeof(x)
             #define M_REPEAT_10(X) X X X X X X X X X X
-            #define M_REPEAT_100(X) M_REPEAT_10(M_REPEAT_10(X)) 
-            #define M_REPEAT_1000(X) M_REPEAT_100(M_REPEAT_10(X)) 
+            #define M_REPEAT_100(X) M_REPEAT_10(M_REPEAT_10(X))
+            #define M_REPEAT_1000(X) M_REPEAT_100(M_REPEAT_10(X))
             int64_t hook(uint32_t reserved )
             {
                 _g(1,1);
@@ -679,6 +959,24 @@ private:
         )[test.hook]"
     ];
 
+    TestHook
+    makestate_wasm = // WASM: 5
+    wasm[
+        R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g           (uint32_t id, uint32_t maxiter);
+            extern int64_t accept       (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state_set    (uint32_t read_ptr, uint32_t read_len, uint32_t kread_ptr, uint32_t kread_len);
+            #define SBUF(x) x, sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t test_key[] = "key";
+                uint8_t test_value[] = "value";
+                return accept(0,0, state_set(SBUF(test_value), SBUF(test_key)));
+            }
+        )[test.hook]"
+    ];
 
 };
 BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
@@ -687,7 +985,7 @@ BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 
 /*
             Json::Value jv;
-    
+
             jv[jss::Account] = alice.human();
             jv[jss::TransactionType] = jss::SetHook;
             jv[jss::Flags] = 0;
@@ -695,12 +993,12 @@ BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
                 Json::Value{Json::arrayValue};
 
             Json::Value iv;
-                    
+
             iv[jss::CreateCode] = std::string(65536, 'F');
             iv[jss::HookOn] = "0000000000000000";
             iv[jss::HookNamespace] = to_string(uint256{beast::zero});
             iv[jss::HookApiVersion] = Json::Value{0};
-            
+
             jv[jss::Hooks][i][jss::Hook] = iv;
             env(jv, ter(temMALFORMED));
 */

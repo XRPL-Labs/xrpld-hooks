@@ -341,9 +341,9 @@ TERtoInt(TECcodes v)
 template <template <typename> class Trait>
 class TERSubset
 {
+public:
     TERUnderlyingType code_;
 
-public:
     // Constructors
     constexpr TERSubset() : code_(tesSUCCESS)
     {

@@ -388,7 +388,7 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 return false;
             }
 
-            // validate api version, if provided
+            // ensure api version is provided
             if (!hookSetObj.isFieldPresent(sfHookApiVersion))
             {
                 JLOG(ctx.j.trace())
@@ -1093,7 +1093,6 @@ SetHook::setHook()
         if (hookSetObj)
             op = inferOperation(hookSetObj->get());
 
-
         // these flags are not able to be passed onto the ledger object
         int newFlags = 0;
         if (flags)
@@ -1105,15 +1104,6 @@ SetHook::setHook()
             if (newFlags & hsfNSDELETE)
                 newFlags -= hsfNSDELETE;
         }
-
-
-        printf("HookSet operation %d: %s\n", hookSetNumber,
-                (op == hsoNSDELETE ? "hsoNSDELETE" :
-                (op == hsoDELETE ? "hsoDELETE" :
-                (op == hsoCREATE ? "hsoCREATE" :
-                (op == hsoINSTALL ? "hsoINSTALL" :
-                (op == hsoUPDATE ? "hsoUPDATE" :
-                (op == hsoNOOP ? "hsoNOOP" : "hsoINALID")))))));
 
         // if an existing hook exists at this position in the chain then extract the relevant fields
         if (oldHook && oldHook->get().isFieldPresent(sfHookHash))

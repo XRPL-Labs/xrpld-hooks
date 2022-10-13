@@ -177,6 +177,7 @@ transResults()
         MAKE_ERROR(terOWNERS,                 "Non-zero owner count."),
         MAKE_ERROR(terQUEUED,                 "Held until escalated fee drops."),
         MAKE_ERROR(terPRE_TICKET,             "Ticket is not yet in ledger."),
+        MAKE_ERROR(terNO_HOOK,                "No hook with that hash exists on the ledger."),
 
         MAKE_ERROR(tesSUCCESS,                "The transaction was applied. Only final in a validated ledger."),
     };

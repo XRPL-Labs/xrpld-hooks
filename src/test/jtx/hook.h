@@ -34,6 +34,8 @@ hook(Account const& account, std::optional<std::vector<Json::Value>> hooks, std:
 Json::Value
 hso(std::vector<uint8_t> const& wasmBytes, uint64_t hookOn = 0, uint256 ns = beast::zero, uint8_t apiversion = 0);
 
+std::string uint64_hex(uint64_t x);
+
 }  // namespace jtx
 }  // namespace test
 }  // namespace ripple
