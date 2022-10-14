@@ -502,6 +502,7 @@ public:
 
             jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns;
             env(jv, M("Create makestate hook"), HSFEE, ter(tesSUCCESS));
+            env.close();
 
             // run hook
             env(pay(bob, alice, XRP(1)),
@@ -509,6 +510,36 @@ public:
                 fee(XRP(1)));
             env.close();
 
+            auto const key = uint256::fromVoid((std::array<uint8_t,32>{
+                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+                0x00U, 0x00U, 0x00U, 0x00U,    'k',   'e',  'y', 0x00U
+            }).data());
+
+            auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
+                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
+            }).data());
+
+            auto const hookstate = env.le(
+                keylet::hookState(
+                    Account("alice").id(),
+                    key,
+                    ns)
+            );
+
+            // check if the hookstate object was created
+            BEAST_EXPECT(!!hookstate);
+
+            // check if the value was set correctly
+            auto const& data = hookstate->getFieldVL(sfHookStateData);
+            BEAST_EXPECT(data.size() == 6);
+            BEAST_EXPECT(
+                    data[0] == 'v' && data[1] == 'a' && data[2] == 'l' &&
+                    data[3] == 'u' && data[4] == 'e' && data[5] == '\0');
         }
 
         // RH UPTO
@@ -629,20 +660,19 @@ public:
             env.close();
         }
         
+            
+        auto const accept_hash = ripple::sha512Half_s(
+            ripple::Slice(accept_wasm.data(), accept_wasm.size())
+        );
+
         // correctly formed
         {
             Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
-            Json::Value iv = jv[jss::Hooks][0U];
-            jv[jss::Hooks][0U] = iv;
             env(jv,
                 M("Normal accept"),
                 HSFEE, ter(tesSUCCESS));
             env.close();
-
-            auto const accept_hash = ripple::sha512Half_s(
-                ripple::Slice(accept_wasm.data(), accept_wasm.size())
-            );
 
             auto const def = env.le(keylet::hookDefinition(accept_hash));
             auto const hook = env.le(keylet::hook(Account("alice").id()));
@@ -665,8 +695,91 @@ public:
             auto const& wasm = def->getFieldVL(sfCreateCode);
             auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
             BEAST_EXPECT(wasm_hash == accept_hash);
-        }    
-        
+        }
+
+        // add a second hook    
+        {
+            Json::Value jv =
+                ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
+            Json::Value iv = jv[jss::Hooks][0U];
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = Json::Value{};
+            jv[jss::Hooks][1U] = iv;
+            env(jv,
+                M("Normal accept, second position"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+
+            auto const def = env.le(keylet::hookDefinition(accept_hash));
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+
+            // check if the hook definition exists
+            BEAST_EXPECT(!!def);
+
+            // check if the user account has a hooks object
+            BEAST_EXPECT(!!hook);
+
+            // check if the hook is correctly set at position 2
+            BEAST_EXPECT(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() > 1);
+            BEAST_EXPECT(hooks[1].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[1].getFieldH256(sfHookHash) == accept_hash);
+
+            // check if the reference count was correctly incremented
+            BEAST_EXPECT(def->isFieldPresent(sfReferenceCount));
+            // two references from alice, one from bob (first test above)
+            BEAST_EXPECT(def->getFieldU64(sfReferenceCount) == 3ULL);
+        }
+       
+        auto const rollback_hash = ripple::sha512Half_s(
+            ripple::Slice(rollback_wasm.data(), rollback_wasm.size())
+        );
+
+        // test override 
+        {
+            Json::Value jv =
+                ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0);
+            jv[jss::Hooks][0U][jss::Hook][jss::Flags] = hsfOVERRIDE;
+            env(jv,
+                M("Rollback override"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+
+            auto const rollback_def = env.le(keylet::hookDefinition(rollback_hash));
+            auto const accept_def = env.le(keylet::hookDefinition(accept_hash));
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+
+            // check if the hook definition exists
+            BEAST_EXPECT(rollback_def);
+            BEAST_EXPECT(accept_def);
+
+            // check if the user account has a hooks object
+            BEAST_EXPECT(hook);
+
+            // check if the hook is correctly set at position 1
+            BEAST_EXPECT(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() > 1);
+            BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == rollback_hash);
+            BEAST_EXPECT(hooks[1].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[1].getFieldH256(sfHookHash) == accept_hash);
+
+            // check if the wasm binary was correctly set
+            BEAST_EXPECT(rollback_def->isFieldPresent(sfCreateCode));
+            auto const& wasm = rollback_def->getFieldVL(sfCreateCode);
+            auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
+            BEAST_EXPECT(wasm_hash == rollback_hash);
+            
+            // check if the reference count was correctly incremented
+            BEAST_EXPECT(rollback_def->isFieldPresent(sfReferenceCount));
+            BEAST_EXPECT(rollback_def->getFieldU64(sfReferenceCount) == 1ULL);
+            
+            // check if the reference count was correctly decremented
+            BEAST_EXPECT(accept_def->isFieldPresent(sfReferenceCount));
+            BEAST_EXPECT(accept_def->getFieldU64(sfReferenceCount) == 2ULL);
+        }
     }
 
     void testUpdate()
