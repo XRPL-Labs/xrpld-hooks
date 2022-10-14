@@ -497,7 +497,6 @@ public:
         std::string ns = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
         {
             // create hook
-
             Json::Value jv = 
                 ripple::test::jtx::hook(alice, {{hso(makestate_wasm)}}, 0);
 
@@ -505,11 +504,11 @@ public:
             env(jv, M("Create makestate hook"), HSFEE, ter(tesSUCCESS));
 
             // run hook
-                 
             env(pay(bob, alice, XRP(1)),
                 M("Run create state hook"),
                 fee(XRP(1)));
             env.close();
+
         }
 
         // RH UPTO
@@ -629,6 +628,45 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
+        
+        // correctly formed
+        {
+            Json::Value jv =
+                ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
+            Json::Value iv = jv[jss::Hooks][0U];
+            jv[jss::Hooks][0U] = iv;
+            env(jv,
+                M("Normal accept"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+
+            auto const accept_hash = ripple::sha512Half_s(
+                ripple::Slice(accept_wasm.data(), accept_wasm.size())
+            );
+
+            auto const def = env.le(keylet::hookDefinition(accept_hash));
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+
+            // check if the hook definition exists
+            BEAST_EXPECT(!!def);
+
+            // check if the user account has a hooks object
+            BEAST_EXPECT(!!hook);
+
+            // check if the hook is correctly set at position 1
+            BEAST_EXPECT(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() > 0);
+            BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
+
+            // check if the wasm binary was correctly set
+            BEAST_EXPECT(def->isFieldPresent(sfCreateCode));
+            auto const& wasm = def->getFieldVL(sfCreateCode);
+            auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
+            BEAST_EXPECT(wasm_hash == accept_hash);
+        }    
+        
     }
 
     void testUpdate()
