@@ -52,6 +52,15 @@ public:
 
 using JSSMap = std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JSSEq>;
 
+// Identical to BEAST_EXPECT except it returns from the function
+// if the condition isn't met (and would otherwise therefore cause a crash)
+#define BEAST_REQUIRE(x)\
+{\
+    BEAST_EXPECT(!!(x));\
+    if (!(x))\
+        return;\
+}
+
 class SetHook_test : public beast::unit_test::suite
 {
 public:
@@ -325,14 +334,6 @@ public:
                 HSFEE, ter(tesSUCCESS));
         }
 
-        std::string accept_hash = to_string(ripple::sha512Half_s(
-            ripple::Slice(accept_wasm.data(), accept_wasm.size())
-        ));
-        
-        std::string rollback_hash = to_string(ripple::sha512Half_s(
-            ripple::Slice(accept_wasm.data(), accept_wasm.size())
-        ));
-
         Json::Value jv;
         jv[jss::Account] = alice.human();
         jv[jss::TransactionType] = jss::SetHook;
@@ -342,7 +343,7 @@ public:
         // can't set api version
         {
             Json::Value iv;
-            iv[jss::HookHash] = accept_hash;
+            iv[jss::HookHash] = accept_hash_str;
             iv[jss::HookApiVersion] = 1U;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
@@ -365,7 +366,7 @@ public:
         // can set extant hook
         {
             Json::Value iv;
-            iv[jss::HookHash] = accept_hash;
+            iv[jss::HookHash] = accept_hash_str;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation can set extant hook hash"),
@@ -376,7 +377,7 @@ public:
         // can't set extant hook over other hook without override flag
         {
             Json::Value iv;
-            iv[jss::HookHash] = rollback_hash;
+            iv[jss::HookHash] = rollback_hash_str;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation can set extant hook hash"),
@@ -387,7 +388,7 @@ public:
         // can set extant hook over other hook with override flag
         {
             Json::Value iv;
-            iv[jss::HookHash] = rollback_hash;
+            iv[jss::HookHash] = rollback_hash_str;
             iv[jss::Flags] = hsfOVERRIDE;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
@@ -454,6 +455,139 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
+        
+        // create and delete single hook
+        {
+            {
+                Json::Value jv =
+                    ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
+                env(jv,
+                    M("Normal accept create"),
+                    HSFEE, ter(tesSUCCESS));
+                env.close();
+            }
+
+            BEAST_REQUIRE(env.le(accept_keylet));
+
+            Json::Value iv;
+            iv[jss::CreateCode] = "";
+            iv[jss::Flags] = hsfOVERRIDE;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            
+            env(jv,
+                M("Normal hook DELETE"),
+                HSFEE);
+            env.close();
+
+            // check to ensure definition is deleted and hooks object too
+            auto const def = env.le(accept_keylet);
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+
+            BEAST_EXPECT(!def);
+            BEAST_EXPECT(!hook);
+
+        }
+
+        // create four hooks then delete the second last one
+        {
+            // create
+            {
+                Json::Value jv =
+                    ripple::test::jtx::hook(alice, {{
+                            hso(accept_wasm),
+                            hso(makestate_wasm),
+                            hso(rollback_wasm),
+                            hso(accept2_wasm)
+                            }}, 0);
+                env(jv,
+                    M("Create four"),
+                    HSFEE, ter(tesSUCCESS));
+                env.close();
+            }
+
+            // delete third and check
+            {
+                Json::Value iv;
+                iv[jss::CreateCode] = "";
+                iv[jss::Flags] = hsfOVERRIDE;
+                for (uint8_t i = 0; i < 4; ++i)
+                    jv[jss::Hooks][i][jss::Hook] = Json::Value{};
+                jv[jss::Hooks][2U][jss::Hook] = iv;
+                
+                env(jv,
+                    M("Normal hooki DELETE (third pos)"),
+                    HSFEE);
+                env.close();
+            
+
+                // check the hook definitions are consistent with reference count
+                // dropping to zero on the third
+                auto const accept_def = env.le(accept_keylet);
+                auto const rollback_def = env.le(rollback_keylet);
+                auto const makestate_def = env.le(makestate_keylet);
+                auto const accept2_def = env.le(accept2_keylet);
+
+                BEAST_REQUIRE(accept_def);
+                BEAST_EXPECT(!rollback_def);
+                BEAST_REQUIRE(makestate_def);
+                BEAST_REQUIRE(accept2_def);
+
+                // check the hooks array is correct
+                auto const hook = env.le(keylet::hook(Account("alice").id()));
+                BEAST_REQUIRE(hook);
+
+                auto const& hooks = hook->getFieldArray(sfHooks);
+                BEAST_REQUIRE(hooks.size() == 4);
+
+                // make sure only the third is deleted
+                BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookHash));
+                BEAST_REQUIRE(hooks[1].isFieldPresent(sfHookHash));
+                BEAST_EXPECT(!hooks[2].isFieldPresent(sfHookHash));
+                BEAST_REQUIRE(hooks[3].isFieldPresent(sfHookHash));
+                
+                // check hashes on the three remaining
+                BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
+                BEAST_EXPECT(hooks[1].getFieldH256(sfHookHash) == makestate_hash);
+                BEAST_EXPECT(hooks[3].getFieldH256(sfHookHash) == accept2_hash);
+
+            }
+
+            // delete rest and check
+            {
+                Json::Value iv;
+                iv[jss::CreateCode] = "";
+                iv[jss::Flags] = hsfOVERRIDE;
+                for (uint8_t i = 0; i < 4; ++i)
+                {
+                    if (i != 2U)
+                       jv[jss::Hooks][i][jss::Hook] = iv;
+                    else
+                       jv[jss::Hooks][i][jss::Hook] = Json::Value{};
+                }
+                
+                env(jv,
+                    M("Normal hook DELETE (first, second, fourth pos)"),
+                    HSFEE);
+                env.close();
+                
+                // check the hook definitions are consistent with reference count
+                // dropping to zero on the third
+                auto const accept_def = env.le(accept_keylet);
+                auto const rollback_def = env.le(rollback_keylet);
+                auto const makestate_def = env.le(makestate_keylet);
+                auto const accept2_def = env.le(accept2_keylet);
+
+                BEAST_EXPECT(!accept_def);
+                BEAST_EXPECT(!rollback_def);
+                BEAST_EXPECT(!makestate_def);
+                BEAST_EXPECT(!accept2_def);
+
+                // check the hooks object is gone
+                auto const hook = env.le(keylet::hook(Account("alice").id()));
+                BEAST_EXPECT(!hook);
+
+            }
+        }
     }
 
     void testNSDelete()
@@ -492,15 +626,35 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
+        
+        auto const key = uint256::fromVoid((std::array<uint8_t,32>{
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+            0x00U, 0x00U, 0x00U, 0x00U,    'k',   'e',  'y', 0x00U
+        }).data());
+
+        auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
+        }).data());
+        
+        auto const stateKeylet =        
+            keylet::hookState(
+                Account("alice").id(),
+                key,
+                ns);
 
         // create a namespace
-        std::string ns = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
+        std::string ns_str = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
         {
             // create hook
             Json::Value jv = 
                 ripple::test::jtx::hook(alice, {{hso(makestate_wasm)}}, 0);
 
-            jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns;
+            jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns_str;
             env(jv, M("Create makestate hook"), HSFEE, ter(tesSUCCESS));
             env.close();
 
@@ -510,40 +664,48 @@ public:
                 fee(XRP(1)));
             env.close();
 
-            auto const key = uint256::fromVoid((std::array<uint8_t,32>{
-                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
-                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
-                0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
-                0x00U, 0x00U, 0x00U, 0x00U,    'k',   'e',  'y', 0x00U
-            }).data());
-
-            auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
-            }).data());
-
-            auto const hookstate = env.le(
-                keylet::hookState(
-                    Account("alice").id(),
-                    key,
-                    ns)
-            );
 
             // check if the hookstate object was created
+            auto const hookstate = env.le(stateKeylet);
             BEAST_EXPECT(!!hookstate);
 
             // check if the value was set correctly
             auto const& data = hookstate->getFieldVL(sfHookStateData);
-            BEAST_EXPECT(data.size() == 6);
+            BEAST_REQUIRE(data.size() == 6);
             BEAST_EXPECT(
                     data[0] == 'v' && data[1] == 'a' && data[2] == 'l' &&
                     data[3] == 'u' && data[4] == 'e' && data[5] == '\0');
         }
 
-        // RH UPTO
         // delete the namespace
+        {
+            Json::Value iv;
+            iv[jss::Flags] = hsfNSDELETE;
+            iv[jss::HookNamespace] = ns_str;
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+            env(jv,
+                M("Normal NSDELETE operation"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+
+            // ensure the hook is still installed
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+            BEAST_REQUIRE(hook);
+
+            BEAST_REQUIRE(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() > 0);
+            BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == makestate_hash);
+
+            // ensure the directory is gone
+            auto const dirKeylet = keylet::hookStateDir(Account("alice").id(), ns);
+            BEAST_EXPECT(!env.le(dirKeylet));
+        
+            // ensure the state object is gone
+            BEAST_EXPECT(!env.le(stateKeylet));
+
+        }
 
     }
 
@@ -661,10 +823,6 @@ public:
         }
         
             
-        auto const accept_hash = ripple::sha512Half_s(
-            ripple::Slice(accept_wasm.data(), accept_wasm.size())
-        );
-
         // correctly formed
         {
             Json::Value jv =
@@ -674,7 +832,7 @@ public:
                 HSFEE, ter(tesSUCCESS));
             env.close();
 
-            auto const def = env.le(keylet::hookDefinition(accept_hash));
+            auto const def = env.le(accept_keylet);
             auto const hook = env.le(keylet::hook(Account("alice").id()));
 
             // check if the hook definition exists
@@ -710,7 +868,7 @@ public:
                 HSFEE, ter(tesSUCCESS));
             env.close();
 
-            auto const def = env.le(keylet::hookDefinition(accept_hash));
+            auto const def = env.le(accept_keylet);
             auto const hook = env.le(keylet::hook(Account("alice").id()));
 
             // check if the hook definition exists
@@ -746,8 +904,8 @@ public:
                 HSFEE, ter(tesSUCCESS));
             env.close();
 
-            auto const rollback_def = env.le(keylet::hookDefinition(rollback_hash));
-            auto const accept_def = env.le(keylet::hookDefinition(accept_hash));
+            auto const rollback_def = env.le(rollback_keylet);
+            auto const accept_def = env.le(accept_keylet);
             auto const hook = env.le(keylet::hook(Account("alice").id()));
 
             // check if the hook definition exists
@@ -1002,6 +1160,10 @@ public:
     }
 
 private:
+#define HASH_WASM(x)\
+    uint256 const x##_hash = ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size()));\
+    std::string const x##_hash_str = to_string(x##_hash);\
+    Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
 
     TestHook
     accept_wasm =   // WASM: 0
@@ -1018,6 +1180,8 @@ private:
         )[test.hook]"
     ];
 
+    HASH_WASM(accept);    
+
     TestHook
     rollback_wasm = // WASM: 1
     wasm[
@@ -1033,6 +1197,8 @@ private:
             }
         )[test.hook]"
     ];
+    
+    HASH_WASM(rollback);    
 
     TestHook
     noguard_wasm =  // WASM: 2
@@ -1129,6 +1295,25 @@ private:
         )[test.hook]"
     ];
 
+    HASH_WASM(makestate);
+    
+    // this is just used as a second small hook with a unique hash
+    TestHook
+    accept2_wasm =   // WASM: 6
+    wasm[
+        R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                return accept(0,0,2);
+            }
+        )[test.hook]"
+    ];
+
+    HASH_WASM(accept2);
 };
 BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 }  // namespace test
