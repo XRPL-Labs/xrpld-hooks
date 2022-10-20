@@ -919,6 +919,7 @@ updateHookParameters(
         SetHookCtx& ctx,
         ripple::STObject const& hookSetObj,
         std::shared_ptr<STLedgerEntry>& oldDefSLE,
+        ripple::STArray const& oldParameters,
         ripple::STObject& newHook)
 {
     const int  paramKeyMax = hook::maxHookParameterKeySize();
@@ -927,13 +928,33 @@ updateHookParameters(
     std::map<ripple::Blob, ripple::Blob> parameters;
 
     // first pull the parameters into a map
+    // the map contains the old hook parameters ...
+    for (auto const& hookParameter : oldParameters)
+    {
+        auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
+        auto const pname = hookParameterObj->getFieldVL(sfHookParameterName);
+        if (hookParameterObj->isFieldPresent(sfHookParameterValue))
+            parameters[pname] = hookParameterObj->getFieldVL(sfHookParameterValue);
+        else
+            parameters[pname] = {};
+    }
+
+    // ... diffed against the new hook parameters 
     auto const& hookParameters = hookSetObj.getFieldArray(sfHookParameters);
     for (auto const& hookParameter : hookParameters)
     {
         auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
-        parameters[hookParameterObj->getFieldVL(sfHookParameterName)] =
-            hookParameterObj->getFieldVL(sfHookParameterValue);
+        auto const& pname = hookParameterObj->getFieldVL(sfHookParameterName);
+        // specifying a missing value:
+        // deletes the parameter if there is no default value for that parameter on the hook definition
+        // sits as a blank / deletion marker if there is a default value on the hook definition
+        if (hookParameterObj->isFieldPresent(sfHookParameterValue))
+            parameters[pname] = hookParameterObj->getFieldVL(sfHookParameterValue);
+        else
+            parameters[pname] = {};
     }
+
+    std::set<ripple::Blob> explicitBlanks;
 
     // then erase anything that is the same as the definition's default parameters
     if (parameters.size() > 0 && oldDefSLE && oldDefSLE->isFieldPresent(sfHookParameters))
@@ -946,10 +967,28 @@ updateHookParameters(
             ripple::Blob n = hookParameterObj->getFieldVL(sfHookParameterName);
             ripple::Blob v = hookParameterObj->getFieldVL(sfHookParameterValue);
 
-            if (parameters.find(n) != parameters.end() && parameters[n] == v)
-                parameters.erase(n);
+            if (parameters.find(n) != parameters.end())
+            {
+                if (parameters[n] == v)
+                    parameters.erase(n);
+                else if (parameters[n].empty())
+                    explicitBlanks.emplace(n);
+            }
         }
     }
+
+    // remove anything that was blank but there was no corresponding existing param in the hook definition
+    // to blank against (this is then a param delete)
+
+    std::set<Blob> toErase;
+    for (auto& [pn, pv]: parameters)
+    {
+        if (pv.empty() && explicitBlanks.find(pn) != explicitBlanks.end())
+            toErase.emplace(pn);
+    }
+    
+    for (auto& pn : toErase)
+        parameters.erase(pn);
 
     int parameterCount = (int)(parameters.size());
     if (parameterCount > 16)
@@ -1233,20 +1272,47 @@ SetHook::setHook()
             case hsoUPDATE:
             {
                 // check if there's a hook here to modify
-                if (!oldDefSLE)
+                if (!oldDefSLE || !oldHook)
                     return tecNO_ENTRY;
 
+                // initially carry over the prior non-array values, whatever those were
+                newHook.setFieldH256(sfHookHash, oldHook->get().getFieldH256(sfHookHash));
+                if (oldHook->get().isFieldPresent(sfHookOn))
+                    newHook.setFieldU64(sfHookOn, oldHook->get().getFieldU64(sfHookOn));
+                if (oldHook->get().isFieldPresent(sfHookNamespace))
+                    newHook.setFieldH256(sfHookNamespace, oldHook->get().getFieldH256(sfHookNamespace));
+
                 // set the namespace if it differs from the definition namespace
-                if (newNamespace && *defNamespace != *newNamespace)
-                    newHook.setFieldH256(sfHookNamespace, *newNamespace);
+                if (newNamespace)
+                {
+                    if (*defNamespace == *newNamespace)
+                    {
+                        if (newHook.isFieldPresent(sfHookNamespace))
+                            newHook.makeFieldAbsent(sfHookNamespace);
+                    }
+                    else
+                        newHook.setFieldH256(sfHookNamespace, *newNamespace);
+                }
 
                 // set the hookon field if it differs from definition
-                if (newHookOn && *defHookOn != *newHookOn)
-                    newHook.setFieldU64(sfHookOn, *newHookOn);
+                if (newHookOn)
+                {
+                    if (*defHookOn == *newHookOn)
+                    {
+                        if (newHook.isFieldPresent(sfHookOn))
+                            newHook.makeFieldAbsent(sfHookOn);
+                    }
+                    else
+                        newHook.setFieldU64(sfHookOn, *newHookOn);
+                }
 
                 // parameters
+                STArray const oldParams = 
+                    oldHook->get().isFieldPresent(sfHookParameters) ? 
+                    oldHook->get().getFieldArray(sfHookParameters) : STArray{sfHookParameters};
+
                 TER result =
-                    updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, newHook);
+                    updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, oldParams, newHook);
 
                 if (result != tesSUCCESS)
                     return result;
@@ -1254,13 +1320,18 @@ SetHook::setHook()
                 // if grants are provided set them
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
                     newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
-
-
+                else
+                {
+                    // if they're not then retain them as they were
+                    if (oldHook->get().isFieldPresent(sfHookGrants))
+                        newHook.setFieldArray(sfHookGrants, oldHook->get().getFieldArray(sfHookGrants));
+                }
+            
                 if (flags)
                     newHook.setFieldU32(sfFlags, *flags);
 
 
-                newHooks.push_back( oldHook ? oldHook->get() : std::move(newHook));
+                newHooks.push_back(std::move(newHook));
                 continue;
             }
 
@@ -1440,7 +1511,7 @@ SetHook::setHook()
 
                 // parameters
                 TER result =
-                    updateHookParameters(ctx, hookSetObj->get(), newDefSLE, newHook);
+                    updateHookParameters(ctx, hookSetObj->get(), newDefSLE, STArray{sfHookParameters}, newHook);
 
                 if (result != tesSUCCESS)
                     return result;

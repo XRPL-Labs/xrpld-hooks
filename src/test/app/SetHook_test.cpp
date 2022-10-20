@@ -1011,6 +1011,87 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
+
+        // try individually updating the various allowed fields
+        Json::Value params{Json::arrayValue};
+        params[0U][jss::HookParameter] = Json::Value{};
+        params[0U][jss::HookParameter][jss::HookParameterName] = "CAFE";
+        params[0U][jss::HookParameter][jss::HookParameterValue] = "BABE";
+
+        
+        Json::Value grants{Json::arrayValue};
+        grants[0U][jss::HookGrant] = Json::Value{};
+        grants[0U][jss::HookGrant][jss::HookHash] = accept_hash_str;
+
+        for (auto const& [key, value]:
+            JSSMap{
+                {jss::HookOn, "1"},
+                {jss::HookNamespace, "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"},
+                {jss::HookParameters, params},
+                {jss::HookGrants, grants} 
+            })
+        {
+            Json::Value iv;
+            iv[key] = value;
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = iv;
+
+            env(jv,
+                M("Normal update"),
+                HSFEE, ter(tesSUCCESS));
+            env.close();
+
+        }
+
+        // ensure hook still exists
+        auto const hook = env.le(keylet::hook(Account("alice").id()));
+        BEAST_REQUIRE(hook);
+        BEAST_REQUIRE(hook->isFieldPresent(sfHooks));
+        auto const& hooks = hook->getFieldArray(sfHooks);
+        BEAST_EXPECT(hooks.size() == 1);
+        BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+        BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
+       
+        std::cout << hooks[0] << "\n";
+
+        // check all fields were updated to correct values
+        BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookOn));
+        BEAST_EXPECT(hooks[0].getFieldU64(sfHookOn) == 1ULL);
+
+        auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
+        }).data());
+        BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookNamespace));
+        BEAST_EXPECT(hooks[0].getFieldH256(sfHookNamespace) == ns);
+
+        BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookParameters));
+        const auto& p = hooks[0].getFieldArray(sfHookParameters);
+        BEAST_REQUIRE(p.size() == 1);
+        BEAST_REQUIRE(p[0].isFieldPresent(sfHookParameterName));
+        BEAST_REQUIRE(p[0].isFieldPresent(sfHookParameterValue));
+
+        const auto pn = p[0].getFieldVL(sfHookParameterName);
+        BEAST_REQUIRE(pn.size() == 2);
+        BEAST_REQUIRE(pn[0] == 0xCAU && pn[1] == 0xFEU);
+
+        const auto pv = p[0].getFieldVL(sfHookParameterValue);
+        BEAST_REQUIRE(pv.size() == 2);
+        BEAST_REQUIRE(pv[0] == 0xBAU&& pv[1] == 0xBEU);
+
+        BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookGrants));
+        const auto& g = hooks[0].getFieldArray(sfHookGrants);
+        BEAST_REQUIRE(g.size() == 1);
+        BEAST_REQUIRE(g[0].isFieldPresent(sfHookHash));
+        BEAST_REQUIRE(g[0].getFieldH256(sfHookHash) == accept_hash);
+
+
+        // RH UPTO
+        // unset each of the fields
+        // check all fields were correctly unset
+
     }
 
 
