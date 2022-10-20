@@ -1181,6 +1181,8 @@ SetHook::setHook()
         switch (op)
         {
 
+            // this case is handled directly above already
+            case hsoNSDELETE:
             case hsoNOOP:
             {
                 // if a hook already exists here then migrate it to the new array
@@ -1191,12 +1193,6 @@ SetHook::setHook()
 
             // every case below here is guarenteed to have a populated hookSetObj
             // by the assert statement above
-
-            case hsoNSDELETE:
-            {
-                // this case is handled directly above already
-                continue;
-            }
 
             case hsoDELETE:
             {
