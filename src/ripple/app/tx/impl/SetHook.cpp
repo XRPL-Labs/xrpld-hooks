@@ -936,9 +936,10 @@ updateHookParameters(
     }
 
     // then erase anything that is the same as the definition's default parameters
-    if (parameters.size() > 0)
+    if (parameters.size() > 0 && oldDefSLE && oldDefSLE->isFieldPresent(sfHookParameters))
     {
         auto const& defParameters = oldDefSLE->getFieldArray(sfHookParameters);
+
         for (auto const& hookParameter : defParameters)
         {
             auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
@@ -1231,6 +1232,10 @@ SetHook::setHook()
 
             case hsoUPDATE:
             {
+                // check if there's a hook here to modify
+                if (!oldDefSLE)
+                    return tecNO_ENTRY;
+
                 // set the namespace if it differs from the definition namespace
                 if (newNamespace && *defNamespace != *newNamespace)
                     newHook.setFieldH256(sfHookNamespace, *newNamespace);
@@ -1255,7 +1260,7 @@ SetHook::setHook()
                     newHook.setFieldU32(sfFlags, *flags);
 
 
-                newHooks.push_back(std::move(newHook));
+                newHooks.push_back( oldHook ? oldHook->get() : std::move(newHook));
                 continue;
             }
 
