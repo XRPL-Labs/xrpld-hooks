@@ -925,21 +925,33 @@ updateHookParameters(
     const int  paramKeyMax = hook::maxHookParameterKeySize();
     const int  paramValueMax = hook::maxHookParameterValueSize();
 
-    std::map<ripple::Blob, ripple::Blob> parameters;
+    std::map<ripple::Blob, std::optional<ripple::Blob>> parameters;
 
-    // first pull the parameters into a map
-    // the map contains the old hook parameters ...
+    // When parameters are specified in a HookSetObj they can come in three flavours:
+    // 1. Name + Value both present and populated   {ParameterName: "X", ParameterValue: "Y"}
+    // 2. Name + Empty Value   (EV)                 {ParameterName: "X", ParameterValue: ""}
+    // 3. Name + Absent Value  (AV)                 {ParameterName: "X"}
+    //
+    // Case 1 will set the pair in the user's ltHook, unless it matches the HookDef default,
+    //        in which case it will be deleted.
+    // Case 2 will set the pair with null-value in the user's ltHook, unless there is no default, 
+    //        in which case it will be deleted.
+    // Case 3 will delete the pair in the user's ltHook irrespective of any other factor, effectively
+    //        producing a reset to default, even if the default is that there is no parameter by that name.
+    // Unpopulated optional in the map means AV, populated with {} (.empty()) means EV.
+
+    // first pull the old parameters into a map
     for (auto const& hookParameter : oldParameters)
     {
         auto const& hookParameterObj = dynamic_cast<STObject const*>(&hookParameter);
         auto const pname = hookParameterObj->getFieldVL(sfHookParameterName);
         if (hookParameterObj->isFieldPresent(sfHookParameterValue))
-            parameters[pname] = hookParameterObj->getFieldVL(sfHookParameterValue);
+            parameters[pname] = {hookParameterObj->getFieldVL(sfHookParameterValue)};
         else
             parameters[pname] = {};
     }
 
-    // ... diffed against the new hook parameters 
+    // ... then override old parameters with specified parameters 
     auto const& hookParameters = hookSetObj.getFieldArray(sfHookParameters);
     for (auto const& hookParameter : hookParameters)
     {
@@ -949,12 +961,13 @@ updateHookParameters(
         // deletes the parameter if there is no default value for that parameter on the hook definition
         // sits as a blank / deletion marker if there is a default value on the hook definition
         if (hookParameterObj->isFieldPresent(sfHookParameterValue))
-            parameters[pname] = hookParameterObj->getFieldVL(sfHookParameterValue);
+            parameters[pname] = {hookParameterObj->getFieldVL(sfHookParameterValue)};
         else
             parameters[pname] = {};
     }
 
-    std::set<ripple::Blob> explicitBlanks;
+    std::set<Blob> explicitBlanks;
+    
 
     // then erase anything that is the same as the definition's default parameters
     if (parameters.size() > 0 && oldDefSLE && oldDefSLE->isFieldPresent(sfHookParameters))
@@ -969,21 +982,33 @@ updateHookParameters(
 
             if (parameters.find(n) != parameters.end())
             {
-                if (parameters[n] == v)
+                auto const& pv = parameters[n];
+                if (!pv || *pv == v)
+                {
+                    // Absent value, reset to default
+                    // Or value matches exactly, so reset to default also
                     parameters.erase(n);
-                else if (parameters[n].empty())
+                }
+                else if ((*pv).empty())
+                {
+                    // Empty value, this is explicit override
                     explicitBlanks.emplace(n);
+                }
             }
         }
     }
 
-    // remove anything that was blank but there was no corresponding existing param in the hook definition
+    // remove anything that was EV or AV but there was no corresponding existing param in the hook definition
     // to blank against (this is then a param delete)
 
     std::set<Blob> toErase;
     for (auto& [pn, pv]: parameters)
     {
-        if (pv.empty() && explicitBlanks.find(pn) != explicitBlanks.end())
+        if (!pv)    // MV
+            toErase.emplace(pn);
+        else
+        if ((*pv).empty() // EV
+                && explicitBlanks.find(pn) == explicitBlanks.end())
             toErase.emplace(pn);
     }
     
@@ -1002,7 +1027,14 @@ updateHookParameters(
     STArray newParameters {sfHookParameters, parameterCount};
     for (const auto& [parameterName, parameterValue] : parameters)
     {
-        if (parameterName.size() > paramKeyMax || parameterValue.size() > paramValueMax)
+        if (!parameterValue)
+        {
+            JLOG(ctx.j.warn())
+                << "HookSet did not filter out Absent Values before getting to set routine.";
+            continue;
+        }
+
+        if (parameterName.size() > paramKeyMax || (*parameterValue).size() > paramValueMax)
         {
             JLOG(ctx.j.fatal())
                 << "HookSet(" << hook::log::HOOK_PARAM_SIZE << ")[" << HS_ACC()
@@ -1012,7 +1044,7 @@ updateHookParameters(
 
         STObject param { sfHookParameter };
         param.setFieldVL(sfHookParameterName, parameterName);
-        param.setFieldVL(sfHookParameterValue, parameterValue);
+        param.setFieldVL(sfHookParameterValue, *parameterValue);
         newParameters.push_back(std::move(param));
     }
 
@@ -1307,19 +1339,35 @@ SetHook::setHook()
                 }
 
                 // parameters
-                STArray const oldParams = 
-                    oldHook->get().isFieldPresent(sfHookParameters) ? 
-                    oldHook->get().getFieldArray(sfHookParameters) : STArray{sfHookParameters};
+                if (hookSetObj->get().isFieldPresent(sfHookParameters) &&
+                    hookSetObj->get().getFieldArray(sfHookParameters).empty())
+                {
+                    // delete parameters operation
+                }
+                else
+                {
+                    STArray const oldParams = 
+                        oldHook->get().isFieldPresent(sfHookParameters) ? 
+                        oldHook->get().getFieldArray(sfHookParameters) : STArray{sfHookParameters};
 
-                TER result =
-                    updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, oldParams, newHook);
+                    TER result =
+                        updateHookParameters(ctx, hookSetObj->get(), oldDefSLE, oldParams, newHook);
 
-                if (result != tesSUCCESS)
-                    return result;
+                    if (result != tesSUCCESS)
+                        return result;
+                }
 
                 // if grants are provided set them
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
-                    newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
+                {
+                    auto const& grants = hookSetObj->get().getFieldArray(sfHookGrants);
+                    if (grants.empty())
+                    {
+                        // delete operation
+                    }
+                    else
+                        newHook.setFieldArray(sfHookGrants, grants);
+                }
                 else
                 {
                     // if they're not then retain them as they were
