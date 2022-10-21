@@ -1249,9 +1249,7 @@ DEFINE_HOOK_FUNCTION(
             bool hasAuthorizedField = hookGrantObj->isFieldPresent(sfAuthorize);
 
             if (hookGrantObj->getFieldH256(sfHookHash) == hookCtx.result.hookHash &&
-               (!hasAuthorizedField  ||
-                (hasAuthorizedField &&
-                 hookGrantObj->getAccountID(sfAuthorize) == hookCtx.result.account)))
+               (!hasAuthorizedField || hookGrantObj->getAccountID(sfAuthorize) == hookCtx.result.account))
             {
                 found_auth = true;
                 break;

@@ -26,6 +26,7 @@
 #include <ripple/protocol/Indexes.h>
 #include <ripple/protocol/STArray.h>
 #include <ripple/protocol/STObject.h>
+#include <ripple/protocol/STAccount.h>
 #include <ripple/protocol/STTx.h>
 #include <algorithm>
 #include <cstdint>
@@ -54,6 +55,7 @@ namespace ripple {
 //RH UPTO: sethook needs to correctly compute and charge fee for creating new hooks, updating existing hooks
 //and it also needs to account for reserve requirements for namespaces, parameters and grants
 
+using GrantKey = std::pair<uint256, std::optional<AccountID>>;
 
 bool
 validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
@@ -75,6 +77,9 @@ validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
         return false;
     }
 
+    AccountID const& hookAcc = ctx.tx.getAccountID(sfAccount);
+
+    std::set<GrantKey> already;
     for (auto const& hookGrant : hookGrants)
     {
         auto const& hookGrantObj = dynamic_cast<STObject const*>(&hookGrant);
@@ -85,14 +90,29 @@ validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
                 << "]: Malformed transaction: SetHook sfHookGrants did not contain sfHookGrant object.";
             return false;
         }
-        else if (!hookGrantObj->isFieldPresent(sfAuthorize) && !hookGrantObj->isFieldPresent(sfHookHash))
+
+        if (hookGrantObj->isFieldPresent(sfAuthorize) &&
+            hookGrantObj->getAccountID(sfAuthorize) == hookAcc)
         {
             JLOG(ctx.j.trace())
-                << "HookSet(" << hook::log::GRANTS_FIELD << ")[" << HS_ACC()
-                << "]: Malformed transaction: SetHook sfHookGrant object did not contain either sfAuthorize "
-                << "or sfHookHash.";
+                << "HookSet(" << hook::log::GRANTS_ILLEGAL << ")[" << HS_ACC()
+                << "]: Malformed transaction: SetHook sfHookGrants cannot self grant an account.";
             return false;
         }
+
+
+        auto const hash = hookGrantObj->getFieldH256(sfHookHash);
+
+        GrantKey entry {hash, hookGrantObj->at(~sfAuthorize)};
+        if (already.find(entry) != already.end())
+        {
+            JLOG(ctx.j.trace())
+                << "HookSet(" << hook::log::GRANTS_ILLEGAL << ")[" << HS_ACC()
+                << "]: Malformed transaction, SetHook sfHookGrants contains the same sfHookHash/sfAuthorize "
+                << "pair multiple times.";
+            return false;
+        }
+        already.emplace(entry);
     }
 
     return true;
@@ -1357,7 +1377,7 @@ SetHook::setHook()
                         return result;
                 }
 
-                // if grants are provided set them
+                // grants
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
                 {
                     auto const& grants = hookSetObj->get().getFieldArray(sfHookGrants);
