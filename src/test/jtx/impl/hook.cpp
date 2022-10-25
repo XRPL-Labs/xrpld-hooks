@@ -66,16 +66,22 @@ std::string uint64_hex(uint64_t x)
 }
 
 Json::Value
-hso(std::vector<uint8_t> const& wasmBytes, uint64_t hookOn, uint256 ns, uint8_t apiversion)
+hso(std::vector<uint8_t> const& wasmBytes, void (*f)(Json::Value& jv))
 {
     if (wasmBytes.size() == 0)
         throw std::runtime_error("empty hook wasm passed to hso()");
 
     Json::Value jv;
     jv[jss::CreateCode] = strHex(wasmBytes);
-    jv[jss::HookOn] = uint64_hex(hookOn);
-    jv[jss::HookNamespace] = to_string(ns);
-    jv[jss::HookApiVersion] = Json::Value{apiversion};
+    {
+        jv[jss::HookOn] = uint64_hex(0);
+        jv[jss::HookNamespace] = to_string(uint256{beast::zero});
+        jv[jss::HookApiVersion] = Json::Value{0};
+    }
+    
+
+    if (f) 
+        f(jv);
 
     return jv;
 }

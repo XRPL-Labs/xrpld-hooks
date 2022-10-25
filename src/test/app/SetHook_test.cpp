@@ -315,7 +315,7 @@ public:
         // create a hook that we can then install
         {
             env(ripple::test::jtx::hook(bob, {{
-                hso(accept_wasm), 
+                hso(accept_wasm),
                 hso(rollback_wasm)
             }}, 0),
                 M("First set = tesSUCCESS"),
@@ -443,7 +443,7 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
-        
+
         // create and delete single hook
         {
             {
@@ -461,7 +461,7 @@ public:
             iv[jss::CreateCode] = "";
             iv[jss::Flags] = hsfOVERRIDE;
             jv[jss::Hooks][0U][jss::Hook] = iv;
-            
+
             env(jv,
                 M("Normal hook DELETE"),
                 HSFEE);
@@ -501,12 +501,12 @@ public:
                 for (uint8_t i = 0; i < 4; ++i)
                     jv[jss::Hooks][i][jss::Hook] = Json::Value{};
                 jv[jss::Hooks][2U][jss::Hook] = iv;
-                
+
                 env(jv,
                     M("Normal hooki DELETE (third pos)"),
                     HSFEE);
                 env.close();
-            
+
 
                 // check the hook definitions are consistent with reference count
                 // dropping to zero on the third
@@ -532,7 +532,7 @@ public:
                 BEAST_REQUIRE(hooks[1].isFieldPresent(sfHookHash));
                 BEAST_EXPECT(!hooks[2].isFieldPresent(sfHookHash));
                 BEAST_REQUIRE(hooks[3].isFieldPresent(sfHookHash));
-                
+
                 // check hashes on the three remaining
                 BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
                 BEAST_EXPECT(hooks[1].getFieldH256(sfHookHash) == makestate_hash);
@@ -552,12 +552,12 @@ public:
                     else
                        jv[jss::Hooks][i][jss::Hook] = Json::Value{};
                 }
-                
+
                 env(jv,
                     M("Normal hook DELETE (first, second, fourth pos)"),
                     HSFEE);
                 env.close();
-                
+
                 // check the hook definitions are consistent with reference count
                 // dropping to zero on the third
                 auto const accept_def = env.le(accept_keylet);
@@ -595,7 +595,7 @@ public:
         jv[jss::TransactionType] = jss::SetHook;
         jv[jss::Flags] = 0;
         jv[jss::Hooks] = Json::Value{Json::arrayValue};
-        
+
         for (auto const& [key, value]:
             JSSMap {
                 {jss::HookGrants, Json::arrayValue},
@@ -614,11 +614,11 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
-        
+
         auto const key = uint256::fromVoid((std::array<uint8_t,32>{
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
             0x00U, 0x00U, 0x00U, 0x00U,    'k',   'e',  'y', 0x00U
         }).data());
 
@@ -628,8 +628,8 @@ public:
             0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
             0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
         }).data());
-        
-        auto const stateKeylet =        
+
+        auto const stateKeylet =
             keylet::hookState(
                 Account("alice").id(),
                 key,
@@ -639,7 +639,7 @@ public:
         std::string ns_str = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
         {
             // create hook
-            Json::Value jv = 
+            Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(makestate_wasm)}}, 0);
 
             jv[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = ns_str;
@@ -689,7 +689,7 @@ public:
             // ensure the directory is gone
             auto const dirKeylet = keylet::hookStateDir(Account("alice").id(), ns);
             BEAST_EXPECT(!env.le(dirKeylet));
-        
+
             // ensure the state object is gone
             BEAST_EXPECT(!env.le(stateKeylet));
 
@@ -809,8 +809,8 @@ public:
                 HSFEE, ter(temMALFORMED));
             env.close();
         }
-        
-            
+
+
         // correctly formed
         {
             Json::Value jv =
@@ -843,7 +843,7 @@ public:
             BEAST_EXPECT(wasm_hash == accept_hash);
         }
 
-        // add a second hook    
+        // add a second hook
         {
             Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
@@ -877,12 +877,12 @@ public:
             // two references from alice, one from bob (first test above)
             BEAST_EXPECT(def->getFieldU64(sfReferenceCount) == 3ULL);
         }
-       
+
         auto const rollback_hash = ripple::sha512Half_s(
             ripple::Slice(rollback_wasm.data(), rollback_wasm.size())
         );
 
-        // test override 
+        // test override
         {
             Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0);
@@ -917,11 +917,11 @@ public:
             auto const& wasm = rollback_def->getFieldVL(sfCreateCode);
             auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
             BEAST_EXPECT(wasm_hash == rollback_hash);
-            
+
             // check if the reference count was correctly incremented
             BEAST_EXPECT(rollback_def->isFieldPresent(sfReferenceCount));
             BEAST_EXPECT(rollback_def->getFieldU64(sfReferenceCount) == 1ULL);
-            
+
             // check if the reference count was correctly decremented
             BEAST_EXPECT(accept_def->isFieldPresent(sfReferenceCount));
             BEAST_EXPECT(accept_def->getFieldU64(sfReferenceCount) == 2ULL);
@@ -939,13 +939,13 @@ public:
 
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), bob);
-        
+
         Json::Value jv;
         jv[jss::Account] = alice.human();
         jv[jss::TransactionType] = jss::SetHook;
         jv[jss::Flags] = 0;
         jv[jss::Hooks] = Json::Value{Json::arrayValue};
-        
+
         // first create the hook
         {
             Json::Value iv;
@@ -971,7 +971,7 @@ public:
                 HSFEE, ter(tesSUCCESS));
             env.close();
         }
-    
+
         // all alice operations below are then updates
 
         // must not specify override flag
@@ -1021,7 +1021,7 @@ public:
             params[0U][jss::HookParameter][jss::HookParameterName] = "CAFE";
             params[0U][jss::HookParameter][jss::HookParameterValue] = "BABE";
 
-            
+
             Json::Value grants{Json::arrayValue};
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = accept_hash_str;
@@ -1031,7 +1031,7 @@ public:
                     {jss::HookOn, "1"},
                     {jss::HookNamespace, "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"},
                     {jss::HookParameters, params},
-                    {jss::HookGrants, grants} 
+                    {jss::HookGrants, grants}
                 })
             {
                 Json::Value iv;
@@ -1143,7 +1143,7 @@ public:
             iv[jss::HookParameters][1U][jss::HookParameter] = Json::Value{};
             iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterName ] = "A0";
             iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterValue] = "B0";
-            
+
             iv[jss::HookParameters][2U] = Json::Value{};
             iv[jss::HookParameters][2U][jss::HookParameter] = Json::Value{};
             iv[jss::HookParameters][2U][jss::HookParameter][jss::HookParameterName ] = "AA";
@@ -1164,7 +1164,7 @@ public:
             BEAST_EXPECT(hooks.size() == 1);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-            
+
             // check all the previous parameters plus the new ones
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookParameters));
             const auto& p = hooks[0].getFieldArray(sfHookParameters);
@@ -1204,7 +1204,7 @@ public:
                 M("Reset cafe param to default using Absent Value"),
                 HSFEE, ter(tesSUCCESS));
             env.close();
-            
+
             // ensure hook still exists
             auto const hook = env.le(keylet::hook(Account("alice").id()));
             BEAST_REQUIRE(hook);
@@ -1213,7 +1213,7 @@ public:
             BEAST_EXPECT(hooks.size() == 1);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             params.erase({0xCAU, 0xFEU});
 
             // check there right number of parameters exist
@@ -1255,7 +1255,7 @@ public:
                 M("Set cafe param to blank using Empty Value"),
                 HSFEE, ter(tesSUCCESS));
             env.close();
-            
+
             // ensure hook still exists
             auto const hook = env.le(keylet::hook(Account("alice").id()));
             BEAST_REQUIRE(hook);
@@ -1264,7 +1264,7 @@ public:
             BEAST_EXPECT(hooks.size() == 1);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             params[Blob{0xCAU, 0xFEU}]= Blob{};
 
             // check there right number of parameters exist
@@ -1303,7 +1303,7 @@ public:
                 M("Unset all params on hook"),
                 HSFEE, ter(tesSUCCESS));
             env.close();
-            
+
             // ensure hook still exists
             auto const hook = env.le(keylet::hook(Account("alice").id()));
             BEAST_REQUIRE(hook);
@@ -1312,7 +1312,7 @@ public:
             BEAST_EXPECT(hooks.size() == 1);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             // check there right number of parameters exist
             BEAST_REQUIRE(!hooks[0].isFieldPresent(sfHookParameters));
         }
@@ -1327,7 +1327,7 @@ public:
             params[0U][jss::HookParameter][jss::HookParameterName] = "CAFE";
             params[0U][jss::HookParameter][jss::HookParameterValue] = "BABE";
 
-            
+
             Json::Value grants{Json::arrayValue};
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = accept_hash_str;
@@ -1337,7 +1337,7 @@ public:
                     {jss::HookOn, "1"},
                     {jss::HookNamespace, "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"},
                     {jss::HookParameters, params},
-                    {jss::HookGrants, grants} 
+                    {jss::HookGrants, grants}
                 })
             {
                 Json::Value iv;
@@ -1376,7 +1376,7 @@ public:
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = rollback_hash_str;
             grants[0U][jss::HookGrant][jss::Authorize] = bob.human();
-            
+
             grants[1U][jss::HookGrant] = Json::Value{};
             grants[1U][jss::HookGrant][jss::HookHash] = accept_hash_str;
 
@@ -1402,7 +1402,7 @@ public:
             BEAST_EXPECT(hooks.size() == 2);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             // check there right number of grants exist
             // hook 0 should have 1 grant
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookGrants));
@@ -1453,7 +1453,7 @@ public:
             BEAST_EXPECT(hooks.size() == 2);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             // check there right number of grants exist
             // hook 1 should have 1 grant
             {
@@ -1466,7 +1466,7 @@ public:
 
         }
 
-        // use an empty grants array to reset the grants 
+        // use an empty grants array to reset the grants
         {
             jv[jss::Hooks][0U] = Json::objectValue;
             jv[jss::Hooks][0U][jss::Hook] = Json::objectValue;
@@ -1488,7 +1488,7 @@ public:
             BEAST_EXPECT(hooks.size() == 2);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-        
+
             // check there right number of grants exist
             // hook 1 should have 0 grants
             BEAST_REQUIRE(!hooks[1].isFieldPresent(sfHookGrants));
@@ -1573,7 +1573,7 @@ public:
     }
 
     void
-    testAccept()
+    test_accept()
     {
         testcase("Test accept() hookapi");
         using namespace jtx;
@@ -1597,7 +1597,7 @@ public:
     }
 
     void
-    testRollback()
+    test_rollback()
     {
         testcase("Test rollback() hookapi");
         using namespace jtx;
@@ -1620,6 +1620,591 @@ public:
     }
 
     void
+    testGuards()
+    {
+        testcase("Test guards");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        // test a simple loop without a guard call
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                (module
+                  (type (;0;) (func (param i32 i32) (result i64)))
+                  (type (;1;) (func (param i32 i32) (result i32)))
+                  (type (;2;) (func (param i32) (result i64)))
+                  (import "env" "hook_account" (func (;0;) (type 0)))
+                  (import "env" "_g" (func (;1;) (type 1)))
+                  (func (;2;) (type 2) (param i32) (result i64)
+                    (local i32)
+                    global.get 0
+                    i32.const 32
+                    i32.sub
+                    local.tee 1
+                    global.set 0
+                    loop (result i64)  ;; label = @1
+                      local.get 1
+                      i32.const 20
+                      call 0
+                      drop
+                      br 0 (;@1;)
+                    end)
+                  (memory (;0;) 2)
+                  (global (;0;) (mut i32) (i32.const 66560))
+                  (global (;1;) i32 (i32.const 1024))
+                  (global (;2;) i32 (i32.const 1024))
+                  (global (;3;) i32 (i32.const 66560))
+                  (global (;4;) i32 (i32.const 1024))
+                  (export "memory" (memory 0))
+                  (export "hook" (func 2)))
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook)}}, 0),
+                M("Loop 1 no guards"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
+
+        // same loop again but with a guard call
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                (module
+                  (type (;0;) (func (param i32 i32) (result i64)))
+                  (type (;1;) (func (param i32 i32) (result i32)))
+                  (type (;2;) (func (param i32) (result i64)))
+                  (import "env" "hook_account" (func (;0;) (type 0)))
+                  (import "env" "_g" (func (;1;) (type 1)))
+                  (func (;2;) (type 2) (param i32) (result i64)
+                    (local i32)
+                    global.get 0
+                    i32.const 32
+                    i32.sub
+                    local.tee 1
+                    global.set 0
+                    loop (result i64)  ;; label = @1
+                      i32.const 1
+                      i32.const 1
+                      call 1
+                      drop
+                      local.get 1
+                      i32.const 20
+                      call 0
+                      drop
+                      br 0 (;@1;)
+                    end)
+                  (memory (;0;) 2)
+                  (global (;0;) (mut i32) (i32.const 66560))
+                  (global (;1;) i32 (i32.const 1024))
+                  (global (;2;) i32 (i32.const 1024))
+                  (global (;3;) i32 (i32.const 66560))
+                  (global (;4;) i32 (i32.const 1024))
+                  (export "memory" (memory 0))
+                  (export "hook" (func 2)))
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook)}}, 0),
+                M("Loop 1 with guards"),
+                HSFEE);
+            env.close();
+        }
+
+        auto overrideFlag = [](Json::Value& jv)
+        {
+            jv[jss::Flags] = hsfOVERRIDE;
+        };
+        
+        // simple looping, c
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_account (uint32_t, uint32_t);
+                int64_t hook(uint32_t reserved )
+                {
+                    uint8_t acc[20];
+                    for (int i = 0; GUARD(10), i < 10; ++i)
+                        hook_account(acc, 20);
+
+                    return accept(0,0,2);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("Loop 2 in C"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("Test Loop 2"),
+                fee(XRP(1)));
+            env.close();
+        }
+        
+        // complex looping, c
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_account (uint32_t, uint32_t);
+                int64_t hook(uint32_t reserved)
+                {
+                    uint8_t acc[20];
+                    for (int i = 0; GUARD(10), i < 10; ++i)
+                    {
+                        for (int j = 0; GUARD(2), j < 2; ++j)
+                        {
+                            for (int k = 0; GUARD(5), k < 5; ++k)
+                                hook_account(acc, 20);
+                            for (int k = 0; GUARD(5), k < 5; ++k)
+                                hook_account(acc, 20);
+                        }
+
+                        for (int k = 0; GUARD(5), k < 5; ++k)
+                            hook_account(acc, 20);
+                    }
+
+                    return accept(0,0,2);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("Loop 3 in C"),
+                HSFEE);
+            env.close();
+        
+            env(pay(bob, alice, XRP(1)),
+                M("Test Loop 3"),
+                fee(XRP(1)));
+            env.close();
+        }
+
+    }
+
+    void
+    test_emit()
+    {
+    }
+
+    void
+    test_etxn_burden()
+    {
+    }
+
+    void
+    test_etxn_details()
+    {
+    }
+
+    void
+    test_etxn_fee_base()
+    {
+    }
+
+    void
+    test_etxn_generation()
+    {
+    }
+
+    void
+    test_etxn_nonce()
+    {
+    }
+
+    void
+    test_etxn_reserve()
+    {
+    }
+
+    void
+    test_fee_base()
+    {
+    }
+
+    void
+    test_float_compare()
+    {
+    }
+
+    void
+    test_float_divide()
+    {
+    }
+
+    void
+    test_float_exponent()
+    {
+    }
+
+    void
+    test_float_exponent_set()
+    {
+    }
+
+    void
+    test_float_int()
+    {
+    }
+
+    void
+    test_float_invert()
+    {
+    }
+
+    void
+    test_float_log()
+    {
+    }
+
+    void
+    test_float_mantissa()
+    {
+    }
+
+    void
+    test_float_mantissa_set()
+    {
+    }
+
+    void
+    test_float_mulratio()
+    {
+    }
+
+    void
+    test_float_multiply()
+    {
+    }
+
+    void
+    test_float_negate()
+    {
+    }
+
+    void
+    test_float_one()
+    {
+    }
+
+    void
+    test_float_root()
+    {
+    }
+
+    void
+    test_float_set()
+    {
+    }
+
+    void
+    test_float_sign()
+    {
+    }
+
+    void
+    test_float_sign_set()
+    {
+    }
+
+    void
+    test_float_sto()
+    {
+    }
+
+    void
+    test_float_sto_set()
+    {
+    }
+
+    void
+    test_float_sum()
+    {
+    }
+
+    void
+    test_hook_account()
+    {
+    }
+
+    void
+    test_hook_again()
+    {
+    }
+
+    void
+    test_hook_hash()
+    {
+    }
+
+    void
+    test_hook_namespace()
+    {
+    }
+
+    void
+    test_hook_param()
+    {
+    }
+
+    void
+    test_hook_param_set()
+    {
+    }
+
+    void
+    test_hook_pos()
+    {
+    }
+
+    void
+    test_hook_skip()
+    {
+    }
+
+    void
+    test_ledger_keylet()
+    {
+    }
+
+    void
+    test_ledger_last_hash()
+    {
+    }
+
+    void
+    test_ledger_last_time()
+    {
+    }
+
+    void
+    test_ledger_nonce()
+    {
+    }
+
+    void
+    test_ledger_seq()
+    {
+    }
+
+    void
+    test_meta_slot()
+    {
+    }
+
+    void
+    test_otxn_burden()
+    {
+    }
+
+    void
+    test_otxn_field()
+    {
+    }
+
+    void
+    test_otxn_field_txt()
+    {
+    }
+
+    void
+    test_otxn_generation()
+    {
+    }
+
+    void
+    test_otxn_id()
+    {
+    }
+
+    void
+    test_otxn_slot()
+    {
+    }
+
+    void
+    test_otxn_type()
+    {
+    }
+
+    void
+    test_slot()
+    {
+    }
+
+    void
+    test_slot_clear()
+    {
+    }
+
+    void
+    test_slot_count()
+    {
+    }
+
+    void
+    test_slot_float()
+    {
+    }
+
+    void
+    test_slot_id()
+    {
+    }
+
+    void
+    test_slot_set()
+    {
+    }
+
+    void
+    test_slot_size()
+    {
+    }
+
+    void
+    test_slot_subarray()
+    {
+    }
+
+    void
+    test_slot_subfield()
+    {
+    }
+
+    void
+    test_slot_type()
+    {
+    }
+
+    void
+    test_state()
+    {
+    }
+
+    void
+    test_state_foreign()
+    {
+    }
+
+    void
+    test_state_foreign_set()
+    {
+    }
+
+    void
+    test_state_set()
+    {
+    }
+
+    void
+    test_sto_emplace()
+    {
+    }
+
+    void
+    test_sto_erase()
+    {
+    }
+
+    void
+    test_sto_subarray()
+    {
+    }
+
+    void
+    test_sto_subfield()
+    {
+    }
+
+    void
+    test_sto_validate()
+    {
+    }
+
+    void
+    test_str_compare()
+    {
+    }
+
+    void
+    test_str_concat()
+    {
+    }
+
+    void
+    test_str_find()
+    {
+    }
+
+    void
+    test_str_replace()
+    {
+    }
+
+    void
+    test_trace()
+    {
+    }
+
+    void
+    test_trace_float()
+    {
+    }
+
+    void
+    test_trace_num()
+    {
+    }
+
+    void
+    test_trace_slot()
+    {
+    }
+
+    void
+    test_util_accid()
+    {
+    }
+
+    void
+    test_util_keylet()
+    {
+    }
+
+    void
+    test_util_raddr()
+    {
+    }
+
+    void
+    test_util_sha512h()
+    {
+    }
+
+    void
+    test_util_verify()
+    {
+    }
+
+    void
     run() override
     {
         //testTicketSetHook();  // RH TODO
@@ -1638,8 +2223,94 @@ public:
         testNSDelete();
 
         testWasm();
-        testAccept();
-        testRollback();
+        test_accept();
+        test_rollback();
+
+        testGuards();
+
+        test_emit();
+        test_etxn_burden();
+        test_etxn_details();
+        test_etxn_fee_base();
+        test_etxn_generation();
+        test_etxn_nonce();
+        test_etxn_reserve();
+        test_fee_base();
+        test_float_compare();
+        test_float_divide();
+        test_float_exponent();
+        test_float_exponent();
+        test_float_exponent_set();
+        test_float_int();
+        test_float_invert();
+        test_float_log();
+        test_float_mantissa();
+        test_float_mantissa();
+        test_float_mantissa_set();
+        test_float_mulratio();
+        test_float_multiply();
+        test_float_negate();
+        test_float_one();
+        test_float_root();
+        test_float_set();
+        test_float_sign();
+        test_float_sign_set();
+        test_float_sto();
+        test_float_sto_set();
+        test_float_sum();
+        test_hook_account();
+        test_hook_again();
+        test_hook_hash();
+        test_hook_namespace();
+        test_hook_param();
+        test_hook_param_set();
+        test_hook_pos();
+        test_hook_skip();
+        test_ledger_keylet();
+        test_ledger_last_hash();
+        test_ledger_last_time();
+        test_ledger_nonce();
+        test_ledger_seq();
+        test_meta_slot();
+        test_otxn_burden();
+        test_otxn_field();
+        test_otxn_field_txt();
+        test_otxn_generation();
+        test_otxn_id();
+        test_otxn_slot();
+        test_otxn_type();
+        test_slot();
+        test_slot_clear();
+        test_slot_count();
+        test_slot_float();
+        test_slot_id();
+        test_slot_set();
+        test_slot_size();
+        test_slot_subarray();
+        test_slot_subfield();
+        test_slot_type();
+        test_state();
+        test_state_foreign();
+        test_state_foreign_set();
+        test_state_set();
+        test_sto_emplace();
+        test_sto_erase();
+        test_sto_subarray();
+        test_sto_subfield();
+        test_sto_validate();
+        test_str_compare();
+        test_str_concat();
+        test_str_find();
+        test_str_replace();
+        test_trace();
+        test_trace_float();
+        test_trace_num();
+        test_trace_slot();
+        test_util_accid();
+        test_util_keylet();
+        test_util_raddr();
+        test_util_sha512h();
+        test_util_verify();
     }
 
 private:
@@ -1663,7 +2334,7 @@ private:
         )[test.hook]"
     ];
 
-    HASH_WASM(accept);    
+    HASH_WASM(accept);
 
     TestHook
     rollback_wasm = // WASM: 1
@@ -1680,8 +2351,8 @@ private:
             }
         )[test.hook]"
     ];
-    
-    HASH_WASM(rollback);    
+
+    HASH_WASM(rollback);
 
     TestHook
     noguard_wasm =  // WASM: 2
@@ -1779,7 +2450,7 @@ private:
     ];
 
     HASH_WASM(makestate);
-    
+
     // this is just used as a second small hook with a unique hash
     TestHook
     accept2_wasm =   // WASM: 6
@@ -1797,6 +2468,7 @@ private:
     ];
 
     HASH_WASM(accept2);
+
 };
 BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 }  // namespace test

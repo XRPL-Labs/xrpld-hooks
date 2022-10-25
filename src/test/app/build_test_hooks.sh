@@ -34,6 +34,11 @@ cat SetHook_test.cpp | tr '\n' '\f' |
                     xxd -p -u -c 19 | 
                     sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
             fi
+            if [ "$?" -gt "0" ]
+            then
+                echo "Compilation error ^"
+                exit 1
+            fi
             echo '}},' >> SetHook_wasm.h
             echo >> SetHook_wasm.h
             COUNTER=`echo $COUNTER + 1 | bc`
