@@ -152,19 +152,6 @@ public:
         jv[jss::Flags] = 0;
         jv[jss::Hooks] = Json::Value{Json::arrayValue};
 
-
-        // check blank grants
-        {
-            Json::Value iv;
-            iv[jss::HookHash] = to_string(uint256{beast::zero});
-            iv[jss::HookGrants] = Json::Value{Json::arrayValue};
-            jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("HSO must include at least one entry in HookGrants when field is present"),
-                HSFEE, ter(temMALFORMED));
-            env.close();
-        }
-
         // check too many grants
         {
             Json::Value iv;
@@ -1376,8 +1363,15 @@ public:
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
         }
 
-        // test updating grants
+        // test adding multiple grants
         {
+            {
+                // add a second hook
+                env(ripple::test::jtx::hook(alice, {{{}, hso(accept_wasm)}}, 0),
+                    M("Add second hook"),
+                    HSFEE, ter(tesSUCCESS));
+            }
+
             Json::Value grants{Json::arrayValue};
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = rollback_hash_str;
@@ -1386,16 +1380,15 @@ public:
             grants[1U][jss::HookGrant] = Json::Value{};
             grants[1U][jss::HookGrant][jss::HookHash] = accept_hash_str;
 
-            Json::Value iv;
             jv[jss::Hooks][0U] = Json::Value{};
-            jv[jss::Hooks][0U][jss::Hook] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = Json::objectValue;
             jv[jss::Hooks][1U] = Json::Value{};
-            jv[jss::Hooks][1U][jss::Hook] = iv;
+            jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
+            jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = grants;
 
-            std::cout << jv << "\n";
             env(jv,
-                M("Update grants"),
-                HSFEE, ter(tesSUCCESS));
+                M("Add grants"),
+                HSFEE);
             env.close();
 
             // ensure hook still exists
@@ -1406,18 +1399,101 @@ public:
 
             BEAST_REQUIRE(hook->isFieldPresent(sfHooks));
             auto const& hooks = hook->getFieldArray(sfHooks);
-            BEAST_EXPECT(hooks.size() == 1);
+            BEAST_EXPECT(hooks.size() == 2);
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
         
             // check there right number of grants exist
+            // hook 0 should have 1 grant
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookGrants));
+            BEAST_REQUIRE(hooks[0].getFieldArray(sfHookGrants).size() == 1);
+            // hook 1 should have 2 grants
+            {
+                BEAST_REQUIRE(hooks[1].isFieldPresent(sfHookGrants));
+                auto const& grants = hooks[1].getFieldArray(sfHookGrants);
+                BEAST_REQUIRE(grants.size() == 2);
 
-            // RH UPTO: check values of grants here
-        
+                BEAST_REQUIRE(grants[0].isFieldPresent(sfHookHash));
+                BEAST_REQUIRE(grants[0].isFieldPresent(sfAuthorize));
+                BEAST_REQUIRE(grants[1].isFieldPresent(sfHookHash));
+                BEAST_EXPECT(!grants[1].isFieldPresent(sfAuthorize));
+
+
+                BEAST_EXPECT(grants[0].getFieldH256(sfHookHash) == rollback_hash);
+                BEAST_EXPECT(grants[0].getAccountID(sfAuthorize) == bob.id());
+
+                BEAST_EXPECT(grants[1].getFieldH256(sfHookHash) == accept_hash);
+            }
+
         }
 
-        // use an empty grants array to reset the grants here
+        // update grants
+        {
+            Json::Value grants{Json::arrayValue};
+            grants[0U][jss::HookGrant] = Json::Value{};
+            grants[0U][jss::HookGrant][jss::HookHash] = makestate_hash_str;
+
+            jv[jss::Hooks][0U] = Json::Value{};
+            jv[jss::Hooks][0U][jss::Hook] = Json::objectValue;
+            jv[jss::Hooks][1U] = Json::Value{};
+            jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
+            jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = grants;
+
+            env(jv,
+                M("update grants"),
+                HSFEE);
+            env.close();
+
+            // ensure hook still exists
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+            BEAST_REQUIRE(hook);
+
+            BEAST_REQUIRE(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() == 2);
+            BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
+        
+            // check there right number of grants exist
+            // hook 1 should have 1 grant
+            {
+                BEAST_REQUIRE(hooks[1].isFieldPresent(sfHookGrants));
+                auto const& grants = hooks[1].getFieldArray(sfHookGrants);
+                BEAST_REQUIRE(grants.size() == 1);
+                BEAST_REQUIRE(grants[0].isFieldPresent(sfHookHash));
+                BEAST_EXPECT(grants[0].getFieldH256(sfHookHash) == makestate_hash);
+            }
+
+        }
+
+        // use an empty grants array to reset the grants 
+        {
+            jv[jss::Hooks][0U] = Json::objectValue;
+            jv[jss::Hooks][0U][jss::Hook] = Json::objectValue;
+            jv[jss::Hooks][1U] = Json::Value{};
+            jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
+            jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = Json::arrayValue;
+
+            env(jv,
+                M("clear grants"),
+                HSFEE);
+            env.close();
+
+            // ensure hook still exists
+            auto const hook = env.le(keylet::hook(Account("alice").id()));
+            BEAST_REQUIRE(hook);
+
+            BEAST_REQUIRE(hook->isFieldPresent(sfHooks));
+            auto const& hooks = hook->getFieldArray(sfHooks);
+            BEAST_EXPECT(hooks.size() == 2);
+            BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
+            BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
+        
+            // check there right number of grants exist
+            // hook 1 should have 0 grants
+            BEAST_REQUIRE(!hooks[1].isFieldPresent(sfHookGrants));
+
+        }
     }
 
 

@@ -61,14 +61,6 @@ bool
 validateHookGrants(SetHookCtx& ctx, STArray const& hookGrants)
 {
 
-    if (hookGrants.size() < 1)
-    {
-        JLOG(ctx.j.trace())
-            << "HookSet(" << hook::log::GRANTS_EMPTY << ")[" << HS_ACC()
-            << "]: Malformed transaction: SetHook sfHookGrants empty.";
-        return false;
-    }
-
     if (hookGrants.size() > 8)
     {
         JLOG(ctx.j.trace())
@@ -1518,6 +1510,13 @@ SetHook::setHook()
                     else
                         newHookDef->setFieldU32(sfFlags, 0);
 
+                    if (hookSetObj->get().isFieldPresent(sfHookGrants))
+                    {
+                        auto const& grants = hookSetObj->get().getFieldArray(sfHookGrants);
+                        if (!grants.empty())
+                            newHook.setFieldArray(sfHookGrants, grants);
+                    }
+
                     slesToInsert.emplace(keylet, newHookDef);
                     newHook.setFieldH256(sfHookHash, *createHookHash);
                     newHooks.push_back(std::move(newHook));
@@ -1586,7 +1585,11 @@ SetHook::setHook()
 
                 // if grants are provided set them
                 if (hookSetObj->get().isFieldPresent(sfHookGrants))
-                    newHook.setFieldArray(sfHookGrants, hookSetObj->get().getFieldArray(sfHookGrants));
+                {
+                    auto const& grants = hookSetObj->get().getFieldArray(sfHookGrants);
+                    if (!grants.empty())
+                        newHook.setFieldArray(sfHookGrants, grants);
+                }
 
                 if (flags)
                     newHook.setFieldU32(sfFlags, newFlags);
