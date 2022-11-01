@@ -2097,6 +2097,74 @@ public:
     void
     test_float_sum()
     {
+        testcase("Test float_sum");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                #define ASSERT_EQUAL(x,y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t ny = float_negate((y));\
+                    int64_t diff = float_sum(px, ny);\
+                    if (float_compare(diff, 0, 2))\
+                        diff = float_negate(diff);\
+                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
+                        rollback(0,0, __LINE__);\ 
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // 1 + 1 = 2
+                    ASSERT_EQUAL(6090866696204910592LL,
+                        float_sum(float_one(), float_one()));
+
+                    // 1 - 1 = 0
+                    ASSERT_EQUAL(0,
+                        float_sum(float_one(), float_negate(float_one())));            
+
+                    // 45678 + 0.345678 = 45678.345678
+                    ASSERT_EQUAL(6165492124810638528LL,
+                        float_sum(6165492090242838528LL, 6074309077695428608LL));
+
+                    // -151864512641 + 100000000000000000 = 99999848135487359
+                    ASSERT_EQUAL(
+                        6387097057170171072LL,
+                        float_sum(1676857706508234512LL, 6396111470866104320LL));
+
+                    return 
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_sum"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_sum"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
