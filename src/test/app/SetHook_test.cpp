@@ -61,8 +61,16 @@ using JSSMap = std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JS
         return;\
 }
 
+        
 class SetHook_test : public beast::unit_test::suite
 {
+private:
+    // helper
+    void static overrideFlag(Json::Value& jv)
+    {
+        jv[jss::Flags] = hsfOVERRIDE;
+    }
+
 public:
 
     // This is a large fee, large enough that we can set most small test hooks without running into fee issues
@@ -1717,11 +1725,6 @@ public:
             env.close();
         }
 
-        auto overrideFlag = [](Json::Value& jv)
-        {
-            jv[jss::Flags] = hsfOVERRIDE;
-        };
-        
         // simple looping, c
         {
             TestHook
@@ -1759,31 +1762,36 @@ public:
             TestHook
             hook =
             wasm[R"[test.hook](
-                #include <stdint.h>
-                extern int32_t _g       (uint32_t id, uint32_t maxiter);
-                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
-                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-                extern int64_t hook_account (uint32_t, uint32_t);
-                int64_t hook(uint32_t reserved)
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_account (uint32_t, uint32_t);
+            int64_t hook(uint32_t reserved)
+            {
+                uint8_t acc[20];
+                // guards should be computed by:
+                // (this loop iterations + 1) * (each parent loop's iteration's + 0)
+                for (int i = 0; i < 10; ++i)
                 {
-                    uint8_t acc[20];
-                    for (int i = 0; GUARD(10), i < 10; ++i)
+                    _g(1, 11);
+                    for (int j = 0; j < 2; ++j)
                     {
-                        for (int j = 0; GUARD(2), j < 2; ++j)
+                        _g(2, 30);
+                        for (int k = 0;  k < 5; ++k)
                         {
-                            for (int k = 0; GUARD(5), k < 5; ++k)
-                                hook_account(acc, 20);
-                            for (int k = 0; GUARD(5), k < 5; ++k)
-                                hook_account(acc, 20);
-                        }
-
-                        for (int k = 0; GUARD(5), k < 5; ++k)
+                            _g(3, 120);
                             hook_account(acc, 20);
+                        }
+                        for (int k = 0;  k < 5; ++k)
+                        {
+                            _g(4, 120);
+                            hook_account(acc, 20);
+                        }
                     }
-
-                    return accept(0,0,2);
                 }
+                return accept(0,0,2);
+            }
             )[test.hook]"];
 
             env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
@@ -1797,6 +1805,49 @@ public:
             env.close();
         }
 
+        // complex looping missing a guard
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_account (uint32_t, uint32_t);
+            int64_t hook(uint32_t reserved)
+            {
+                uint8_t acc[20];
+                // guards should be computed by:
+                // (this loop iterations + 1) * (each parent loop's iteration's + 0)
+                for (int i = 0; i < acc[0]; ++i)
+                {
+                    _g(1, 11);
+                    for (int j = 0; j < acc[1]; ++j)
+                    {
+                        // guard missing here
+                        hook_account(acc, 20);
+                        for (int k = 0;  k < acc[2]; ++k)
+                        {
+                            _g(3, 120);
+                            hook_account(acc, 20);
+                        }
+                        for (int k = 0;  k < acc[3]; ++k)
+                        {
+                            _g(4, 120);
+                            hook_account(acc, 20);
+                        }
+                    }
+                }
+                return accept(0,0,2);
+            }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("Loop 4 in C"),
+                HSFEE, ter(temMALFORMED));
+            env.close();
+        }
     }
 
     void
@@ -1842,6 +1893,7 @@ public:
     void
     test_float_compare()
     {
+
     }
 
     void
@@ -1902,11 +1954,119 @@ public:
     void
     test_float_one()
     {
+        testcase("Test float_one");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    int64_t f = float_one();
+                    return 
+                        f == 6089866696204910592ULL
+                        ? accept(0,0,2)
+                        : rollback(0,0,1);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_one"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_one"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
     test_float_root()
     {
+        testcase("Test float_root");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_root (int64_t float1, uint32_t n);
+                extern int64_t float_one (void);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                #define ASSERT_EQUAL(x,y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t ny = float_negate((y));\
+                    int64_t diff = float_sum(px, ny);\
+                    if (float_compare(diff, 0, 2))\
+                        diff = float_negate(diff);\
+                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
+                        rollback(0,0, __LINE__);\ 
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+            
+                    ASSERT_EQUAL(float_root(float_one(), 2), float_one());
+
+                    // sqrt 9 is 3
+                    ASSERT_EQUAL(float_root(6097866696204910592LL, 2), 6091866696204910592LL);
+
+                    // cube root of 1000 is 10
+                    ASSERT_EQUAL(float_root(6143909891733356544LL, 3), 6107881094714392576LL);
+
+                    // sqrt of negative is "complex not supported error"
+                    if (float_root(1478180677777522688LL, 2) != -39)
+                        rollback(0,0,__LINE__);
+
+                    // tenth root of 0 is 0
+                    if (float_root(0, 10) != 0)
+                        rollback(0,0,__LINE__);
+
+                    return 
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_root"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_root"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -2474,22 +2634,3 @@ BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 }  // namespace test
 }  // namespace ripple
 
-/*
-            Json::Value jv;
-
-            jv[jss::Account] = alice.human();
-            jv[jss::TransactionType] = jss::SetHook;
-            jv[jss::Flags] = 0;
-            jv[jss::Hooks] =
-                Json::Value{Json::arrayValue};
-
-            Json::Value iv;
-
-            iv[jss::CreateCode] = std::string(65536, 'F');
-            iv[jss::HookOn] = "0000000000000000";
-            iv[jss::HookNamespace] = to_string(uint256{beast::zero});
-            iv[jss::HookApiVersion] = Json::Value{0};
-
-            jv[jss::Hooks][i][jss::Hook] = iv;
-            env(jv, ter(temMALFORMED));
-*/

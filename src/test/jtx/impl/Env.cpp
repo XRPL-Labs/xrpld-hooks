@@ -353,6 +353,7 @@ Env::postconditions(JTx const& jt, TER ter, bool didApply)
                 transHuman(*jt.ter) + ")"))
     {
         test.log << pretty(jt.jv) << std::endl;
+        test.log << *(meta()) << std::endl;
         // Don't check postconditions if
         // we didn't get the expected result.
         return;
@@ -362,6 +363,7 @@ Env::postconditions(JTx const& jt, TER ter, bool didApply)
         if (trace_ > 0)
             --trace_;
         test.log << pretty(jt.jv) << std::endl;
+        test.log << *(meta()) << std::endl;
     }
     for (auto const& f : jt.require)
         f(*this);

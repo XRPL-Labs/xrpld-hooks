@@ -3991,7 +3991,6 @@ DEFINE_HOOK_FUNCTION(
 }
 
 
-// RH TODO: bill based on guard counts
 // Guard function... very important. Enforced on SetHook transaction, keeps track of how many times a
 // runtime loop iterates and terminates the hook if the iteration count rises above a preset number of iterations
 // as determined by the hook developer
@@ -4359,7 +4358,14 @@ DEFINE_HOOK_FUNCTION(
         ripple::IOUAmount amt1 {man1, exp1};
         ripple::IOUAmount amt2 {man2, exp2};
         amt1 += amt2;
-        return make_float(amt1);
+        int64_t result = make_float(amt1);
+        if (result == EXPONENT_UNDERSIZED)
+        {
+            // this is an underflow e.g. as a result of subtracting an xfl from itself
+            // and thus not an error, just return canonical 0
+            return 0;
+        }
+        return result;
     }
     catch (std::overflow_error& e)
     {
@@ -4811,23 +4817,17 @@ DEFINE_HOOK_FUNCTION(
     if (is_negative(float1))
         return COMPLEX_NOT_SUPPORTED;
 
-    double result = pow(man1, 1.0/((double)(n)));
-    
-    if (exp1 != 0)
-        result *= pow(1, ((double)(exp1))/((double)(n)));
-    
+    double inp = (double)(man1) * pow(10, exp1);
+    double result = pow(inp, ((double)1.0f)/((double)(n)));
+
     if (result == 0)
         return 0;
-    
-    int32_t exp_out = 0;
-    while (result * 10 < maxMantissa)
-    {
-        result *= 10;
-        exp_out--;
-    }
 
+    // normalize    
+    int32_t exp_out = (int32_t) (log(result)/log(10));
+    result *= pow(10, -exp_out + 15);
+    exp_out -= 15;
     return make_float((int64_t)result, exp_out);    
-
 }
 
 DEFINE_HOOK_FUNCTION(
