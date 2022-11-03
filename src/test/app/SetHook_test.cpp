@@ -75,7 +75,7 @@ public:
 
     // This is a large fee, large enough that we can set most small test hooks without running into fee issues
     // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
-    #define HSFEE fee(1'000'000)
+    #define HSFEE fee(10'000'000)
     #define M(m) memo(m, "", "")
     void
     testHooksDisabled()
@@ -1893,7 +1893,139 @@ public:
     void
     test_float_compare()
     {
+        testcase("Test float_compare");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
 
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                #define EQ   0b001U
+                #define LT   0b010U
+                #define GT   0b100U
+                #define LTE  0b011U
+                #define GTE  0b101U
+                #define NEQ  0b110U
+                #define ASSERT(x)\
+                    if ((x) != 1)\
+                        rollback(0,0,__LINE__)
+                #define INVALID_ARGUMENT -7
+                #define INVALID_FLOAT -10024
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    int64_t result = 0;
+
+                    // test invalid floats
+                    {
+                        ASSERT(float_compare(-1,-2, EQ) == INVALID_FLOAT);
+                        ASSERT(float_compare( 0,-2, EQ) == INVALID_FLOAT);
+                        ASSERT(float_compare(-1, 0, EQ) == INVALID_FLOAT);
+                    }
+
+                    // test invalid flags
+                    {
+                        // flag 8 doesnt exist
+                        ASSERT(float_compare(0,0,   0b1000U) == INVALID_ARGUMENT);
+                        // flag 16 doesnt exist
+                        ASSERT(float_compare(0,0,  0b10000U) == INVALID_ARGUMENT);
+                        // every flag except the valid ones
+                        ASSERT(float_compare(0,0,  ~0b111UL) == INVALID_ARGUMENT);
+                        // all valid flags combined is invalid too
+                        ASSERT(float_compare(0,0,   0b111UL) == INVALID_ARGUMENT);
+                        // no flags is also invalid
+                        ASSERT(float_compare(0,0,   0) == INVALID_ARGUMENT);
+                    }
+
+                    // test logic
+                    {
+                        ASSERT(float_compare(0,0,EQ));
+                        ASSERT(float_compare(0, float_one(), LT));
+                        ASSERT(float_compare(0, float_one(), GT) == 0);
+                        ASSERT(float_compare(0, float_one(), GTE) == 0);
+                        ASSERT(float_compare(0, float_one(), LTE));
+                        ASSERT(float_compare(0, float_one(), NEQ));
+
+                        int64_t large_negative = 1622844335003378560LL; /* -154846915           */
+                        int64_t small_negative = 1352229899321148800LL; /* -1.15001111e-7       */
+                        int64_t small_positive = 5713898440837102138LL; /* 3.33411333131321e-21 */
+                        int64_t large_positive = 7749425685711506120LL; /* 3.234326634253e+92   */
+
+                        // large negative < small negative
+                        ASSERT(float_compare(large_negative, small_negative, LT));
+                        ASSERT(float_compare(large_negative, small_negative, LTE));
+                        ASSERT(float_compare(large_negative, small_negative, NEQ));
+                        ASSERT(float_compare(large_negative, small_negative, GT) == 0);
+                        ASSERT(float_compare(large_negative, small_negative, GTE) == 0);
+                        ASSERT(float_compare(large_negative, small_negative, EQ) == 0);
+
+                        // large_negative < large positive
+                        ASSERT(float_compare(large_negative, large_positive, LT));
+                        ASSERT(float_compare(large_negative, large_positive, LTE));
+                        ASSERT(float_compare(large_negative, large_positive, NEQ));
+                        ASSERT(float_compare(large_negative, large_positive, GT) == 0);
+                        ASSERT(float_compare(large_negative, large_positive, GTE) == 0);
+                        ASSERT(float_compare(large_negative, large_positive, EQ) == 0);
+
+                        // small_negative < small_positive
+                        ASSERT(float_compare(small_negative, small_positive, LT));
+                        ASSERT(float_compare(small_negative, small_positive, LTE));
+                        ASSERT(float_compare(small_negative, small_positive, NEQ));
+                        ASSERT(float_compare(small_negative, small_positive, GT) == 0);
+                        ASSERT(float_compare(small_negative, small_positive, GTE) == 0);
+                        ASSERT(float_compare(small_negative, small_positive, EQ) == 0);
+                        
+                        // small positive < large positive
+                        ASSERT(float_compare(small_positive, large_positive, LT));
+                        ASSERT(float_compare(small_positive, large_positive, LTE));
+                        ASSERT(float_compare(small_positive, large_positive, NEQ));
+                        ASSERT(float_compare(small_positive, large_positive, GT) == 0);
+                        ASSERT(float_compare(small_positive, large_positive, GTE) == 0);
+                        ASSERT(float_compare(small_positive, large_positive, EQ) == 0);
+
+                        // small negative < 0
+                        ASSERT(float_compare(small_negative, 0, LT));
+
+                        // large negative < 0
+                        ASSERT(float_compare(large_negative, 0, LT));
+
+                        // small positive > 0
+                        ASSERT(float_compare(small_positive, 0, GT));
+
+                        // large positive > 0
+                        ASSERT(float_compare(large_positive, 0, GT));
+                    }
+
+                    return 
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_compare"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_compare"),
+                fee(XRP(1)));
+            env.close();
+        }
+        
     }
 
     void
@@ -1924,6 +2056,77 @@ public:
     void
     test_float_log()
     {
+        testcase("Test float_log");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_log (int64_t float1);
+                extern int64_t float_one (void);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                #define INVALID_ARGUMENT -7
+                #define COMPLEX_NOT_SUPPORTED -39
+                #define ASSERT_EQUAL(x,y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t ny = float_negate((y));\
+                    int64_t diff = float_sum(px, ny);\
+                    if (float_compare(diff, 0, 2))\
+                        diff = float_negate(diff);\
+                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
+                        rollback(0,0, __LINE__);\ 
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+           
+                    // check 0 is not allowed
+                    if (float_log(0) != INVALID_ARGUMENT)
+                        rollback(0,0,__LINE__);    
+
+                    // log10( 846513684968451 ) = 14.92763398342338
+                    ASSERT_EQUAL(float_log(6349533412187342878LL), 6108373858112734914LL);
+
+                    // log10 ( -1000 ) = invalid (complex not supported)
+                    if (float_log(1532223873305968640LL) != COMPLEX_NOT_SUPPORTED)
+                        rollback(0,0,__LINE__);
+
+                    // log10 (1000) == 3
+                    ASSERT_EQUAL(float_log(6143909891733356544LL), 6091866696204910592LL);
+
+                    // log10 (0.112381) == -0.949307107740766
+                    ASSERT_EQUAL(float_log(6071976107695428608LL), 1468659350345448364LL);
+                    
+                    return 
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_log"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_log"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -1949,6 +2152,76 @@ public:
     void
     test_float_negate()
     {
+        testcase("Test float_negate");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                extern int64_t float_negate(int64_t);
+                #define ASSERT(x)\
+                    if ((x) != 1)\
+                        rollback(0,0,__LINE__)
+                #define INVALID_FLOAT -10024
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    int64_t result = 0;
+
+                    // test invalid floats
+                    {
+                        ASSERT(float_negate(-1) == INVALID_FLOAT);
+                        ASSERT(float_negate(-11010191919LL) == INVALID_FLOAT);
+                    }
+
+                    // test canonical zero
+                    ASSERT(float_negate(0) == 0);
+
+                    // test double negation
+                    {
+                        ASSERT(float_negate(float_one()) != float_one());
+                        ASSERT(float_negate(float_negate(float_one())) == float_one());
+                    }
+
+                    // test random numbers
+                    {
+                       // +/- 3.463476342523e+22
+                       ASSERT(float_negate(6488646939756037240LL) == 1876960921328649336LL);
+     
+                       ASSERT(float_negate(float_one()) == 1478180677777522688LL);
+    
+                       ASSERT(float_negate(1838620299498162368LL) == 6450306317925550272LL);
+                    }
+
+                    return 
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_negate"),
+                HSFEE);
+            env.close();
+            
+            env(pay(bob, alice, XRP(1)),
+                M("test float_negate"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void

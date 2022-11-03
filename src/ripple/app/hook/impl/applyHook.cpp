@@ -4307,6 +4307,9 @@ DEFINE_HOOK_FUNCTION(
     if ((equal_flag && less_flag && greater_flag) || mode == 0)
         return INVALID_ARGUMENT;
 
+    if (mode & (~0b111UL))
+        return INVALID_ARGUMENT;
+
     try
     {
         int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
@@ -4770,6 +4773,19 @@ DEFINE_HOOK_FUNCTION(
     return set_mantissa(float1, mantissa);
 }
 
+#define NORAMLIZE_AND_RETURN_DOUBLE(x)\
+{\
+    if ((x) == 0)\
+        return 0;\
+    int32_t exp_out = (int32_t) log10((x));\
+    result *= pow(10, -exp_out + 15);\
+    exp_out -= 15;\
+    int64_t ret = make_float((int64_t)(x), exp_out);\
+    if (ret == EXPONENT_UNDERSIZED)\
+        return 0;\
+    return ret;\
+}
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_log,
@@ -4785,20 +4801,9 @@ DEFINE_HOOK_FUNCTION(
         return COMPLEX_NOT_SUPPORTED;
 
     double result = log10(man1);
-    
     result += exp1;
-    
-    if (result == 0)
-        return 0;
-    
-    int32_t exp_out = 0;
-    while (result * 10 < maxMantissa)
-    {
-        result *= 10;
-        exp_out--;
-    }
-
-    return make_float((int64_t)result, exp_out);    
+ 
+    NORAMLIZE_AND_RETURN_DOUBLE(result);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4820,14 +4825,7 @@ DEFINE_HOOK_FUNCTION(
     double inp = (double)(man1) * pow(10, exp1);
     double result = pow(inp, ((double)1.0f)/((double)(n)));
 
-    if (result == 0)
-        return 0;
-
-    // normalize    
-    int32_t exp_out = (int32_t) (log(result)/log(10));
-    result *= pow(10, -exp_out + 15);
-    exp_out -= 15;
-    return make_float((int64_t)result, exp_out);    
+    NORAMLIZE_AND_RETURN_DOUBLE(result);
 }
 
 DEFINE_HOOK_FUNCTION(
