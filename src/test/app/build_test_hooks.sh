@@ -26,7 +26,7 @@ cat SetHook_test.cpp | tr '\n' '\f' |
             if [ "$WAT" -eq "0" ]
             then
                 wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 
-                    hook-cleaner - - |
+                    hook-cleaner - - 2>/dev/null |
                     xxd -p -u -c 19 | 
                     sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
             else

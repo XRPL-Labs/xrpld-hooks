@@ -61,7 +61,7 @@ using JSSMap = std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JS
         return;\
 }
 
-        
+
 class SetHook_test : public beast::unit_test::suite
 {
 private:
@@ -1750,13 +1750,13 @@ public:
                 M("Loop 2 in C"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("Test Loop 2"),
                 fee(XRP(1)));
             env.close();
         }
-        
+
         // complex looping, c
         {
             TestHook
@@ -1798,7 +1798,7 @@ public:
                 M("Loop 3 in C"),
                 HSFEE);
             env.close();
-        
+
             env(pay(bob, alice, XRP(1)),
                 M("Test Loop 3"),
                 fee(XRP(1)));
@@ -1988,7 +1988,7 @@ public:
                         ASSERT(float_compare(small_negative, small_positive, GT) == 0);
                         ASSERT(float_compare(small_negative, small_positive, GTE) == 0);
                         ASSERT(float_compare(small_negative, small_positive, EQ) == 0);
-                        
+
                         // small positive < large positive
                         ASSERT(float_compare(small_positive, large_positive, LT));
                         ASSERT(float_compare(small_positive, large_positive, LTE));
@@ -2010,7 +2010,7 @@ public:
                         ASSERT(float_compare(large_positive, 0, GT));
                     }
 
-                    return 
+                    return
                         accept(0,0,0);
                 }
             )[test.hook]"];
@@ -2019,13 +2019,13 @@ public:
                 M("set float_compare"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_compare"),
                 fee(XRP(1)));
             env.close();
         }
-        
+
     }
 
     void
@@ -2046,11 +2046,217 @@ public:
     void
     test_float_int()
     {
+        testcase("Test float_int");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_int (int64_t, uint32_t, uint32_t);
+                extern int64_t float_one (void);
+                #define INVALID_FLOAT -10024
+                #define INVALID_ARGUMENT -7
+                #define CANT_RETURN_NEGATIVE -33
+                #define TOO_BIG -3
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // ensure invalid xfl are not accepted
+                    ASSERT(float_int(-1,0,0) == INVALID_FLOAT);
+
+                    // check 1
+                    ASSERT(float_int(float_one(), 0, 0) == 1LL);
+
+                    // check 1.23e-20 always returns 0 (too small to display)
+                    ASSERT(float_int(5729808726015270912LL,0,0) == 0);
+                    ASSERT(float_int(5729808726015270912LL,15,0) == 0);
+                    ASSERT(float_int(5729808726015270912LL,16,0) == INVALID_ARGUMENT);
+
+
+                    ASSERT(float_int(float_one(), 15, 0) == 1000000000000000LL);
+                    ASSERT(float_int(float_one(), 14, 0) == 100000000000000LL);
+                    ASSERT(float_int(float_one(), 13, 0) == 10000000000000LL);
+                    ASSERT(float_int(float_one(), 12, 0) == 1000000000000LL);
+                    ASSERT(float_int(float_one(), 11, 0) == 100000000000LL);
+                    ASSERT(float_int(float_one(), 10, 0) == 10000000000LL);
+                    ASSERT(float_int(float_one(),  9, 0) == 1000000000LL);
+                    ASSERT(float_int(float_one(),  8, 0) == 100000000LL);
+                    ASSERT(float_int(float_one(),  7, 0) == 10000000LL);
+                    ASSERT(float_int(float_one(),  6, 0) == 1000000LL);
+                    ASSERT(float_int(float_one(),  5, 0) == 100000LL);
+                    ASSERT(float_int(float_one(),  4, 0) == 10000LL);
+                    ASSERT(float_int(float_one(),  3, 0) == 1000LL);
+                    ASSERT(float_int(float_one(),  2, 0) == 100LL);
+                    ASSERT(float_int(float_one(),  1, 0) == 10LL);
+                    ASSERT(float_int(float_one(),  0, 0) == 1LL);
+
+                    // normal upper limit on exponent
+                    ASSERT(float_int(6360317241828374919LL, 0, 0) == 1234567981234567LL);
+
+                    // ask for one decimal above limit
+                    ASSERT(float_int(6360317241828374919LL, 1, 0) == TOO_BIG);
+
+                    // ask for 15 decimals above limit
+                    ASSERT(float_int(6360317241828374919LL, 15, 0) == TOO_BIG);
+
+                    // every combination for 1.234567981234567
+                    ASSERT(float_int(6090101264186145159LL,  0, 0) == 1LL);
+                    ASSERT(float_int(6090101264186145159LL,  1, 0) == 12LL);
+                    ASSERT(float_int(6090101264186145159LL,  2, 0) == 123LL);
+                    ASSERT(float_int(6090101264186145159LL,  3, 0) == 1234LL);
+                    ASSERT(float_int(6090101264186145159LL,  4, 0) == 12345LL);
+                    ASSERT(float_int(6090101264186145159LL,  5, 0) == 123456LL);
+                    ASSERT(float_int(6090101264186145159LL,  6, 0) == 1234567LL);
+                    ASSERT(float_int(6090101264186145159LL,  7, 0) == 12345679LL);
+                    ASSERT(float_int(6090101264186145159LL,  8, 0) == 123456798LL);
+                    ASSERT(float_int(6090101264186145159LL,  9, 0) == 1234567981LL);
+                    ASSERT(float_int(6090101264186145159LL, 10, 0) == 12345679812LL);
+                    ASSERT(float_int(6090101264186145159LL, 11, 0) == 123456798123LL);
+                    ASSERT(float_int(6090101264186145159LL, 12, 0) == 1234567981234LL);
+                    ASSERT(float_int(6090101264186145159LL, 13, 0) == 12345679812345LL);
+                    ASSERT(float_int(6090101264186145159LL, 14, 0) == 123456798123456LL);
+                    ASSERT(float_int(6090101264186145159LL, 15, 0) == 1234567981234567LL);
+
+                    // same with absolute parameter
+                    ASSERT(float_int(1478415245758757255LL,  0, 1) == 1LL);
+                    ASSERT(float_int(1478415245758757255LL,  1, 1) == 12LL);
+                    ASSERT(float_int(1478415245758757255LL,  2, 1) == 123LL);
+                    ASSERT(float_int(1478415245758757255LL,  3, 1) == 1234LL);
+                    ASSERT(float_int(1478415245758757255LL,  4, 1) == 12345LL);
+                    ASSERT(float_int(1478415245758757255LL,  5, 1) == 123456LL);
+                    ASSERT(float_int(1478415245758757255LL,  6, 1) == 1234567LL);
+                    ASSERT(float_int(1478415245758757255LL,  7, 1) == 12345679LL);
+                    ASSERT(float_int(1478415245758757255LL,  8, 1) == 123456798LL);
+                    ASSERT(float_int(1478415245758757255LL,  9, 1) == 1234567981LL);
+                    ASSERT(float_int(1478415245758757255LL, 10, 1) == 12345679812LL);
+                    ASSERT(float_int(1478415245758757255LL, 11, 1) == 123456798123LL);
+                    ASSERT(float_int(1478415245758757255LL, 12, 1) == 1234567981234LL);
+                    ASSERT(float_int(1478415245758757255LL, 13, 1) == 12345679812345LL);
+                    ASSERT(float_int(1478415245758757255LL, 14, 1) == 123456798123456LL);
+                    ASSERT(float_int(1478415245758757255LL, 15, 1) == 1234567981234567LL);
+
+                    // neg xfl sans absolute parameter
+                    ASSERT(float_int(1478415245758757255LL, 15, 0) == CANT_RETURN_NEGATIVE);
+
+                    // 1.234567981234567e-16
+                    ASSERT(float_int(5819885286543915399LL, 15, 0) == 1LL);
+                    for (uint32_t i = 1; GUARD(15), i < 15; ++i)
+                        ASSERT(float_int(5819885286543915399LL, i, 0) == 0);
+
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_int"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_int"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
     test_float_invert()
     {
+        testcase("Test float_invert");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_invert (int64_t);
+                extern int64_t float_one (void);
+                #define INVALID_FLOAT -10024
+                #define DIVISION_BY_ZERO -25
+                #define TOO_BIG -3
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                #define ASSERT_EQUAL(x,y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t ny = float_negate((y));\
+                    int64_t diff = float_sum(px, ny);\
+                    if (float_compare(diff, 0, 2))\
+                    diff = float_negate(diff);\
+                    if (float_compare(diff, 5999794703657500672LL /* 10**-5 */, 4))\
+                    rollback((uint32_t)#x,sizeof(#x), __LINE__);\
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // divide by 0
+                    ASSERT(float_invert(0) == DIVISION_BY_ZERO);
+
+                    // ensure invalid xfl are not accepted
+                    ASSERT(float_invert(-1) == INVALID_FLOAT);
+
+                    // check 1
+                    ASSERT(float_invert(float_one()) == float_one());
+
+                    // 1 / 10 = 0.1
+                    ASSERT_EQUAL(float_invert(6107881094714392576LL), 6071852297695428608LL);
+
+                    // 1 / 123 = 0.008130081300813009
+                    ASSERT_EQUAL(float_invert(6126125493223874560LL), 6042953581977277649LL);
+
+                    // 1 / 1234567899999999 = 8.100000008100007e-16
+                    ASSERT_EQUAL(float_invert(6360317241747140351LL), 5808736320061298855LL);
+
+                    // 1/ 1*10^-81 = 10**81
+                    ASSERT_EQUAL(float_invert(4630700416936869888LL), 7540018576963469311LL);
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_invert"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_invert"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -2064,7 +2270,7 @@ public:
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
-        
+
         {
             TestHook
             hook =
@@ -2089,15 +2295,15 @@ public:
                     if (float_compare(diff, 0, 2))\
                         diff = float_negate(diff);\
                     if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\ 
+                        rollback(0,0, __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
                     _g(1,1);
-           
+
                     // check 0 is not allowed
                     if (float_log(0) != INVALID_ARGUMENT)
-                        rollback(0,0,__LINE__);    
+                        rollback(0,0,__LINE__);
 
                     // log10( 846513684968451 ) = 14.92763398342338
                     ASSERT_EQUAL(float_log(6349533412187342878LL), 6108373858112734914LL);
@@ -2111,8 +2317,13 @@ public:
 
                     // log10 (0.112381) == -0.949307107740766
                     ASSERT_EQUAL(float_log(6071976107695428608LL), 1468659350345448364LL);
-                    
-                    return 
+
+                    // log10 (0.00000000000000001123) = -16.94962024373854221
+                    ASSERT_EQUAL(float_log(5783744921543716864LL), 1496890038311378526LL);
+
+                    // log10 (100000000000000000000000000000000000000000000000000000000000000) = 62
+                    ASSERT_EQUAL(float_log(7206759403792793600LL), 6113081094714392576LL);
+                    return
                         accept(0,0,0);
                 }
             )[test.hook]"];
@@ -2121,7 +2332,7 @@ public:
                 M("set float_log"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_log"),
                 fee(XRP(1)));
@@ -2201,13 +2412,13 @@ public:
                     {
                        // +/- 3.463476342523e+22
                        ASSERT(float_negate(6488646939756037240LL) == 1876960921328649336LL);
-     
+
                        ASSERT(float_negate(float_one()) == 1478180677777522688LL);
-    
+
                        ASSERT(float_negate(1838620299498162368LL) == 6450306317925550272LL);
                     }
 
-                    return 
+                    return
                         accept(0,0,0);
                 }
             )[test.hook]"];
@@ -2216,7 +2427,7 @@ public:
                 M("set float_negate"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_negate"),
                 fee(XRP(1)));
@@ -2235,7 +2446,7 @@ public:
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
-        
+
         {
             TestHook
             hook =
@@ -2250,7 +2461,7 @@ public:
                 {
                     _g(1,1);
                     int64_t f = float_one();
-                    return 
+                    return
                         f == 6089866696204910592ULL
                         ? accept(0,0,2)
                         : rollback(0,0,1);
@@ -2261,7 +2472,7 @@ public:
                 M("set float_one"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_one"),
                 fee(XRP(1)));
@@ -2280,7 +2491,7 @@ public:
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
-        
+
         {
             TestHook
             hook =
@@ -2303,12 +2514,12 @@ public:
                     if (float_compare(diff, 0, 2))\
                         diff = float_negate(diff);\
                     if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\ 
+                        rollback(0,0, __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
                     _g(1,1);
-            
+
                     ASSERT_EQUAL(float_root(float_one(), 2), float_one());
 
                     // sqrt 9 is 3
@@ -2325,7 +2536,7 @@ public:
                     if (float_root(0, 10) != 0)
                         rollback(0,0,__LINE__);
 
-                    return 
+                    return
                         accept(0,0,0);
                 }
             )[test.hook]"];
@@ -2334,7 +2545,7 @@ public:
                 M("set float_root"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_root"),
                 fee(XRP(1)));
@@ -2378,7 +2589,7 @@ public:
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
-        
+
         {
             TestHook
             hook =
@@ -2400,7 +2611,7 @@ public:
                     if (float_compare(diff, 0, 2))\
                         diff = float_negate(diff);\
                     if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\ 
+                        rollback(0,0, __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
@@ -2412,7 +2623,7 @@ public:
 
                     // 1 - 1 = 0
                     ASSERT_EQUAL(0,
-                        float_sum(float_one(), float_negate(float_one())));            
+                        float_sum(float_one(), float_negate(float_one())));
 
                     // 45678 + 0.345678 = 45678.345678
                     ASSERT_EQUAL(6165492124810638528LL,
@@ -2423,7 +2634,7 @@ public:
                         6387097057170171072LL,
                         float_sum(1676857706508234512LL, 6396111470866104320LL));
 
-                    return 
+                    return
                         accept(0,0,0);
                 }
             )[test.hook]"];
@@ -2432,7 +2643,7 @@ public:
                 M("set float_sum"),
                 HSFEE);
             env.close();
-            
+
             env(pay(bob, alice, XRP(1)),
                 M("test float_sum"),
                 fee(XRP(1)));

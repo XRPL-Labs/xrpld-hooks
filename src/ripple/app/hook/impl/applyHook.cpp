@@ -292,6 +292,31 @@ namespace hook
 
 namespace hook_float
 {
+
+    // power of 10 LUT for fast integer math
+    static int64_t power_of_ten[19] =
+    {
+        1LL,
+        10LL,
+        100LL,
+        1000LL,
+        10000LL,
+        100000LL,
+        1000000LL,
+        10000000LL,
+        100000000LL,
+        1000000000LL,
+        10000000000LL,
+        100000000000LL,
+        1000000000000LL,
+        10000000000000LL,
+        100000000000000LL,
+        1000000000000000LL,  // 15
+        10000000000000000LL,
+        100000000000000000LL,
+        1000000000000000000LL,
+    };
+
     using namespace hook_api;
     static int64_t const minMantissa = 1000000000000000ull;
     static int64_t const maxMantissa = 9999999999999999ull;
@@ -310,7 +335,7 @@ namespace hook_float
         return ((int32_t)float_in) - 97;
     }
 
-    inline uint64_t get_mantissa(int64_t float1)
+    inline int64_t get_mantissa(int64_t float1)
     {
         if (float1 < 0)
             return INVALID_FLOAT;
@@ -373,24 +398,25 @@ namespace hook_float
             man_out *= -1;
 
         float_out = set_sign(float_out, neg);
-        float_out = set_mantissa(float_out, man_out);
+        float_out = set_mantissa(float_out, (uint64_t)man_out);
         float_out = set_exponent(float_out, amt.exponent());
         return float_out;
     }
 
-    inline int64_t make_float(int64_t mantissa, int32_t exponent)
+    inline int64_t make_float(uint64_t mantissa, int32_t exponent, bool neg)
     {
+        assert(mantissa > 0);
+
         if (mantissa == 0)
             return 0;
         if (mantissa > maxMantissa)
             return MANTISSA_OVERSIZED;
+        if (mantissa < minMantissa)
+            return MANTISSA_UNDERSIZED;
         if (exponent > maxExponent)
             return EXPONENT_OVERSIZED;
         if (exponent < minExponent)
             return EXPONENT_UNDERSIZED;
-        bool neg = mantissa < 0;
-        if (neg)
-            mantissa *= -1LL;
         int64_t out =  0;
         out = set_mantissa(out, mantissa);
         out = set_exponent(out, exponent);
@@ -398,33 +424,64 @@ namespace hook_float
         return out;
     }
 
-    inline int64_t float_set(int32_t exp, int64_t mantissa)
+    /**
+     * This function normalizes the mantissa and exponent passed, if it can.
+     * It returns the XFL and mutates the supplied manitssa and exponent.
+     * If a negative mantissa is provided then the returned XFL has the negative flag set.
+     * If there is an overflow error return XFL_OVERFLOW. On underflow returns canonical 0
+     */
+    template <typename T>
+    inline int64_t normalize_xfl(T& man, int32_t& exp, bool neg = false)
     {
-        if (mantissa == 0)
+        constexpr bool sman = std::is_same<T, int64_t>::value;
+        static_assert(sman || std::is_same<T, uint64_t>());
+
+        if constexpr(sman)
+        {
+            if (man < 0)
+                man *= -1LL;
+            neg = true;
+        }
+
+        // mantissa order
+        int32_t mo = log10(man);
+        int32_t adjust = 15 - mo;
+
+        if (adjust > 0)
+        {
+            man *= power_of_ten[adjust];
+            exp -= adjust;
+        }
+        else if (adjust < 0)
+        {
+            man /= power_of_ten[adjust];
+            exp += adjust;
+        }
+
+        if (man == 0)
+        {
+            exp = 0;
             return 0;
-
-        bool neg = mantissa < 0;
-        if (neg)
-            mantissa *= -1LL;
-
-        // normalize
-        while (mantissa < minMantissa)
-        {
-            mantissa *= 10;
-            exp--;
-            if (exp < minExponent)
-                return INVALID_FLOAT; //underflow
-        }
-        while (mantissa > maxMantissa)
-        {
-            mantissa /= 10;
-            exp++;
-            if (exp > maxExponent)
-                return INVALID_FLOAT; //overflow
         }
 
-        return make_float( ( neg ? -1LL : 1LL ) * mantissa, exp);
+        if (exp < minExponent)
+        {
+            man = 0;
+            exp = 0;
+            return 0;
+        }
+        
+        if (exp > maxExponent)
+            return XFL_OVERFLOW;
 
+        int64_t ret = make_float((uint64_t)man, exp, neg);
+        if constexpr(sman)
+        {
+            if (neg)
+                man *= -1LL;
+        }
+
+        return ret;
     }
 
 }
@@ -2250,7 +2307,7 @@ DEFINE_HOOK_FUNCTION(
             int64_t drops = amt.drops();
             int32_t exp = -6;
             // normalize
-            return hook_float::float_set(exp, drops);
+            return hook_float::normalize_xfl(drops, exp);
         }
         else
         {
@@ -4034,7 +4091,7 @@ DEFINE_HOOK_FUNCTION(
     if (float1 < 0) return hook_api::INVALID_FLOAT;\
     if (float1 != 0)\
     {\
-        int64_t mantissa = get_mantissa(float1);\
+        uint64_t mantissa = get_mantissa(float1);\
         int32_t exponent = get_exponent(float1);\
         if (mantissa < minMantissa ||\
             mantissa > maxMantissa ||\
@@ -4061,7 +4118,7 @@ DEFINE_HOOK_FUNCTION(
     if (float1 == 0)
         RETURN_HOOK_TRACE(read_ptr, read_len, "Float 0*10^(0) <ZERO>");
 
-    int64_t man = get_mantissa(float1);
+    uint64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
     if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
@@ -4080,23 +4137,14 @@ DEFINE_HOOK_FUNCTION(
     if (mantissa == 0)
         return 0;
 
-    // normalize
-    while (mantissa < minMantissa)
-    {
-        mantissa *= 10;
-        exp--;
-        if (exp < minExponent)
-            return INVALID_FLOAT; //underflow
-    }
-    while (mantissa > maxMantissa)
-    {
-        mantissa /= 10;
-        exp++;
-        if (exp > maxExponent)
-            return INVALID_FLOAT; //overflow
-    }
+    int64_t normalized = hook_float::normalize_xfl(mantissa, exp);
 
-    return make_float(mantissa, exp);
+    // the above function will underflow into a canonical 0
+    // but this api must report that underflow
+    if (normalized == 0)
+        return INVALID_FLOAT;
+
+    return normalized;
 }
 
 // https://stackoverflow.com/questions/31652875/fastest-way-to-multiply-two-64-bit-ints-to-128-bit-then-to-64-bit
@@ -4172,7 +4220,7 @@ inline int64_t float_multiply_internal_parts(
 
     // we can adjust for the bitshifting by doing upto two smaller multiplications now
     neg1 = (neg1 && !neg2) || (!neg1 && neg2);
-    int64_t man_out = (neg1 ? -1 : 1) * ((int64_t)(man_lo));
+    int64_t man_out = (neg1 ? -1LL : 1LL) * ((int64_t)(man_lo));
     if (man_shifted > 32)
     {
         man_shifted -=32;
@@ -4183,8 +4231,10 @@ inline int64_t float_multiply_internal_parts(
     if (mulratio_internal(man_out, exp_out, false, 1U << man_shifted, 1) < 0)
         return XFL_OVERFLOW;
 
+    if (man_out < 0)
+        man_out *= -1LL;
     // now we have our product
-    return make_float(man_out, exp_out);
+    return make_float(man_out, exp_out, neg1);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4203,38 +4253,24 @@ DEFINE_HOOK_FUNCTION(
     if (decimal_places > 15)
         return INVALID_ARGUMENT;
 
-    if (neg1 && !absolute)
-        return CANT_RETURN_NEGATIVE;
-
-
-    int32_t dp = -((int32_t)decimal_places);
-
-    while (exp1 > dp && man1 < maxMantissa)
+    if (neg1)
     {
-        printf("while (exp1 %d > dp %d) \n", exp1, dp);
-        man1 *= 10;
-        exp1--;
+        if (!absolute)
+            return CANT_RETURN_NEGATIVE;
     }
 
-    if (exp1 > dp)
-        return XFL_OVERFLOW;
+    int32_t shift = -(exp1 + decimal_places);
 
-    while (exp1 < dp && man1 > 0)
-    {
-        printf("while (exp1 %d < dp %d) \n", exp1, dp);
-        man1 /= 10;
-        exp1++;
-    }
+    if (shift > 15)
+        return 0;
 
-    int64_t man_out = man1;
-    if (man_out < 0)
-        return INVALID_ARGUMENT;
-        
-    if (man_out < man1)
-        return INVALID_FLOAT;
-
-    return man_out;
-
+    if (shift < 0)
+        return TOO_BIG;
+    
+    if (shift > 0)
+        man1 /= power_of_ten[shift];
+    
+    return man1;
 }
 
 
@@ -4272,13 +4308,14 @@ DEFINE_HOOK_FUNCTION(
     if (denominator == 0)
         return DIVISION_BY_ZERO;
 
-    int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
+    int64_t man1 = (int64_t)get_mantissa(float1);
     int32_t exp1 = get_exponent(float1);
 
     if (mulratio_internal(man1, exp1, round_up > 0, numerator, denominator) < 0)
         return XFL_OVERFLOW;
 
-    return make_float(man1, exp1);
+    bool neg = man1 < 0;
+    return make_float((uint64_t)(neg ? -man1 : man1), exp1, neg);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4312,10 +4349,10 @@ DEFINE_HOOK_FUNCTION(
 
     try
     {
-        int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
+        int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1LL : 1LL);
         int32_t exp1 = get_exponent(float1);
         ripple::IOUAmount amt1 {man1, exp1};
-        int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1 : 1);
+        int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1LL : 1LL);
         int32_t exp2 = get_exponent(float2);
         ripple::IOUAmount amt2 {man2, exp2};
 
@@ -4351,9 +4388,9 @@ DEFINE_HOOK_FUNCTION(
     if (float1 == 0) return float2;
     if (float2 == 0) return float1;
 
-    int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1 : 1);
+    int64_t man1 = (int64_t)(get_mantissa(float1)) * (is_negative(float1) ? -1LL : 1LL);
     int32_t exp1 = get_exponent(float1);
-    int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1 : 1);
+    int64_t man2 = (int64_t)(get_mantissa(float2)) * (is_negative(float2) ? -1LL : 1LL);
     int32_t exp2 = get_exponent(float2);
 
     try
@@ -4591,7 +4628,11 @@ DEFINE_HOOK_FUNCTION(
     if (mantissa == 0)
         return 0;
 
-    return hook_float::float_set(exponent, (is_negative ? -1 : 1) * ((int64_t)(mantissa)));
+    return hook_float::normalize_xfl(
+        mantissa,
+        exponent,
+        is_negative 
+    );
 }
 inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 {
@@ -4609,22 +4650,20 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
 
-    while (man1 > maxMantissa)
-    {
-        man1 /= 10;
-        exp1++;
-        if (exp1 > maxExponent)
-            return INVALID_FLOAT;
-    }
+    printf("man1: %ld\n", man1);
+    printf("man2: %ld\n", man2);
 
-    while (man1 < minMantissa)
-    {
-        man1 *= 10;
-        exp1--;
-        if (exp1 < minExponent)
-            return 0;
-    }
+    int64_t tmp1 = normalize_xfl(man1, exp1);
+    int64_t tmp2 = normalize_xfl(man2, exp2);
+    
+    printf("tmp1: %ld\n", tmp1);
+    printf("tmp2: %ld\n", tmp2);
 
+    if (tmp1 < 0 || tmp2 < 0)
+        return INVALID_FLOAT;
+
+    if (tmp1 == 0)
+        return 0;
 
     while (man2 > man1)
     {
@@ -4658,30 +4697,14 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
         exp3--;
     }
 
-    // normalize
-    while (man3 < minMantissa)
-    {
-        man3 *= 10;
-        exp3--;
-        if (exp3 < minExponent)
-            return 0;
-    }
-
-    while (man3 > maxMantissa)
-    {
-        man3 /= 10;
-        exp3++;
-        if (exp3 > maxExponent)
-            return INVALID_FLOAT;
-    }
-
+    printf("man3: %ld\n", man3);
+    printf("exp3: %d\n", exp3);
+    //RHUPTO: debug this
     bool neg3 = !((neg1 && neg2) || (!neg1 && !neg2));
-    int64_t float_out = set_sign(0, neg3);
-    float_out = set_exponent(float_out, exp3);
-    float_out = set_mantissa(float_out, man3);
-    return float_out;
 
+    return normalize_xfl(man3, exp3, neg3);
 }
+
 DEFINE_HOOK_FUNCTION(
     int64_t,
     float_divide,
@@ -4689,7 +4712,7 @@ DEFINE_HOOK_FUNCTION(
 {
     return float_divide_internal(float1, float2);
 }
-const int64_t float_one_internal = make_float(1000000000000000ull, -15);
+const int64_t float_one_internal = make_float(1000000000000000ull, -15, false);
 
 
 DEFINE_HOOK_FUNCTION(
@@ -4716,6 +4739,8 @@ DEFINE_HOOK_FUNCTION(
 {
     if (float1 == 0)
         return DIVISION_BY_ZERO;
+    if (float1 == float_one_internal)
+        return float_one_internal;
     return float_divide_internal(float_one_internal, float1);
 }
 DEFINE_HOOK_FUNCTION(
@@ -4770,20 +4795,53 @@ DEFINE_HOOK_FUNCTION(
     RETURN_IF_INVALID_FLOAT(float1);
     if (mantissa == 0)
         return 0;
-    return set_mantissa(float1, mantissa);
+
+    bool neg = mantissa < 0;
+    if (neg)
+        mantissa *= -1LL;
+
+    float1 = set_mantissa(float1, mantissa);
+    return set_sign(float1, neg);
 }
 
-#define NORAMLIZE_AND_RETURN_DOUBLE(x)\
-{\
-    if ((x) == 0)\
-        return 0;\
-    int32_t exp_out = (int32_t) log10((x));\
-    result *= pow(10, -exp_out + 15);\
-    exp_out -= 15;\
-    int64_t ret = make_float((int64_t)(x), exp_out);\
-    if (ret == EXPONENT_UNDERSIZED)\
-        return 0;\
-    return ret;\
+
+inline int64_t double_to_xfl(double x)
+{
+    if ((x) == 0)
+        return 0;
+    bool neg = x < 0;
+    double absresult = neg ? -x : x;
+
+    // first compute the base 10 order of the float
+    int32_t exp_out = (int32_t) log10(absresult);
+
+    // next adjust it into the valid mantissa range (this means dividing by its order and multiplying by 10**15)
+    absresult *= pow(10, -exp_out + 15);
+
+    // now a tricky step: sometimes due to IEEE rounding the value may still fall below the minMantissa
+    int64_t result = (int64_t)absresult;
+    if (result < minMantissa)
+    {
+        // if it does then pull it up
+        result *= 10LL;
+        exp_out--;
+    }
+
+    // likewise the value can fall above the maxMantissa
+    if (result > maxMantissa)
+    {
+        // if it does push it down
+        result /= 10LL;
+        exp_out++;
+    }
+
+    exp_out -= 15;
+    int64_t ret = make_float(result, exp_out, neg);
+    
+    if (ret == EXPONENT_UNDERSIZED)
+        return 0;
+    
+    return ret;
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4800,10 +4858,10 @@ DEFINE_HOOK_FUNCTION(
     if (is_negative(float1))
         return COMPLEX_NOT_SUPPORTED;
 
-    double result = log10(man1);
-    result += exp1;
- 
-    NORAMLIZE_AND_RETURN_DOUBLE(result);
+    double inp = (double)(man1);
+    double result = log10(inp) + exp1;
+
+    return double_to_xfl(result);
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4825,7 +4883,7 @@ DEFINE_HOOK_FUNCTION(
     double inp = (double)(man1) * pow(10, exp1);
     double result = pow(inp, ((double)1.0f)/((double)(n)));
 
-    NORAMLIZE_AND_RETURN_DOUBLE(result);
+    return double_to_xfl(result);
 }
 
 DEFINE_HOOK_FUNCTION(
