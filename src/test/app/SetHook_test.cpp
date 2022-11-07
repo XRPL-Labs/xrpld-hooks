@@ -2031,6 +2031,204 @@ public:
     void
     test_float_divide()
     {
+        testcase("Test float_divide");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_divide (int64_t, int64_t);
+                extern int64_t float_one (void);
+                #define INVALID_FLOAT -10024
+                #define DIVISION_BY_ZERO -25
+                #define XFL_OVERFLOW -30
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_exponent(int64_t);
+                #define ASSERT_EQUAL(x, y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // ensure invalid xfl are not accepted
+                    ASSERT(float_divide(-1, float_one()) == INVALID_FLOAT);
+
+                    // divide by 0
+                    ASSERT(float_divide(float_one(), 0) == DIVISION_BY_ZERO);
+                    ASSERT(float_divide(0, float_one()) == 0);
+
+                    // check 1
+                    ASSERT(float_divide(float_one(), float_one()) == float_one());
+                    ASSERT(float_divide(float_one(), float_negate(float_one())) == float_negate(float_one()));
+                    ASSERT(float_divide(float_negate(float_one()), float_one()) == float_negate(float_one()));
+                    ASSERT(float_divide(float_negate(float_one()), float_negate(float_one())) == float_one());
+
+                    // 1 / 10 = 0.1
+                    ASSERT_EQUAL(float_divide(float_one(), 6107881094714392576LL), 6071852297695428608LL);
+
+                    // 123456789 / 1623 = 76067.0295749
+                    ASSERT_EQUAL(float_divide(6234216452170766464LL, 6144532891733356544LL), 6168530993200328528LL);
+
+                    // -1.245678451111 / 1.3546984132111e+42 = -9.195245517106014e-43
+                    ASSERT_EQUAL(float_divide(1478426356228633688LL, 6846826132016365020LL), 711756787386903390LL);
+
+                    // 9.134546514878452e-81 / 1
+                    ASSERT(float_divide(4638834963451748340LL, float_one()) == 4638834963451748340LL);
+
+                    // 9.134546514878452e-81 / 1.41649684651e+75 = (underflow 0)
+                    ASSERT(float_divide(4638834963451748340LL, 7441363081262569392LL) == 0);
+
+                    // 1.3546984132111e+42 / 9.134546514878452e-81  = XFL_OVERFLOW
+                    ASSERT(float_divide(6846826132016365020LL, 4638834963451748340LL) == XFL_OVERFLOW);
+
+                    ASSERT_EQUAL(
+                        float_divide(
+                            3121244226425810900LL /* -4.753284285427668e+91 */,
+                            2135203055881892282LL /* -9.50403176301817e+36 */),
+                        7066645550312560102LL /* 5.001334595622374e+54 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            2473507938381460320LL /* -5.535342582428512e+55 */,
+                            6365869885731270068LL /* 6787211884129716 */),
+                        2187897766692155363LL /* -8.155547044835299e+39 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            1716271542690607496LL /* -49036842898190.16 */,
+                            3137794549622534856LL /* -3.28920897266964e+92 */),
+                        4667220053951274769LL /* 1.490839995440913e-79 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            1588045991926420391LL /* -2778923.092005799 */,
+                            5933338827267685794LL /* 6.601717648113058e-9 */),
+                        1733591650950017206LL /* -420939403974674.2 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            5880783758174228306LL /* 8.089844083101523e-12 */,
+                            1396720886139976383LL /* -0.00009612200909863615 */),
+                        1341481714205255877LL /* -8.416224503589061e-8 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            5567703563029955929LL /* 1.254423600022873e-29 */,
+                            2184969513100691140LL /* -5.227293453371076e+39 */),
+                        236586937995245543LL /* -2.399757371979751e-69 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            7333313065548121054LL /* 1.452872188953566e+69 */,
+                            1755926008837497886LL /* -8529353417745438 */),
+                        2433647177826281173LL /* -1.703379046213333e+53 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            1172441975040622050LL /* -1.50607192429309e-17 */,
+                            6692015311011173216LL /* 8.673463993357152e+33 */),
+                        560182767210134346LL /* -1.736413416192842e-51 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            577964843368607493LL /* -1.504091065184005e-50 */,
+                            6422931182144699580LL /* 9805312769113276000 */),
+                        235721135837751035LL /* -1.533955214485243e-69 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            6039815413139899240LL /* 0.0049919124634346 */,
+                            2117655488444284242LL /* -9.970862834892113e+35 */),
+                        779625635892827768LL /* -5.006499985102456e-39 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            1353563835098586141LL /* -2.483946887437341e-7 */,
+                            6450909070545770298LL /* 175440415122002600000 */),
+                        992207753070525611LL /* -1.415835049016491e-27 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            6382158843584616121LL /* 50617712279937850 */,
+                            5373794957212741595LL /* 5.504201387110363e-40 */),
+                        7088854809772330055LL /* 9.196195545910343e+55 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            2056891719200540975LL /* -3.250289119594799e+32 */,
+                            1754532627802542730LL /* -7135972382790282 */),
+                        6381651867337939070LL /* 45547949813167340 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            5730152450208688630LL /* 1.573724193417718e-20 */,
+                            1663581695074866883LL /* -62570322025.24355 */),
+                        921249452789827075LL /* -2.515128806245891e-31 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            6234301156018475310LL /* 131927173.7708846 */,
+                            2868710604383082256LL /* -4.4212413754468e+77 */),
+                        219156721749007916LL /* -2.983939635224108e-70 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            2691125731495874243LL /* -6.980353583058627e+67 */,
+                            7394070851520237320LL /* 8.16746263262388e+72 */),
+                        1377640825464715759LL /* -0.000008546538744084975 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            5141867696142208039LL /* 7.764120939842599e-53 */,
+                            5369434678231981897LL /* 1.143922406350665e-40 */),
+                        5861466794943198400LL /* 6.7872793615536e-13 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            638296190872832492LL /* -7.792243040963052e-47 */,
+                            5161669734904371378LL /* 9.551761192523954e-52 */),
+                        1557396184145861422LL /* -81579.12330410798 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            2000727145906286285LL /* -1.128911353786061e+29 */,
+                            2096625200460673392LL /* -6.954973360763248e+34 */),
+                        5982403476503576795LL /* 0.000001623171355558107 */);
+                    ASSERT_EQUAL(
+                        float_divide(
+                            640472838055334326LL /* -9.968890223464885e-47 */,
+                            5189754252349396763LL /* 1.607481618585371e-50 */),
+                        1537425431139169736LL /* -6201.557833201096 */);
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_divide"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_divide"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -2208,15 +2406,24 @@ public:
                 extern int64_t float_compare(int64_t, int64_t, uint32_t);
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
-                #define ASSERT_EQUAL(x,y)\
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_exponent(int64_t);
+                #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
-                    int64_t ny = float_negate((y));\
-                    int64_t diff = float_sum(px, ny);\
-                    if (float_compare(diff, 0, 2))\
-                    diff = float_negate(diff);\
-                    if (float_compare(diff, 5999794703657500672LL /* 10**-5 */, 4))\
-                    rollback((uint32_t)#x,sizeof(#x), __LINE__);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
@@ -2282,20 +2489,26 @@ public:
                 extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
                 extern int64_t float_log (int64_t float1);
                 extern int64_t float_one (void);
-                extern int64_t float_compare(int64_t, int64_t, uint32_t);
-                extern int64_t float_negate(int64_t);
-                extern int64_t float_sum(int64_t, int64_t);
                 #define INVALID_ARGUMENT -7
                 #define COMPLEX_NOT_SUPPORTED -39
-                #define ASSERT_EQUAL(x,y)\
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_exponent(int64_t);
+                #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
-                    int64_t ny = float_negate((y));\
-                    int64_t diff = float_sum(px, ny);\
-                    if (float_compare(diff, 0, 2))\
-                        diff = float_negate(diff);\
-                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
@@ -2506,15 +2719,24 @@ public:
                 extern int64_t float_compare(int64_t, int64_t, uint32_t);
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
-                #define ASSERT_EQUAL(x,y)\
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_exponent(int64_t);
+                #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
-                    int64_t ny = float_negate((y));\
-                    int64_t diff = float_sum(px, ny);\
-                    if (float_compare(diff, 0, 2))\
-                        diff = float_negate(diff);\
-                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
@@ -2603,15 +2825,24 @@ public:
                 extern int64_t float_compare(int64_t, int64_t, uint32_t);
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
-                #define ASSERT_EQUAL(x,y)\
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_exponent(int64_t);
+                #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
-                    int64_t ny = float_negate((y));\
-                    int64_t diff = float_sum(px, ny);\
-                    if (float_compare(diff, 0, 2))\
-                        diff = float_negate(diff);\
-                    if (float_compare(diff, 5189146770730811392LL /* 10**-50 */, 4))\
-                        rollback(0,0, __LINE__);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
                 {
@@ -2633,6 +2864,108 @@ public:
                     ASSERT_EQUAL(
                         6387097057170171072LL,
                         float_sum(1676857706508234512LL, 6396111470866104320LL));
+
+                    // auto generated random sums
+                    ASSERT_EQUAL(
+                        float_sum(
+                            95785354843184473 /* -5.713362295774553e-77 */,
+                            7607324992379065667 /* 5.248821377668419e+84 */),
+                        7607324992379065667 /* 5.248821377668419e+84 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            1011203427860697296 /* -2.397111329706192e-26 */,
+                            7715811566197737722 /* 5.64900413944857e+90 */),
+                        7715811566197737722 /* 5.64900413944857e+90 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            6507979072644559603 /* 4.781210721563379e+23 */,
+                            422214339164556094 /* -7.883173446470462e-59 */),
+                        6507979072644559603 /* 4.781210721563379e+23 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            129493221419941559 /* -3.392431853567671e-75 */,
+                            6742079437952459317 /* 4.694395406197301e+36 */),
+                        6742079437952459317 /* 4.694395406197301e+36 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            5172806703808250354 /* 2.674331586920946e-51 */,
+                            3070396690523275533 /* -7.948943911338253e+88 */),
+                        3070396690523275533 /* -7.948943911338253e+88 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            2440992231195047997 /* -9.048432414980156e+53 */,
+                            4937813945440933271 /* 1.868753842869655e-64 */),
+                        2440992231195047996 /* -9.048432414980156e+53 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            7351918685453062372 /* 2.0440935844129e+70 */,
+                            6489541496844182832 /* 4.358033430668592e+22 */),
+                        7351918685453062372 /* 2.0440935844129e+70 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            4960621423606196948 /* 6.661833498651348e-63 */,
+                            6036716382996689576 /* 0.001892882320224936 */),
+                        6036716382996689576 /* 0.001892882320224936 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            1342689232407435206 /* -9.62374270576839e-8 */,
+                            5629833007898276923 /* 9.340672939897915e-26 */),
+                        1342689232407435206 /* -9.62374270576839e-8 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            7557687707019793516 /* 9.65473154684222e+81 */,
+                            528084028396448719 /* -5.666471621471183e-53 */),
+                        7557687707019793516 /* 9.65473154684222e+81 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            130151633377050812 /* -4.050843810676924e-75 */,
+                            2525286695563827336 /* -3.270904236349576e+58 */),
+                        2525286695563827336 /* -3.270904236349576e+58 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            5051914485221832639 /* 7.88290256687712e-58 */,
+                            7518727241611221951 /* 6.723063157234623e+79 */),
+                        7518727241611221951 /* 6.723063157234623e+79 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            3014788764095798870 /* -6.384213012307542e+85 */,
+                            7425019819707800346 /* 3.087633801222938e+74 */),
+                        3014788764095767995 /* -6.384213012276667e+85 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            4918950856932792129 /* 1.020063844210497e-65 */,
+                            7173510242188034581 /* 3.779635414204949e+60 */),
+                        7173510242188034581 /* 3.779635414204949e+60 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            20028000442705357 /* -2.013601933223373e-81 */,
+                            95248745393457140 /* -5.17675284604722e-77 */),
+                        95248946753650462 /* -5.176954206240542e-77 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            5516870225060928024 /* 4.46428115944092e-32 */,
+                            7357202055584617194 /* 7.327463715967722e+70 */),
+                        7357202055584617194 /* 7.327463715967722e+70 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            2326103538819088036 /* -2.2461310959121e+47 */,
+                            1749360946246242122 /* -1964290826489674 */),
+                        2326103538819088036 /* -2.2461310959121e+47 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            1738010758208819410 /* -862850129854894.6 */,
+                            2224610859005732191 /* -8.83984233944816e+41 */),
+                        2224610859005732192 /* -8.83984233944816e+41 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            4869534730307487904 /* 5.647132747352224e-68 */,
+                            2166841923565712115 /* -5.114102427874035e+38 */),
+                        2166841923565712115 /* -5.114102427874035e+38 */);
+                    ASSERT_EQUAL(
+                        float_sum(
+                            1054339559322014937 /* -9.504445772059864e-24 */,
+                            1389511416678371338 /* -0.0000240273144825857 */),
+                        1389511416678371338 /* -0.0000240273144825857 */);
 
                     return
                         accept(0,0,0);

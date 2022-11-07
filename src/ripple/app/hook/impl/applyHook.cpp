@@ -464,6 +464,30 @@ namespace hook_float
             return 0;
         }
 
+        // even after adjustment the mantissa can be outside the range by one place
+        // improving the math above would probably alleviate the need for these branches
+        if (man < minMantissa)
+        {
+            if (man == minMantissa - 1LL)
+                man += 1LL;
+            else
+            {
+                man *= 10LL;
+                exp--;
+            }
+        }
+
+        if (man > maxMantissa)
+        {
+            if (man == maxMantissa + 1LL)
+                man -= 1LL;
+            else
+            {
+                man /= 10LL;
+                exp++;
+            }
+        }
+
         if (exp < minExponent)
         {
             man = 0;
@@ -471,6 +495,12 @@ namespace hook_float
             return 0;
         }
         
+        if (man == 0)
+        {
+            exp = 0;
+            return 0;
+        }
+
         if (exp > maxExponent)
             return XFL_OVERFLOW;
 
@@ -4634,7 +4664,12 @@ DEFINE_HOOK_FUNCTION(
         is_negative 
     );
 }
-inline int64_t float_divide_internal(int64_t float1, int64_t float2)
+
+const int64_t float_one_internal = make_float(1000000000000000ull, -15, false);
+
+inline
+int64_t
+float_divide_internal(int64_t float1, int64_t float2)
 {
     RETURN_IF_INVALID_FLOAT(float1);
     RETURN_IF_INVALID_FLOAT(float2);
@@ -4643,6 +4678,11 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     if (float1 == 0)
         return 0;
 
+    // special case: division by 1
+    // RH TODO: add more special cases (division by power of 10)
+    if (float2 == float_one_internal)
+        return float1;
+
     uint64_t man1 = get_mantissa(float1);
     int32_t exp1 = get_exponent(float1);
     bool neg1 = is_negative(float1);
@@ -4650,15 +4690,9 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
     int32_t exp2 = get_exponent(float2);
     bool neg2 = is_negative(float2);
 
-    printf("man1: %ld\n", man1);
-    printf("man2: %ld\n", man2);
-
     int64_t tmp1 = normalize_xfl(man1, exp1);
     int64_t tmp2 = normalize_xfl(man2, exp2);
     
-    printf("tmp1: %ld\n", tmp1);
-    printf("tmp2: %ld\n", tmp2);
-
     if (tmp1 < 0 || tmp2 < 0)
         return INVALID_FLOAT;
 
@@ -4684,6 +4718,7 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
 
     uint64_t man3 = 0;
     int32_t exp3 = exp1 - exp2;
+
     while (man2 > 0)
     {
         int i = 0;
@@ -4697,9 +4732,6 @@ inline int64_t float_divide_internal(int64_t float1, int64_t float2)
         exp3--;
     }
 
-    printf("man3: %ld\n", man3);
-    printf("exp3: %d\n", exp3);
-    //RHUPTO: debug this
     bool neg3 = !((neg1 && neg2) || (!neg1 && !neg2));
 
     return normalize_xfl(man3, exp3, neg3);
@@ -4712,7 +4744,6 @@ DEFINE_HOOK_FUNCTION(
 {
     return float_divide_internal(float1, float2);
 }
-const int64_t float_one_internal = make_float(1000000000000000ull, -15, false);
 
 
 DEFINE_HOOK_FUNCTION(
@@ -4818,21 +4849,29 @@ inline int64_t double_to_xfl(double x)
     // next adjust it into the valid mantissa range (this means dividing by its order and multiplying by 10**15)
     absresult *= pow(10, -exp_out + 15);
 
-    // now a tricky step: sometimes due to IEEE rounding the value may still fall below the minMantissa
+    // after adjustment the value may still fall below the minMantissa
     int64_t result = (int64_t)absresult;
     if (result < minMantissa)
     {
-        // if it does then pull it up
-        result *= 10LL;
-        exp_out--;
+        if (result == minMantissa - 1LL)
+            result += 1LL;
+        else
+        {
+            result *= 10LL;
+            exp_out--;
+        }
     }
 
     // likewise the value can fall above the maxMantissa
     if (result > maxMantissa)
     {
-        // if it does push it down
-        result /= 10LL;
-        exp_out++;
+        if (result == maxMantissa + 1LL)
+            result -= 1LL;
+        else
+        {
+            result /= 10LL;
+            exp_out++;
+        }
     }
 
     exp_out -= 15;
