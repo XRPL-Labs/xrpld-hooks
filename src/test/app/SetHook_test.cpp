@@ -2061,7 +2061,7 @@ public:
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
                 extern int64_t float_mantissa(int64_t);
-                extern int64_t float_exponent(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
                 #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
@@ -2076,7 +2076,7 @@ public:
                     int64_t diffman = mx - my;\
                     if (diffman < 0) diffman *= -1LL;\
                     if (diffexp < 0) diffexp *= -1;\
-                    if (diffexp > 1 || diffman > 5000000)\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
                         rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
@@ -2407,7 +2407,7 @@ public:
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
                 extern int64_t float_mantissa(int64_t);
-                extern int64_t float_exponent(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
                 #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
@@ -2422,7 +2422,7 @@ public:
                     int64_t diffman = mx - my;\
                     if (diffman < 0) diffman *= -1LL;\
                     if (diffexp < 0) diffexp *= -1;\
-                    if (diffexp > 1 || diffman > 5000000)\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
                         rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
@@ -2492,7 +2492,7 @@ public:
                 #define INVALID_ARGUMENT -7
                 #define COMPLEX_NOT_SUPPORTED -39
                 extern int64_t float_mantissa(int64_t);
-                extern int64_t float_exponent(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
                 #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
@@ -2507,7 +2507,7 @@ public:
                     int64_t diffman = mx - my;\
                     if (diffman < 0) diffman *= -1LL;\
                     if (diffexp < 0) diffexp *= -1;\
-                    if (diffexp > 1 || diffman > 5000000)\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
                         rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
@@ -2720,7 +2720,7 @@ public:
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
                 extern int64_t float_mantissa(int64_t);
-                extern int64_t float_exponent(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
                 #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
@@ -2735,7 +2735,7 @@ public:
                     int64_t diffman = mx - my;\
                     if (diffman < 0) diffman *= -1LL;\
                     if (diffexp < 0) diffexp *= -1;\
-                    if (diffexp > 1 || diffman > 5000000)\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
                         rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
@@ -2826,7 +2826,7 @@ public:
                 extern int64_t float_negate(int64_t);
                 extern int64_t float_sum(int64_t, int64_t);
                 extern int64_t float_mantissa(int64_t);
-                extern int64_t float_exponent(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
                 #define ASSERT_EQUAL(x, y)\
                 {\
                     int64_t px = (x);\
@@ -2841,7 +2841,7 @@ public:
                     int64_t diffman = mx - my;\
                     if (diffman < 0) diffman *= -1LL;\
                     if (diffexp < 0) diffexp *= -1;\
-                    if (diffexp > 1 || diffman > 5000000)\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
                         rollback((uint32_t) #x, sizeof(#x), __LINE__);\
                 }
                 int64_t hook(uint32_t reserved )
@@ -3283,8 +3283,6 @@ public:
         test_fee_base();
         test_float_compare();
         test_float_divide();
-        test_float_exponent();
-        test_float_exponent();
         test_float_exponent_set();
         test_float_int();
         test_float_invert();

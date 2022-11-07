@@ -251,7 +251,6 @@ namespace hook_api
         "etxn_nonce",
         "float_compare",
         "float_divide",
-        "float_exponent",
         "float_exponent_set",
         "float_invert",
         "float_mantissa",

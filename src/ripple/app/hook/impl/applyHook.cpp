@@ -4774,16 +4774,6 @@ DEFINE_HOOK_FUNCTION(
         return float_one_internal;
     return float_divide_internal(float_one_internal, float1);
 }
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_exponent,
-    int64_t float1 )
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (float1 == 0)
-        return 0;
-    return get_exponent(float1);
-}
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
