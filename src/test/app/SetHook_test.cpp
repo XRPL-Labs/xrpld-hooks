@@ -2556,6 +2556,134 @@ public:
     void
     test_float_mantissa()
     {
+        testcase("Test float_mantissa");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                extern int64_t float_mantissa(int64_t);
+                extern int64_t float_negate(int64_t);
+                #define ASSERT_EQUAL(x,y)\
+                    if ((x) != (y))\
+                        rollback(0,0,__LINE__);
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                #define INVALID_FLOAT -10024
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    int64_t result = 0;
+
+                    // test invalid floats
+                    {
+                        ASSERT(float_mantissa(-1) == INVALID_FLOAT);
+                        ASSERT(float_mantissa(-11010191919LL) == INVALID_FLOAT);
+                    }
+
+                    // test canonical zero
+                    ASSERT(float_mantissa(0) == 0);
+
+                    // test one, negative one
+                    {
+                        ASSERT(float_mantissa(float_one()) == 1000000000000000LL);
+                        ASSERT(float_mantissa(float_negate(float_one())) == 1000000000000000LL);
+                    }
+
+                    // test random numbers
+                    {
+                        ASSERT_EQUAL(
+                            float_mantissa(4763370308433150973LL /* 7.569101929907197e-74 */),
+                            7569101929907197LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(668909658849475214LL /* -2.376913998641806e-45 */),
+                            2376913998641806LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(962271544155031248LL /* -7.508423152486096e-29 */),
+                            7508423152486096LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(7335644976228470276LL /* 3.784782869302788e+69 */),
+                            3784782869302788LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(2837780149340315954LL /* -9.519583351644467e+75 */),
+                            9519583351644466LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(2614004940018599738LL /* -1.917156143712058e+63 */),
+                            1917156143712058LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(4812250541755005603LL /* 2.406139723315875e-71 */),
+                            2406139723315875LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(5140304866732560580LL /* 6.20129153019514e-53 */),
+                            6201291530195140LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(1124677839589482624LL /* -7.785132001599617e-20 */),
+                            7785132001599616LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(5269336076015865585LL /* 9.131711247126257e-46 */),
+                            9131711247126257LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(2296179634826760368LL /* -8.3510241225484e+45 */),
+                            8351024122548400LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(1104028240398536470LL /* -5.149931320135446e-21 */),
+                            5149931320135446LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(2691222059222981864LL /* -7.076681310166248e+67 */),
+                            7076681310166248LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(6113256168823855946LL /* 63.7507410946337 */),
+                            6375074109463370LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(311682216630003626LL /* -5.437441968809898e-65 */),
+                            5437441968809898LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(794955605753965262LL /* -2.322071336757966e-38 */),
+                            2322071336757966LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(204540636400815950LL /* -6.382252796514126e-71 */),
+                            6382252796514126LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(5497195278343034975LL /* 2.803732951029855e-33 */),
+                            2803732951029855LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(1450265914369875626LL /* -0.09114033611316906 */),
+                            9114033611316906LL);
+                        ASSERT_EQUAL(
+                            float_mantissa(7481064015089962668LL /* 5.088633654939308e+77 */),
+                            5088633654939308LL);
+                    }
+
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_mantissa"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_mantissa"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -2571,6 +2699,201 @@ public:
     void
     test_float_multiply()
     {
+        testcase("Test float_multiply");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_multiply (int64_t, int64_t);
+                extern int64_t float_one (void);
+                #define INVALID_FLOAT -10024
+                #define DIVISION_BY_ZERO -25
+                #define XFL_OVERFLOW -30
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                extern int64_t float_mantissa(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
+                #define ASSERT_EQUAL(x, y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // ensure invalid xfl are not accepted
+                    ASSERT(float_multiply(-1, float_one()) == INVALID_FLOAT);
+
+                    // multiply by 0
+                    ASSERT(float_multiply(float_one(), 0) == 0);
+                    ASSERT(float_multiply(0, float_one()) == 0);
+
+                    // check 1
+                    ASSERT(float_multiply(float_one(), float_one()) == float_one());
+                    ASSERT(float_multiply(float_one(), float_negate(float_one())) == float_negate(float_one()));
+                    ASSERT(float_multiply(float_negate(float_one()), float_one()) == float_negate(float_one()));
+                    ASSERT(float_multiply(float_negate(float_one()), float_negate(float_one())) == float_one());
+
+                    // check overflow
+                        // 1e+95 * 1e+95
+                    ASSERT(float_multiply(7801234554605699072LL, 7801234554605699072LL) == XFL_OVERFLOW);
+                        // 1e+95 * 10
+                    ASSERT(float_multiply(7801234554605699072LL, 6107881094714392576LL) == XFL_OVERFLOW);
+                    ASSERT(float_multiply(6107881094714392576LL, 7801234554605699072LL) == XFL_OVERFLOW);
+                        // -1e+95 * 10
+                    ASSERT(float_multiply(3189548536178311168LL, 6107881094714392576LL) == XFL_OVERFLOW);
+
+                    // identity
+                    ASSERT_EQUAL(float_multiply(3189548536178311168LL, float_one()), 3189548536178311168LL);
+                    ASSERT_EQUAL(float_multiply(float_one(), 3189548536178311168LL), 3189548536178311168LL);
+
+
+                    // random multiplications
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            7791757438262485039LL /* 9.537282166267951e+94 */,
+                            4759088999670263908LL /* 3.287793167020132e-74 */),
+                        6470304726017852129LL /* 3.135661113819873e+21 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            7534790022873909775LL /* 4.771445910440463e+80 */,
+                            1017891960669847079LL /* -9.085644138855975e-26 */),
+                        2472307761756037979LL /* -4.335165957006171e+55 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2813999069907898454LL /* -3.75290242870895e+74 */,
+                            4962524721184225460LL /* 8.56513107667986e-63 */),
+                        1696567870013294731LL /* -3214410121988.235 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2151742066453140308LL /* -8.028643824784212e+37 */,
+                            437647738130579252LL /* -5.302173903011636e-58 */),
+                        5732835652591705549LL /* 4.256926576434637e-20 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5445302332922546340LL /* 4.953983058987172e-36 */,
+                            7770966530708354172LL /* 6.760773121619068e+93 */),
+                        7137051085305881332LL /* 3.349275551015668e+58 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2542989542826132533LL /* -2.959352989172789e+59 */,
+                            6308418769944702613LL /* 3379291626008.213 */),
+                        2775217422137696934LL /* -1.000051677471398e+72 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5017652318929433511LL /* 9.649533293441959e-60 */,
+                            6601401767766764916LL /* 8.131913296358772e+28 */),
+                        5538267259220228820LL /* 7.846916809259732e-31 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            892430323307269235LL /* -9.724796342652019e-33 */,
+                            1444078017997143500LL /* -0.0292613723858478 */),
+                        5479222755754111850LL /* 2.845608871588714e-34 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            7030632722283214253LL /* 5.017303585240493e+52 */,
+                            297400838197636668LL /* -9.170462045924924e-66 */),
+                        1247594596364389994LL /* -4.601099210133098e-13 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1321751204165279730LL /* -6.700112973094898e-9 */,
+                            2451801790748530375LL /* -1.843593458980551e+54 */),
+                        6918764256086244704LL /* 1.235228445162848e+46 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2055496484261758590LL /* -1.855054180812414e+32 */,
+                            2079877890137711361LL /* -8.222061547283201e+33 */),
+                        7279342234795540005LL /* 1.525236964818469e+66 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2439875962311968674LL /* -7.932163531900834e+53 */,
+                            4707485682591872793LL /* 5.727671617074969e-77 */),
+                        1067392794851803610LL /* -4.543282792366554e-23 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6348574818322812800LL /* 750654298515443.2 */,
+                            6474046245013515838LL /* 6.877180109483582e+21 */),
+                        6742547427357110773LL /* 5.162384810848757e+36 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1156137305783593424LL /* -3.215801176746448e-18 */,
+                            351790564990861307LL /* -9.516993310703611e-63 */),
+                        4650775291275116747LL /* 3.060475828764875e-80 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5786888485280994123LL /* 4.266563737277259e-17 */,
+                            6252137323085080394LL /* 1141040294.831946 */),
+                        5949619829273756852LL /* 4.868321144702132e-8 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2078182880999439640LL /* -6.52705240901148e+33 */,
+                            1662438186251269392LL /* -51135233789.26864 */),
+                        6884837854131013998LL /* 3.33762350889611e+44 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1823781083140711248LL /* -43268336830308640000 */,
+                            1120252241608199010LL /* -3.359534020316002e-20 */),
+                        6090320310700749729LL /* 1.453614495839137 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6617782604883935174LL /* 6.498351904047046e+29 */,
+                            6185835042802056262LL /* 689635.404973575 */),
+                        6723852137583788319LL /* 4.481493547008287e+35 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            333952667495151166LL /* -9.693494324475454e-64 */,
+                            1556040883317758614LL /* -68026.1150230799 */),
+                        5032611291744396930LL /* 6.594107598923394e-59 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2326968399632616779LL /* -3.110991909440843e+47 */,
+                            707513695207834635LL /* -4.952153338037259e-43 */),
+                        6180479299649214949LL /* 154061.0896894437 */);
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_multiply"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_multiply"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void

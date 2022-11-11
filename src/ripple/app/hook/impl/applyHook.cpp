@@ -16,6 +16,7 @@
 #include <utility>
 #include <wasmedge/wasmedge.h>
 #include <ripple/protocol/tokens.h>
+#include <boost/multiprecision/cpp_dec_float.hpp>
 
 using namespace ripple;
 
@@ -405,8 +406,6 @@ namespace hook_float
 
     inline int64_t make_float(uint64_t mantissa, int32_t exponent, bool neg)
     {
-        assert(mantissa > 0);
-
         if (mantissa == 0)
             return 0;
         if (mantissa > maxMantissa)
@@ -433,6 +432,7 @@ namespace hook_float
     template <typename T>
     inline int64_t normalize_xfl(T& man, int32_t& exp, bool neg = false)
     {
+
         constexpr bool sman = std::is_same<T, int64_t>::value;
         static_assert(sman || std::is_same<T, uint64_t>());
 
@@ -447,6 +447,7 @@ namespace hook_float
         int32_t mo = log10(man);
         int32_t adjust = 15 - mo;
 
+        printf("normalize_xfl: man: %llu exp: %d mo: %d adjust: %d\n", man, exp, mo, adjust);
         if (adjust > 0)
         {
             man *= power_of_ten[adjust];
@@ -454,8 +455,8 @@ namespace hook_float
         }
         else if (adjust < 0)
         {
-            man /= power_of_ten[adjust];
-            exp += adjust;
+            man /= power_of_ten[-adjust];
+            exp -= adjust;
         }
 
         if (man == 0)
@@ -512,8 +513,9 @@ namespace hook_float
         }
 
         return ret;
+    
     }
-
+    
 }
 using namespace hook_float;
 inline
@@ -4154,9 +4156,7 @@ DEFINE_HOOK_FUNCTION(
     if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
         RETURN_HOOK_TRACE(read_ptr, read_len, "Float <INVALID>");
 
-    man *= (neg ? -1 : 1);
-
-    RETURN_HOOK_TRACE(read_ptr, read_len, "Float " << man << "*10^(" << exp << ")");
+    RETURN_HOOK_TRACE(read_ptr, read_len, "Float " << (neg ? "-" : "") << man << "*10^(" << exp << ")");
 }
 
 DEFINE_HOOK_FUNCTION(
@@ -4175,25 +4175,6 @@ DEFINE_HOOK_FUNCTION(
         return INVALID_FLOAT;
 
     return normalized;
-}
-
-// https://stackoverflow.com/questions/31652875/fastest-way-to-multiply-two-64-bit-ints-to-128-bit-then-to-64-bit
-inline void umul64wide (uint64_t a, uint64_t b, uint64_t *hi, uint64_t *lo)
-{
-    uint64_t a_lo = (uint64_t)(uint32_t)a;
-    uint64_t a_hi = a >> 32;
-    uint64_t b_lo = (uint64_t)(uint32_t)b;
-    uint64_t b_hi = b >> 32;
-
-    uint64_t p0 = a_lo * b_lo;
-    uint64_t p1 = a_lo * b_hi;
-    uint64_t p2 = a_hi * b_lo;
-    uint64_t p3 = a_hi * b_hi;
-
-    uint32_t cy = (uint32_t)(((p0 >> 32) + (uint32_t)p1 + (uint32_t)p2) >> 32);
-
-    *lo = p0 + (p1 << 32) + (p2 << 32);
-    *hi = p3 + (p1 >> 32) + (p2 >> 32) + cy;
 }
 
 inline int64_t mulratio_internal
@@ -4221,50 +4202,19 @@ inline int64_t float_multiply_internal_parts(
         int32_t exp2,
         bool neg2)
 {
-    int32_t exp_out = exp1 + exp2;
+    using namespace boost::multiprecision;
+    cpp_int mult = cpp_int(man1) * cpp_int(man2);
+    mult /= power_of_ten[15];
+    uint64_t man_out = static_cast<uint64_t>(mult);
+    int32_t exp_out = exp1 + exp2 + 15;
+    bool neg_out = (neg1 && !neg2) || (!neg1 && neg2);
+    int64_t ret = normalize_xfl(man_out, exp_out, neg_out);
 
-    // multiply the mantissas, this could result in upto a 128 bit number, represented as high and low here
-    uint64_t man_hi = 0, man_lo = 0;
-    umul64wide(man1, man2, &man_hi, &man_lo);
-
-    // normalize our double wide mantissa by shifting bits under man_hi is 0
-    uint8_t man_shifted = 0;
-    while (man_hi > 0)
-    {
-        bool set = (man_hi & 1) != 0;
-        man_hi >>= 1;
-        man_lo >>= 1;
-        man_lo += (set ? (1ULL<<63U) : 0);
-        man_shifted++;
-    }
-
-    // we shifted the mantissa by man_shifted bits, which equates to a division by 2^man_shifted
-    // now shift into the normalized range
-    while (man_lo > maxMantissa)
-    {
-        if (exp_out > maxExponent)
-            return XFL_OVERFLOW;
-        man_lo /= 10;
-        exp_out++;
-    }
-
-    // we can adjust for the bitshifting by doing upto two smaller multiplications now
-    neg1 = (neg1 && !neg2) || (!neg1 && neg2);
-    int64_t man_out = (neg1 ? -1LL : 1LL) * ((int64_t)(man_lo));
-    if (man_shifted > 32)
-    {
-        man_shifted -=32;
-        if (mulratio_internal(man_out, exp_out, false, 0xFFFFFFFFU, 1) < 0)
-            return XFL_OVERFLOW;
-    }
-
-    if (mulratio_internal(man_out, exp_out, false, 1U << man_shifted, 1) < 0)
+    if (ret == EXPONENT_UNDERSIZED)
+        return 0;
+    if (ret == EXPONENT_OVERSIZED)
         return XFL_OVERFLOW;
-
-    if (man_out < 0)
-        man_out *= -1LL;
-    // now we have our product
-    return make_float(man_out, exp_out, neg1);
+    return ret;
 }
 
 DEFINE_HOOK_FUNCTION(
