@@ -439,15 +439,17 @@ namespace hook_float
         if constexpr(sman)
         {
             if (man < 0)
+            {
                 man *= -1LL;
-            neg = true;
+                neg = true;
+            }
         }
 
         // mantissa order
         int32_t mo = log10(man);
         int32_t adjust = 15 - mo;
 
-        printf("normalize_xfl: man: %llu exp: %d mo: %d adjust: %d\n", man, exp, mo, adjust);
+        printf("normalize_xfl: man: %llu exp: %d mo: %d adjust: %d neg: %d\n", man, exp, mo, adjust, (neg ? 1 : 0));
         if (adjust > 0)
         {
             man *= power_of_ten[adjust];
@@ -4171,7 +4173,7 @@ DEFINE_HOOK_FUNCTION(
 
     // the above function will underflow into a canonical 0
     // but this api must report that underflow
-    if (normalized == 0)
+    if (normalized == 0 || normalized == XFL_OVERFLOW)
         return INVALID_FLOAT;
 
     return normalized;
@@ -4696,16 +4698,6 @@ DEFINE_HOOK_FUNCTION(
 }
 
 
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_sign_set,
-    int64_t float1,     uint32_t negative)
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (float1 == 0)
-        return 0;
-    return set_sign(float1, negative != 0);
-}
 DEFINE_HOOK_FUNCNARG(
     int64_t,
     float_one)
@@ -4745,34 +4737,6 @@ DEFINE_HOOK_FUNCTION(
     if (float1 == 0)
         return 0;
     return is_negative(float1);
-}
-
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_exponent_set,
-    int64_t float1, int32_t exponent )
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (float1 == 0)
-        return 0;
-    return set_exponent(float1, exponent);
-}
-
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    float_mantissa_set,
-    int64_t float1, int64_t mantissa )
-{
-    RETURN_IF_INVALID_FLOAT(float1);
-    if (mantissa == 0)
-        return 0;
-
-    bool neg = mantissa < 0;
-    if (neg)
-        mantissa *= -1LL;
-
-    float1 = set_mantissa(float1, mantissa);
-    return set_sign(float1, neg);
 }
 
 

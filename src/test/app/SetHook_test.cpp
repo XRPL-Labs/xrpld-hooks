@@ -2237,11 +2237,6 @@ public:
     }
 
     void
-    test_float_exponent_set()
-    {
-    }
-
-    void
     test_float_int()
     {
         testcase("Test float_int");
@@ -2687,11 +2682,6 @@ public:
     }
 
     void
-    test_float_mantissa_set()
-    {
-    }
-
-    void
     test_float_mulratio()
     {
     }
@@ -2879,6 +2869,109 @@ public:
                             2326968399632616779LL /* -3.110991909440843e+47 */,
                             707513695207834635LL /* -4.952153338037259e-43 */),
                         6180479299649214949LL /* 154061.0896894437 */);
+
+
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1271003508324696477LL /* -9.995612660957597e-12 */,
+                            5321949753651889765LL /* 7.702193354704484e-43 */),
+                        512101972406838314LL /* -7.698814141342762e-54 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1928646740923345323LL /* -1.106100408773035e+25 */,
+                            4639329980209973352LL /* 9.629563273103463e-81 */),
+                        487453886143282122LL /* -1.065126387268554e-55 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6023906813956669432LL /* 0.0007097711789686777 */,
+                            944348444470060009LL /* -7.599721976996842e-30 */),
+                        888099590592064434LL /* -5.394063627447218e-33 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6580290597764062787LL /* 5.035141803138627e+27 */,
+                            6164319297265300034LL /* 33950.07022461506 */),
+                        6667036882686408593LL /* 1.709434178074513e+32 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2523439530503240484LL /* -1.423739175762724e+58 */,
+                            5864448766677980801LL /* 9.769251096336e-13 */),
+                        2307233895764065602LL /* -1.39088655037165e+46 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6760707453987140465LL /* 5.308012931396465e+37 */,
+                            5951641080643457645LL /* 6.889572514402925e-8 */),
+                        6632955645489194550LL /* 3.656993999824438e+30 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6494270716308443375LL /* 9.087252894929135e+22 */,
+                            564752637895553836LL /* -6.306284101612332e-51 */),
+                        978508199357889360LL /* -5.730679845862224e-28 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6759145618427534062LL /* 3.746177371790062e+37 */,
+                            4721897842483633304LL /* 2.125432999353496e-76 */),
+                        5394267403342547165LL /* 7.962249007433949e-39 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1232673571201806425LL /* -7.694472557031513e-14 */,
+                            6884256144221925318LL /* 2.75591359980743e+44 */),
+                        2037747561727791012LL /* -2.12053015632682e+31 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1427694775835421031LL /* -0.004557293586344295 */,
+                            4883952867277976402LL /* 2.050871208358738e-67 */),
+                        225519204318055258LL /* -9.34642220427145e-70 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5843509949864662087LL /* 6.84483279249927e-14 */,
+                            5264483986612843822LL /* 4.279621844104494e-46 */),
+                        5028946513739275800LL /* 2.929329593802264e-59 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            6038444022009738988LL /* 0.003620521333274348 */,
+                            7447499078040748850LL /* 7.552493624689458e+75 */),
+                        7406652183825856093LL /* 2.734396428760669e+73 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            939565473697468970LL /* -2.816751204405802e-30 */,
+                            1100284903077087966LL /* -1.406593998686942e-21 */),
+                        5174094397561240825LL /* 3.962025339911417e-51 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5694071830210473617LL /* 1.521901214166673e-22 */,
+                            5536709154363579683LL /* 6.288811952610595e-31 */),
+                        5143674525748709391LL /* 9.570950546343951e-53 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            600729862341871819LL /* -6.254711528966347e-49 */,
+                            6330630279715378440LL /* 75764028872020.56 */),
+                        851415551394320910LL /* -4.738821448667662e-35 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1876763139233864902LL /* -3.265694247738566e+22 */,
+                            4849561230315278754LL /* 3.688031264625058e-69 */),
+                        649722744589988028LL /* -1.204398248636604e-46 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            3011947542126279863LL /* -3.542991042788535e+85 */,
+                            1557732559110376235LL /* -84942.87294925611 */),
+                        7713172080438368541LL /* 3.009518380079389e+90 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            5391579936313268788LL /* 5.274781978155572e-39 */,
+                            1018647290024655822LL /* -9.840973493664718e-26 */),
+                        329450072133864644LL /* -5.190898963188932e-64 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            2815029221608845312LL /* -4.783054129655808e+74 */,
+                            4943518985822088837LL /* 7.57379422402522e-64 */),
+                        1678961648155863225LL /* -362258677403.8713 */);
+                    ASSERT_EQUAL(
+                        float_multiply(
+                            1377509900308195934LL /* -0.00000841561358756515 */,
+                            7702104197062186199LL /* 9.95603351337903e+89 */),
+                        2998768765665354000LL /* -8.378613091344656e+84 */);
+
                     return
                         accept(0,0,0);
                 }
@@ -3101,16 +3194,195 @@ public:
     void
     test_float_set()
     {
+        testcase("Test float_set");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_set (int32_t, int64_t);
+                #define INVALID_FLOAT -10024
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    // zero mantissa should return canonical zero
+                    ASSERT(float_set(-5, 0) == 0);
+                    ASSERT(float_set(50, 0) == 0);
+                    ASSERT(float_set(-50, 0) == 0);
+                    ASSERT(float_set(0, 0) == 0);
+
+                    // an exponent lower than -96 should produce an invalid float error
+                    ASSERT(float_set(-97, 1) == INVALID_FLOAT);
+
+                    // an exponent larger than +96 should produce an invalid float error
+                    ASSERT(float_set(+97, 1) == INVALID_FLOAT);
+
+                    ASSERT(float_set(-5,6541432897943971LL) == 6275552114197674403LL);
+                    ASSERT(float_set(-83,7906202688397446LL) == 4871793800248533126LL);
+                    ASSERT(float_set(76,4760131426754533LL) == 7732937091994525669LL);
+                    ASSERT(float_set(37,-8019384286534438LL) == 2421948784557120294LL);
+                    ASSERT(float_set(50,5145342538007840LL) == 7264947941859247392LL);
+                    ASSERT(float_set(-70,4387341302202416LL) == 5102462119485603888LL);
+                    ASSERT(float_set(-26,-1754544005819476LL) == 1280776838179040340LL);
+                    ASSERT(float_set(36,8261761545780560LL) == 7015862781734272336LL);
+                    ASSERT(float_set(35,7975622850695472LL) == 6997562244529705264LL);
+                    ASSERT(float_set(17,-4478222822793996LL) == 2058119652903740172LL);
+                    ASSERT(float_set(-53,5506604247857835LL) == 5409826157092453035LL);
+                    ASSERT(float_set(-60,5120164869507050LL) == 5283338928147728362LL);
+                    ASSERT(float_set(41,5176113875683063LL) == 7102849126611584759LL);
+                    ASSERT(float_set(-54,-3477931844992923LL) == 778097067752718235LL);
+                    ASSERT(float_set(21,6345031894305479LL) == 6743730074440567495LL);
+                    ASSERT(float_set(-23,5091583691147091LL) == 5949843091820201811LL);
+                    ASSERT(float_set(-33,7509684078851678LL) == 5772117207113086558LL);
+                    ASSERT(float_set(-72,-1847771838890268LL) == 452207734575939868LL);
+                    ASSERT(float_set(71,-9138413713437220LL) == 3035557363306410532LL);
+                    ASSERT(float_set(28,4933894067102586LL) == 6868419726179738490LL);
+
+                    return accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_set"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_set"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
     test_float_sign()
     {
-    }
+        testcase("Test float_sign");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
 
-    void
-    test_float_sign_set()
-    {
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_one (void);
+                extern int64_t float_sign(int64_t);
+                extern int64_t float_negate(int64_t);
+                #define ASSERT(x)\
+                    if ((x) != 1)\
+                        rollback(0,0,__LINE__)
+                #define ASSERT_EQUAL(x,y) ASSERT((x) == (y))
+                #define INVALID_FLOAT -10024
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    int64_t result = 0;
+
+                    // test invalid floats
+                    {
+                        ASSERT(float_sign(-1) == INVALID_FLOAT);
+                        ASSERT(float_sign(-11010191919LL) == INVALID_FLOAT);
+                    }
+
+                    // test canonical zero
+                    ASSERT(float_sign(0) == 0);
+
+                    // test one
+                    ASSERT(float_sign(float_one()) == 0);
+                    ASSERT(float_sign(float_negate(float_one())) == 1);
+
+                    // test random numbers
+                    ASSERT_EQUAL(
+                        float_sign(7248434512952957686LL /* 6.646312141200119e+64 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(889927818394811978LL /* -7.222291430194763e-33 */),
+                        1LL);
+                    ASSERT_EQUAL(float_sign(5945816149233111421LL /* 1.064641104056701e-8 */), 0LL);
+                    ASSERT_EQUAL(float_sign(6239200145838704863LL /* 621826155.7938399 */), 0LL);
+                    ASSERT_EQUAL(
+                        float_sign(6992780785042190360LL /* 3.194163363180568e+50 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(6883099933108789087LL /* 1.599702486671199e+44 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(890203738162163464LL /* -7.498211197546248e-33 */),
+                        1LL);
+                    ASSERT_EQUAL(float_sign(4884803073052080964LL /* 2.9010769824633e-67 */), 0LL);
+                    ASSERT_EQUAL(
+                        float_sign(2688292350356944394LL /* -4.146972444128778e+67 */),
+                        1LL);
+                    ASSERT_EQUAL(
+                        float_sign(4830109852288093280LL /* 2.251051746921568e-70 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(294175951907940320LL /* -5.945575756228576e-66 */),
+                        1LL);
+                    ASSERT_EQUAL(
+                        float_sign(7612037404955382316LL /* 9.961233953985069e+84 */),
+                        0LL);
+                    ASSERT_EQUAL(float_sign(7520840929603658997LL /* 8.83675114967167e+79 */), 0LL);
+                    ASSERT_EQUAL(
+                        float_sign(4798982086157926282LL /* 7.152082635718538e-72 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(689790136568817905LL /* -5.242993208502513e-44 */),
+                        1LL);
+                    ASSERT_EQUAL(
+                        float_sign(5521738045011558042LL /* 9.332101110070938e-32 */),
+                        0LL);
+                    ASSERT_EQUAL(
+                        float_sign(728760820583452906LL /* -8.184880204173546e-42 */),
+                        1LL);
+                    ASSERT_EQUAL(
+                        float_sign(2272937984362856794LL /* -3.12377216812681e+44 */),
+                        1LL);
+                    ASSERT_EQUAL(float_sign(1445723661896317830LL /* -0.0457178113775911 */), 1LL);
+                    ASSERT_EQUAL(
+                        float_sign(5035721527359772724LL /* 9.704343214299189e-59 */),
+                        0LL);
+
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_sign"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_sign"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -3604,15 +3876,13 @@ public:
         test_etxn_nonce();
         test_etxn_reserve();
         test_fee_base();
+
         test_float_compare();
         test_float_divide();
-        test_float_exponent_set();
         test_float_int();
         test_float_invert();
         test_float_log();
         test_float_mantissa();
-        test_float_mantissa();
-        test_float_mantissa_set();
         test_float_mulratio();
         test_float_multiply();
         test_float_negate();
@@ -3620,10 +3890,10 @@ public:
         test_float_root();
         test_float_set();
         test_float_sign();
-        test_float_sign_set();
         test_float_sto();
         test_float_sto_set();
         test_float_sum();
+
         test_hook_account();
         test_hook_again();
         test_hook_hash();

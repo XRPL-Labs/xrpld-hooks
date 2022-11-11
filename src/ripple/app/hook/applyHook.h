@@ -146,11 +146,8 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,  float_divide,       int64_t float1,     int64_t float2 );
     DECLARE_HOOK_FUNCNARG(int64_t,  float_one );
 
-    DECLARE_HOOK_FUNCTION(int64_t,  float_exponent_set, int64_t float1,     int32_t exponent );
     DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa,     int64_t float1 );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_mantissa_set, int64_t float1,     int64_t mantissa );
     DECLARE_HOOK_FUNCTION(int64_t,  float_sign,         int64_t float1 );
-    DECLARE_HOOK_FUNCTION(int64_t,  float_sign_set,     int64_t float1,     uint32_t negative );
     DECLARE_HOOK_FUNCTION(int64_t,  float_int,          int64_t float1,     uint32_t decimal_places, uint32_t abs );
     DECLARE_HOOK_FUNCTION(int64_t,  float_log,          int64_t float1 );
     DECLARE_HOOK_FUNCTION(int64_t,  float_root,         int64_t float1, uint32_t n );
@@ -589,10 +586,7 @@ namespace hook
             ADD_HOOK_FUNCTION(float_divide, ctx);
             ADD_HOOK_FUNCTION(float_one, ctx);
             ADD_HOOK_FUNCTION(float_mantissa, ctx);
-            ADD_HOOK_FUNCTION(float_mantissa_set, ctx);
-            ADD_HOOK_FUNCTION(float_exponent_set, ctx);
             ADD_HOOK_FUNCTION(float_sign, ctx);
-            ADD_HOOK_FUNCTION(float_sign_set, ctx);
             ADD_HOOK_FUNCTION(float_int, ctx);
             ADD_HOOK_FUNCTION(float_log, ctx);
             ADD_HOOK_FUNCTION(float_root, ctx);
