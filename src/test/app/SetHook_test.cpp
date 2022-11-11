@@ -2232,11 +2232,6 @@ public:
     }
 
     void
-    test_float_exponent()
-    {
-    }
-
-    void
     test_float_int()
     {
         testcase("Test float_int");
