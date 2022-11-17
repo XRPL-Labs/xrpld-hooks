@@ -4295,9 +4295,12 @@ DEFINE_HOOK_FUNCTION(
 
     if (mulratio_internal(man1, exp1, round_up > 0, numerator, denominator) < 0)
         return XFL_OVERFLOW;
+    
+    // defensive check
+    if (man1 < 0)
+        man1 *= -1LL;
 
-    bool neg = man1 < 0;
-    return make_float((uint64_t)(neg ? -man1 : man1), exp1, neg);
+    return make_float((uint64_t)man1, exp1, is_negative(float1));
 }
 
 DEFINE_HOOK_FUNCTION(

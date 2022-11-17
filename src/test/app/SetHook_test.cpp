@@ -2679,6 +2679,160 @@ public:
     void
     test_float_mulratio()
     {
+        testcase("Test float_mulratio");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t float_mulratio (int64_t, uint32_t, uint32_t, uint32_t);
+                extern int64_t float_one (void);
+                #define INVALID_FLOAT -10024
+                #define DIVISION_BY_ZERO -25
+                #define XFL_OVERFLOW -30
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback(0,0,__LINE__);
+                extern int64_t float_compare(int64_t, int64_t, uint32_t);
+                extern int64_t float_negate(int64_t);
+                extern int64_t float_sum(int64_t, int64_t);
+                extern int64_t float_mantissa(int64_t);
+                #define float_exponent(f) (((int32_t)(((f) >> 54U) & 0xFFU)) - 97)
+                #define ASSERT_EQUAL(x, y)\
+                {\
+                    int64_t px = (x);\
+                    int64_t py = (y);\
+                    int64_t mx = float_mantissa(px);\
+                    int64_t my = float_mantissa(py);\
+                    int32_t diffexp = float_exponent(px) - float_exponent(py);\
+                    if (diffexp == 1)\
+                        mx *= 10LL;\
+                    if (diffexp == -1)\
+                        my *= 10LL;\
+                    int64_t diffman = mx - my;\
+                    if (diffman < 0) diffman *= -1LL;\
+                    if (diffexp < 0) diffexp *= -1;\
+                    if (diffexp > 1 || diffman > 5000000 || mx < 0 || my < 0)\
+                        rollback((uint32_t) #x, sizeof(#x), __LINE__);\
+                }
+                int64_t hook(uint32_t reserved )
+                {
+                   _g(1,1);
+
+                    // ensure invalid xfl are not accepted
+                    ASSERT(float_mulratio(-1, 0, 1, 1) == INVALID_FLOAT);
+
+                    // multiply by 0
+                    ASSERT(float_mulratio(float_one(), 0, 0, 1) == 0);
+                    ASSERT(float_mulratio(0, 0, 1, 1) == 0);
+
+                    // check 1
+                    ASSERT(float_mulratio(float_one(), 0, 1, 1) == float_one());
+                    ASSERT(float_mulratio(float_negate(float_one()), 0, 1, 1) ==
+                            float_negate(float_one()));
+
+                    // check overflow
+                        // 1e+95 * 1e+95
+                    ASSERT(float_mulratio(7801234554605699072LL, 0, 0xFFFFFFFFUL, 1) == XFL_OVERFLOW);
+                        // 1e+95 * 10
+                    ASSERT(float_mulratio(7801234554605699072LL, 0, 10, 1) == XFL_OVERFLOW);
+                        // -1e+95 * 10
+                    ASSERT(float_mulratio(3189548536178311168LL, 0, 10, 1) == XFL_OVERFLOW);
+
+                    // identity
+                    ASSERT_EQUAL(float_mulratio(3189548536178311168LL, 0, 1, 1), 3189548536178311168LL);
+
+
+                    // random mulratios
+                    ASSERT_EQUAL(
+                        float_mulratio(2296131684119423544LL, 0U, 2210828011U, 2814367554U),
+                        2294351094683836182LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(565488225163275031LL, 0U, 2373474507U, 4203973264U),
+                        562422045628095449LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(2292703263479286183LL, 0U, 3170020147U, 773892643U),
+                        2307839765178024100LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(758435948837102675LL, 0U, 3802740780U, 1954123588U),
+                        760168290112163547LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(3063742137774439410LL, 0U, 2888815591U, 4122448592U),
+                        3053503824756415637LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(974014561126802184LL, 0U, 689168634U, 3222648522U),
+                        957408554638995792LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(2978333847445611553LL, 0U, 1718558513U, 2767410870U),
+                        2976075722223325259LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(6577058837932757648LL, 0U, 1423256719U, 1338068927U),
+                        6577173649752398013LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(2668681541248816636LL, 0U, 345215754U, 4259223936U),
+                        2650183845127530219LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(651803640367065917LL, 0U, 327563234U, 1191613855U),
+                        639534906402789368LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(3154958130393015979LL, 0U, 1304112625U, 3024066701U),
+                        3153571282364880740LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(1713286099776800976LL, 0U, 1902151138U, 2927030061U),
+                        1712614441093927706LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(2333142120591277120LL, 0U, 914099656U, 108514965U),
+                        2349692988167140475LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(995968561418010814LL, 0U, 1334462574U, 846156977U),
+                        998955931389416094LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(6276035843030312442LL, 0U, 2660687613U, 236740983U),
+                        6294920527635363073LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(7333118474702086419LL, 0U, 46947714U, 2479204760U),
+                        7298214153648998535LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(2873297486994296492LL, 0U, 880591893U, 436034100U),
+                        2884122995598532757LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(1935815261812737573LL, 0U, 3123665800U, 3786746543U),
+                        1934366328810191207LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(7249556282125616118LL, 0U, 2378803159U, 2248850590U),
+                        7250005170160875417LL);
+                    ASSERT_EQUAL(
+                        float_mulratio(311005347529659996LL, 0U, 992915590U, 2433548552U),
+                        308187142737041830LL);
+
+                    // today: round up test
+                    return
+                        accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_mulratio"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)),
+                M("test float_mulratio"),
+                fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
