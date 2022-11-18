@@ -4031,11 +4031,6 @@ public:
     }
 
     void
-    test_hook_namespace()
-    {
-    }
-
-    void
     test_hook_param()
     {
     }
@@ -4238,26 +4233,298 @@ public:
     void
     test_trace()
     {
+        //TODO
     }
 
     void
     test_trace_float()
     {
+        //TODO
     }
 
     void
     test_trace_num()
     {
+        //TODO
     }
 
     void
     test_trace_slot()
     {
+        //TODO
     }
 
     void
     test_util_accid()
     {
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t util_accid (uint32_t, uint32_t, uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                uint8_t b[20];
+                {
+                    const char addr[] = "rMEGJtK2SttrtAfoKaqKUpCrDCi9saNuLg";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xDEU && b[ 1] == 0x15U && b[ 2] == 0x1EU && b[ 3] == 0x2FU && 
+                        b[ 4] == 0xB2U && b[ 5] == 0xAAU && b[ 6] == 0xBDU && b[ 7] == 0x1AU && 
+                        b[ 8] == 0x5BU && b[ 9] == 0xD0U && b[10] == 0x2FU && b[11] == 0x63U && 
+                        b[12] == 0x68U && b[13] == 0x26U && b[14] == 0xDFU && b[15] == 0x43U && 
+                        b[16] == 0x50U && b[17] == 0xC0U && b[18] == 0x40U && b[19] == 0xDEU);
+                }
+                {
+                    const char addr[] = "rNo8xzUAauXENpvsMVJ9Q9w5LtVxCVFN4p";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x97U && b[ 1] == 0x73U && b[ 2] == 0x23U && b[ 3] == 0xAAU && 
+                        b[ 4] == 0x33U && b[ 5] == 0x7CU && b[ 6] == 0xB6U && b[ 7] == 0x82U && 
+                        b[ 8] == 0x37U && b[ 9] == 0x83U && b[10] == 0x58U && b[11] == 0x3AU && 
+                        b[12] == 0x7AU && b[13] == 0xDFU && b[14] == 0x4EU && b[15] == 0xD8U && 
+                        b[16] == 0x52U && b[17] == 0x2CU && b[18] == 0xA8U && b[19] == 0xF0U);
+                }
+                {
+                    const char addr[] = "rUpwuJR1xLH18aHLP5nEm4Hw215tmkq6V7";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x78U && b[ 1] == 0xE2U && b[ 2] == 0x10U && b[ 3] == 0xACU && 
+                        b[ 4] == 0x98U && b[ 5] == 0x38U && b[ 6] == 0xF2U && b[ 7] == 0x5AU && 
+                        b[ 8] == 0x3BU && b[ 9] == 0x7EU && b[10] == 0xDEU && b[11] == 0x51U && 
+                        b[12] == 0x37U && b[13] == 0x13U && b[14] == 0x94U && b[15] == 0xEDU && 
+                        b[16] == 0x80U && b[17] == 0x77U && b[18] == 0x89U && b[19] == 0x48U);
+                }
+                {
+                    const char addr[] = "ravUPmVUQ65qeuNSFiN6W2U88smjJYHBJm";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x40U && b[ 1] == 0xE8U && b[ 2] == 0x2FU && b[ 3] == 0x55U && 
+                        b[ 4] == 0xC7U && b[ 5] == 0x3AU && b[ 6] == 0xEBU && b[ 7] == 0xCFU && 
+                        b[ 8] == 0xC9U && b[ 9] == 0x1DU && b[10] == 0x3BU && b[11] == 0xF4U && 
+                        b[12] == 0x77U && b[13] == 0x76U && b[14] == 0x50U && b[15] == 0x2BU && 
+                        b[16] == 0x49U && b[17] == 0x7BU && b[18] == 0x12U && b[19] == 0x2CU);
+                }
+                {
+                    const char addr[] = "rPXQ8PW1C382oewiEyJrAWtDQBNsQhAtWA";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xF7U && b[ 1] == 0x13U && b[ 2] == 0x19U && b[ 3] == 0x49U && 
+                        b[ 4] == 0x3FU && b[ 5] == 0xA6U && b[ 6] == 0xA3U && b[ 7] == 0xDBU && 
+                        b[ 8] == 0x62U && b[ 9] == 0xAEU && b[10] == 0x12U && b[11] == 0x1BU && 
+                        b[12] == 0x12U && b[13] == 0x6CU && b[14] == 0xFEU && b[15] == 0x81U && 
+                        b[16] == 0x49U && b[17] == 0x5AU && b[18] == 0x49U && b[19] == 0x16U);
+                }
+                {
+                    const char addr[] = "rnZbUT8tpm48KEdfELCxRjJJhNV1JNYcg5";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x32U && b[ 1] == 0x0AU && b[ 2] == 0x5CU && b[ 3] == 0x53U && 
+                        b[ 4] == 0x61U && b[ 5] == 0x5BU && b[ 6] == 0x4BU && b[ 7] == 0x57U && 
+                        b[ 8] == 0x1DU && b[ 9] == 0xC4U && b[10] == 0x6FU && b[11] == 0x13U && 
+                        b[12] == 0xBDU && b[13] == 0x4FU && b[14] == 0x31U && b[15] == 0x70U && 
+                        b[16] == 0x84U && b[17] == 0xD1U && b[18] == 0xB1U && b[19] == 0x68U);
+                }
+                {
+                    const char addr[] = "rPghxri3jhBaxBfWGAHrVC4KANoRBe6dcM";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xF8U && b[ 1] == 0xB6U && b[ 2] == 0x49U && b[ 3] == 0x2BU && 
+                        b[ 4] == 0x5BU && b[ 5] == 0x21U && b[ 6] == 0xC8U && b[ 7] == 0xDAU && 
+                        b[ 8] == 0xBDU && b[ 9] == 0x0FU && b[10] == 0x1DU && b[11] == 0x2FU && 
+                        b[12] == 0xD9U && b[13] == 0xF4U && b[14] == 0x5BU && b[15] == 0xDEU && 
+                        b[16] == 0xCCU && b[17] == 0x6AU && b[18] == 0xEBU && b[19] == 0x91U);
+                }
+                {
+                    const char addr[] = "r4Tck2QJcfcwBuTgVJXYb4QbrKP6mT1acM";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xEBU && b[ 1] == 0x63U && b[ 2] == 0x4CU && b[ 3] == 0xD6U && 
+                        b[ 4] == 0xF9U && b[ 5] == 0xBFU && b[ 6] == 0x50U && b[ 7] == 0xC1U && 
+                        b[ 8] == 0xD9U && b[ 9] == 0x79U && b[10] == 0x30U && b[11] == 0x84U && 
+                        b[12] == 0x1BU && b[13] == 0xFCU && b[14] == 0x35U && b[15] == 0x32U && 
+                        b[16] == 0xBDU && b[17] == 0x6DU && b[18] == 0xC0U && b[19] == 0x75U);
+                }
+                {
+                    const char addr[] = "rETHUL5T1SzM6AMotnsK5V3J5XMwJ9UhZ2";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x9EU && b[ 1] == 0x8AU && b[ 2] == 0x18U && b[ 3] == 0x66U && 
+                        b[ 4] == 0x92U && b[ 5] == 0x0EU && b[ 6] == 0xE5U && b[ 7] == 0xEDU && 
+                        b[ 8] == 0xFAU && b[ 9] == 0xE3U && b[10] == 0x23U && b[11] == 0x15U && 
+                        b[12] == 0xCBU && b[13] == 0x83U && b[14] == 0xEFU && b[15] == 0x73U && 
+                        b[16] == 0xE4U && b[17] == 0x91U && b[18] == 0x0BU && b[19] == 0xCAU);
+                }
+                {
+                    const char addr[] = "rh9CggaWiY6QdD55ZkbbnrFpHJkKSauLfC";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x22U && b[ 1] == 0x8BU && b[ 2] == 0xFFU && b[ 3] == 0x31U && 
+                        b[ 4] == 0xB4U && b[ 5] == 0x93U && b[ 6] == 0xF6U && b[ 7] == 0xC1U && 
+                        b[ 8] == 0x12U && b[ 9] == 0xEAU && b[10] == 0xD6U && b[11] == 0xDFU && 
+                        b[12] == 0xC4U && b[13] == 0x05U && b[14] == 0xB3U && b[15] == 0x7DU && 
+                        b[16] == 0xC0U && b[17] == 0x65U && b[18] == 0x21U && b[19] == 0x34U);
+                }
+                {
+                    const char addr[] = "r9sYGdPCGuJauy8QVG4CHnvp5U4eu3yY2B";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x58U && b[ 1] == 0x3BU && b[ 2] == 0xF0U && b[ 3] == 0xCBU && 
+                        b[ 4] == 0x95U && b[ 5] == 0x80U && b[ 6] == 0xDEU && b[ 7] == 0xA0U && 
+                        b[ 8] == 0xB3U && b[ 9] == 0x71U && b[10] == 0xD0U && b[11] == 0x18U && 
+                        b[12] == 0x17U && b[13] == 0x1AU && b[14] == 0xBBU && b[15] == 0x98U && 
+                        b[16] == 0x1FU && b[17] == 0xCCU && b[18] == 0x7CU && b[19] == 0x68U);
+                }
+                {
+                    const char addr[] = "r4yJX9eU65WHfmKz6xXmSRf9CZN6bXfpWb";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xF1U && b[ 1] == 0x00U && b[ 2] == 0x8FU && b[ 3] == 0x64U && 
+                        b[ 4] == 0x0FU && b[ 5] == 0x99U && b[ 6] == 0x19U && b[ 7] == 0xDAU && 
+                        b[ 8] == 0xCFU && b[ 9] == 0x48U && b[10] == 0x18U && b[11] == 0x1CU && 
+                        b[12] == 0x35U && b[13] == 0x2EU && b[14] == 0xE4U && b[15] == 0x3EU && 
+                        b[16] == 0x37U && b[17] == 0x7CU && b[18] == 0x01U && b[19] == 0xF6U);
+                }
+                {
+                    const char addr[] = "rBkXoWoXPHuZy2nHbE7L1zJfqAvb4jHRrK";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x75U && b[ 1] == 0xECU && b[ 2] == 0xDBU && b[ 3] == 0x3BU && 
+                        b[ 4] == 0x9AU && b[ 5] == 0x71U && b[ 6] == 0xD9U && b[ 7] == 0xEFU && 
+                        b[ 8] == 0xD6U && b[ 9] == 0x55U && b[10] == 0x15U && b[11] == 0xDDU && 
+                        b[12] == 0xEAU && b[13] == 0xD2U && b[14] == 0x36U && b[15] == 0x7AU && 
+                        b[16] == 0x05U && b[17] == 0x6FU && b[18] == 0x4EU && b[19] == 0x5FU);
+                }
+                {
+                    const char addr[] = "rnaUBeEBNuyv57Jk127DsApEQoR8JqWpie";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x2CU && b[ 1] == 0xDBU && b[ 2] == 0xEBU && b[ 3] == 0x1FU && 
+                        b[ 4] == 0x5EU && b[ 5] == 0xC5U && b[ 6] == 0xD7U && b[ 7] == 0x5FU && 
+                        b[ 8] == 0xACU && b[ 9] == 0xBDU && b[10] == 0x19U && b[11] == 0xC8U && 
+                        b[12] == 0x3FU && b[13] == 0x45U && b[14] == 0x3BU && b[15] == 0xA8U && 
+                        b[16] == 0xA0U && b[17] == 0x1CU && b[18] == 0xDBU && b[19] == 0x0FU);
+                }
+                {
+                    const char addr[] = "rJHmUPMQ6qYdaqMizDZY8FKcCqCJxYYnb3";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xBDU && b[ 1] == 0xA5U && b[ 2] == 0xAFU && b[ 3] == 0xDAU && 
+                        b[ 4] == 0x5FU && b[ 5] == 0x04U && b[ 6] == 0xE7U && b[ 7] == 0xEFU && 
+                        b[ 8] == 0x16U && b[ 9] == 0x7AU && b[10] == 0x35U && b[11] == 0x94U && 
+                        b[12] == 0x6EU && b[13] == 0xEFU && b[14] == 0x19U && b[15] == 0xFAU && 
+                        b[16] == 0x12U && b[17] == 0xF3U && b[18] == 0x1CU && b[19] == 0x64U);
+                }
+                {
+                    const char addr[] = "rpJtt64FNNtaEBgqbJcrrunucUWJSdKJa2";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x0EU && b[ 1] == 0x5AU && b[ 2] == 0x83U && b[ 3] == 0x89U && 
+                        b[ 4] == 0xC0U && b[ 5] == 0x5EU && b[ 6] == 0x56U && b[ 7] == 0xD1U && 
+                        b[ 8] == 0x50U && b[ 9] == 0xBCU && b[10] == 0x45U && b[11] == 0x7BU && 
+                        b[12] == 0x86U && b[13] == 0x46U && b[14] == 0xF1U && b[15] == 0xCFU && 
+                        b[16] == 0xB7U && b[17] == 0xD0U && b[18] == 0xBFU && b[19] == 0xD4U);
+                }
+                {
+                    const char addr[] = "rUC2XjZURBYQ8r6i5sqWnhtDmFFdJFobb9";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x7FU && b[ 1] == 0xF5U && b[ 2] == 0x2DU && b[ 3] == 0xF4U && 
+                        b[ 4] == 0x98U && b[ 5] == 0x2BU && b[ 6] == 0x7CU && b[ 7] == 0x14U && 
+                        b[ 8] == 0x7EU && b[ 9] == 0x9AU && b[10] == 0x8BU && b[11] == 0xEBU && 
+                        b[12] == 0x1AU && b[13] == 0x53U && b[14] == 0x60U && b[15] == 0x34U && 
+                        b[16] == 0x95U && b[17] == 0x42U && b[18] == 0x4AU && b[19] == 0x44U);
+                }
+                {
+                    const char addr[] = "rKEsw1ExpKaukXyyPCxeZdAF5V68kPSAVZ";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0xC8U && b[ 1] == 0x19U && b[ 2] == 0xE6U && b[ 3] == 0x2AU && 
+                        b[ 4] == 0xDDU && b[ 5] == 0x42U && b[ 6] == 0x48U && b[ 7] == 0xD6U && 
+                        b[ 8] == 0x7DU && b[ 9] == 0xA5U && b[10] == 0x56U && b[11] == 0x66U && 
+                        b[12] == 0x55U && b[13] == 0xB4U && b[14] == 0xBFU && b[15] == 0xDEU && 
+                        b[16] == 0x99U && b[17] == 0xCFU && b[18] == 0xEDU && b[19] == 0x96U);
+                }
+                {
+                    const char addr[] = "rEXhVGVWdte28r1DUzfgKLjNiHi1Tn6R7X";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x9FU && b[ 1] == 0x41U && b[ 2] == 0x26U && b[ 3] == 0xA3U && 
+                        b[ 4] == 0x6DU && b[ 5] == 0x56U && b[ 6] == 0x01U && b[ 7] == 0xC8U && 
+                        b[ 8] == 0x09U && b[ 9] == 0x63U && b[10] == 0x76U && b[11] == 0xEDU && 
+                        b[12] == 0x4CU && b[13] == 0x45U && b[14] == 0x66U && b[15] == 0x63U && 
+                        b[16] == 0x16U && b[17] == 0xC9U && b[18] == 0x5CU && b[19] == 0x80U);
+                }
+                {
+                    const char addr[] = "r3TcfPNEvidJ2LkNoFojffcCd7RgT53Thg";
+                    ASSERT(20 ==
+                        util_accid((uint32_t)b, 20, (uint32_t)addr, sizeof(addr)));
+                    ASSERT(
+                        b[ 0] == 0x51U && b[ 1] == 0xD1U && b[ 2] == 0x00U && b[ 3] == 0xFFU && 
+                        b[ 4] == 0x0DU && b[ 5] == 0x92U && b[ 6] == 0x18U && b[ 7] == 0x73U && 
+                        b[ 8] == 0x80U && b[ 9] == 0x30U && b[10] == 0xC5U && b[11] == 0x1AU && 
+                        b[12] == 0xF2U && b[13] == 0x9FU && b[14] == 0x52U && b[15] == 0x8EU && 
+                        b[16] == 0xB8U && b[17] == 0x63U && b[18] == 0x08U && b[19] == 0x7CU);
+                }
+
+                // Test out of bounds check
+                ASSERT(util_accid(1000000, 20, 0, 35) == OUT_OF_BOUNDS);
+                ASSERT(util_accid(0, 35, 10000000, 20) == OUT_OF_BOUNDS);
+                ASSERT(util_accid(0, 19, 0, 0) == TOO_SMALL);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set hook_hash"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test hook_hash"),
+            fee(XRP(1)));
+
     }
 
     void
@@ -4333,7 +4600,6 @@ public:
         test_hook_account();
         test_hook_again();
         test_hook_hash();
-        test_hook_namespace();
         test_hook_param();
         test_hook_param_set();
         test_hook_pos();
