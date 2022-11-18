@@ -4992,7 +4992,379 @@ public:
     void
     test_util_sha512h()
     {
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t util_sha512h (uint32_t, uint32_t, uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4EU, 0x36U, 0x53U, 0x59U, 0x77U, 0x72U, 0x32U,
+                        0x64U, 0x54U, 0x56U, 0x43U, 0x7AU, 0x45U, 0x71U, 0x39U,
+                        0x57U, 0x43U, 0x77U, 0x4AU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x42U && hash[ 1] == 0x5CU && hash[ 2] == 0x4CU && hash[ 3] == 0x01U &&
+                        hash[ 4] == 0x84U && hash[ 5] == 0xA5U && hash[ 6] == 0x76U && hash[ 7] == 0x79U &&
+                        hash[ 8] == 0xDCU && hash[ 9] == 0x6DU && hash[10] == 0xFFU && hash[11] == 0x40U &&
+                        hash[12] == 0x8CU && hash[13] == 0x29U && hash[14] == 0x06U && hash[15] == 0x6BU &&
+                        hash[16] == 0x0FU && hash[17] == 0xB9U && hash[18] == 0xEAU && hash[19] == 0x34U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4BU, 0x4BU, 0x75U, 0x52U, 0x36U, 0x36U, 0x46U,
+                        0x62U, 0x38U, 0x33U, 0x76U, 0x35U, 0x71U, 0x79U, 0x41U,
+                        0x34U, 0x48U, 0x67U, 0x6AU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x36U && hash[ 1] == 0x2CU && hash[ 2] == 0x32U && hash[ 3] == 0x1DU &&
+                        hash[ 4] == 0x8DU && hash[ 5] == 0xDDU && hash[ 6] == 0xAFU && hash[ 7] == 0x2DU &&
+                        hash[ 8] == 0x3CU && hash[ 9] == 0xE6U && hash[10] == 0x94U && hash[11] == 0x12U &&
+                        hash[12] == 0x20U && hash[13] == 0xDAU && hash[14] == 0x62U && hash[15] == 0xA6U &&
+                        hash[16] == 0x98U && hash[17] == 0x41U && hash[18] == 0x04U && hash[19] == 0x5EU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x42U, 0x54U, 0x33U, 0x58U, 0x57U, 0x43U, 0x76U,
+                        0x61U, 0x38U, 0x48U, 0x55U, 0x4EU, 0x4EU, 0x5AU, 0x46U,
+                        0x6AU, 0x5AU, 0x43U, 0x55U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xCFU && hash[ 1] == 0xFDU && hash[ 2] == 0x6FU && hash[ 3] == 0x01U &&
+                        hash[ 4] == 0x95U && hash[ 5] == 0x76U && hash[ 6] == 0x7DU && hash[ 7] == 0xFBU &&
+                        hash[ 8] == 0xCAU && hash[ 9] == 0x41U && hash[10] == 0xFDU && hash[11] == 0x24U &&
+                        hash[12] == 0x23U && hash[13] == 0xD6U && hash[14] == 0x82U && hash[15] == 0x20U &&
+                        hash[16] == 0x76U && hash[17] == 0xDDU && hash[18] == 0xC9U && hash[19] == 0xECU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4CU, 0x52U, 0x4CU, 0x41U, 0x6EU, 0x61U, 0x62U,
+                        0x56U, 0x6FU, 0x46U, 0x62U, 0x37U, 0x47U, 0x68U, 0x79U,
+                        0x58U, 0x75U, 0x42U, 0x53U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x02U && hash[ 1] == 0xEBU && hash[ 2] == 0x2FU && hash[ 3] == 0x30U &&
+                        hash[ 4] == 0xFCU && hash[ 5] == 0x73U && hash[ 6] == 0x34U && hash[ 7] == 0xE7U &&
+                        hash[ 8] == 0x89U && hash[ 9] == 0xA2U && hash[10] == 0x58U && hash[11] == 0xD6U &&
+                        hash[12] == 0xB0U && hash[13] == 0x55U && hash[14] == 0x32U && hash[15] == 0x96U &&
+                        hash[16] == 0xB5U && hash[17] == 0x2EU && hash[18] == 0x97U && hash[19] == 0x81U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4CU, 0x37U, 0x33U, 0x39U, 0x47U, 0x4BU, 0x35U,
+                        0x75U, 0x36U, 0x79U, 0x78U, 0x76U, 0x43U, 0x73U, 0x6FU,
+                        0x68U, 0x43U, 0x32U, 0x43U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x9FU && hash[ 1] == 0xD4U && hash[ 2] == 0x7CU && hash[ 3] == 0x25U &&
+                        hash[ 4] == 0xDEU && hash[ 5] == 0x23U && hash[ 6] == 0x97U && hash[ 7] == 0x57U &&
+                        hash[ 8] == 0xEDU && hash[ 9] == 0x25U && hash[10] == 0xD0U && hash[11] == 0x98U &&
+                        hash[12] == 0xF7U && hash[13] == 0x83U && hash[14] == 0x70U && hash[15] == 0xF6U &&
+                        hash[16] == 0x5FU && hash[17] == 0x3DU && hash[18] == 0xB5U && hash[19] == 0x43U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4DU, 0x4DU, 0x45U, 0x57U, 0x74U, 0x75U, 0x4BU,
+                        0x43U, 0x77U, 0x54U, 0x43U, 0x36U, 0x31U, 0x78U, 0x41U,
+                        0x78U, 0x35U, 0x55U, 0x46U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x77U && hash[ 1] == 0x59U && hash[ 2] == 0x43U && hash[ 3] == 0x6BU &&
+                        hash[ 4] == 0x4DU && hash[ 5] == 0x11U && hash[ 6] == 0x6BU && hash[ 7] == 0xE5U &&
+                        hash[ 8] == 0xF8U && hash[ 9] == 0x90U && hash[10] == 0x07U && hash[11] == 0x00U &&
+                        hash[12] == 0xB3U && hash[13] == 0xB2U && hash[14] == 0x6BU && hash[15] == 0x8AU &&
+                        hash[16] == 0xC8U && hash[17] == 0xF2U && hash[18] == 0x82U && hash[19] == 0xB7U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x66U, 0x48U, 0x6AU, 0x66U, 0x31U, 0x6BU, 0x70U,
+                        0x4BU, 0x6AU, 0x39U, 0x66U, 0x6AU, 0x39U, 0x35U, 0x58U,
+                        0x6AU, 0x59U, 0x69U, 0x51U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xBDU && hash[ 1] == 0x1BU && hash[ 2] == 0xDDU && hash[ 3] == 0x9DU &&
+                        hash[ 4] == 0x10U && hash[ 5] == 0xDEU && hash[ 6] == 0x24U && hash[ 7] == 0xA1U &&
+                        hash[ 8] == 0xB2U && hash[ 9] == 0x6CU && hash[10] == 0x24U && hash[11] == 0xBCU &&
+                        hash[12] == 0xF9U && hash[13] == 0x97U && hash[14] == 0x50U && hash[15] == 0xDEU &&
+                        hash[16] == 0x93U && hash[17] == 0x39U && hash[18] == 0x58U && hash[19] == 0x21U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x66U, 0x6EU, 0x75U, 0x57U, 0x38U, 0x77U, 0x6FU,
+                        0x4BU, 0x62U, 0x6EU, 0x57U, 0x4BU, 0x6BU, 0x6BU, 0x75U,
+                        0x39U, 0x6AU, 0x79U, 0x64U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x3BU && hash[ 1] == 0x89U && hash[ 2] == 0xEDU && hash[ 3] == 0x68U &&
+                        hash[ 4] == 0x0DU && hash[ 5] == 0x13U && hash[ 6] == 0x3BU && hash[ 7] == 0x1DU &&
+                        hash[ 8] == 0x43U && hash[ 9] == 0xFEU && hash[10] == 0xAEU && hash[11] == 0x3EU &&
+                        hash[12] == 0xC3U && hash[13] == 0x90U && hash[14] == 0xE8U && hash[15] == 0x0EU &&
+                        hash[16] == 0x17U && hash[17] == 0x14U && hash[18] == 0x23U && hash[19] == 0x71U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x70U, 0x79U, 0x64U, 0x52U, 0x39U, 0x55U, 0x32U,
+                        0x67U, 0x66U, 0x75U, 0x6BU, 0x34U, 0x5AU, 0x72U, 0x53U,
+                        0x66U, 0x48U, 0x61U, 0x71U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x2BU && hash[ 1] == 0x01U && hash[ 2] == 0x00U && hash[ 3] == 0x05U &&
+                        hash[ 4] == 0xF1U && hash[ 5] == 0x60U && hash[ 6] == 0x71U && hash[ 7] == 0x62U &&
+                        hash[ 8] == 0x7CU && hash[ 9] == 0x4AU && hash[10] == 0xCCU && hash[11] == 0x03U &&
+                        hash[12] == 0x2AU && hash[13] == 0x89U && hash[14] == 0x40U && hash[15] == 0x5AU &&
+                        hash[16] == 0x03U && hash[17] == 0xDCU && hash[18] == 0x83U && hash[19] == 0xC8U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x4CU, 0x4CU, 0x45U, 0x36U, 0x34U, 0x74U, 0x44U,
+                        0x4CU, 0x78U, 0x59U, 0x37U, 0x47U, 0x6FU, 0x41U, 0x41U,
+                        0x57U, 0x66U, 0x73U, 0x36U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xDFU && hash[ 1] == 0xE3U && hash[ 2] == 0x14U && hash[ 3] == 0xF0U &&
+                        hash[ 4] == 0x5FU && hash[ 5] == 0x95U && hash[ 6] == 0x8CU && hash[ 7] == 0x57U &&
+                        hash[ 8] == 0x2FU && hash[ 9] == 0x9DU && hash[10] == 0x45U && hash[11] == 0xDCU &&
+                        hash[12] == 0x12U && hash[13] == 0x77U && hash[14] == 0x39U && hash[15] == 0xACU &&
+                        hash[16] == 0xEAU && hash[17] == 0x4AU && hash[18] == 0xB0U && hash[19] == 0x8FU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x50U, 0x64U, 0x50U, 0x58U, 0x77U, 0x76U, 0x75U,
+                        0x39U, 0x4EU, 0x4CU, 0x59U, 0x46U, 0x50U, 0x34U, 0x69U,
+                        0x56U, 0x64U, 0x56U, 0x70U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xD1U && hash[ 1] == 0x9FU && hash[ 2] == 0x25U && hash[ 3] == 0x93U &&
+                        hash[ 4] == 0xA3U && hash[ 5] == 0xCAU && hash[ 6] == 0xEAU && hash[ 7] == 0x10U &&
+                        hash[ 8] == 0x06U && hash[ 9] == 0x78U && hash[10] == 0xFCU && hash[11] == 0x58U &&
+                        hash[12] == 0xA4U && hash[13] == 0x99U && hash[14] == 0x3CU && hash[15] == 0x6EU &&
+                        hash[16] == 0xC4U && hash[17] == 0x2DU && hash[18] == 0x6DU && hash[19] == 0x53U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x44U, 0x65U, 0x44U, 0x32U, 0x5AU, 0x71U, 0x53U,
+                        0x48U, 0x35U, 0x44U, 0x70U, 0x51U, 0x4DU, 0x78U, 0x76U,
+                        0x36U, 0x36U, 0x52U, 0x6BU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x4DU && hash[ 1] == 0x5BU && hash[ 2] == 0xDDU && hash[ 3] == 0x31U &&
+                        hash[ 4] == 0xDEU && hash[ 5] == 0xB9U && hash[ 6] == 0xF5U && hash[ 7] == 0xB8U &&
+                        hash[ 8] == 0xBDU && hash[ 9] == 0x17U && hash[10] == 0xE1U && hash[11] == 0x51U &&
+                        hash[12] == 0xAAU && hash[13] == 0x51U && hash[14] == 0x9CU && hash[15] == 0x5BU &&
+                        hash[16] == 0xE0U && hash[17] == 0x15U && hash[18] == 0x61U && hash[19] == 0x2CU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x55U, 0x34U, 0x78U, 0x54U, 0x52U, 0x75U, 0x6FU,
+                        0x32U, 0x34U, 0x62U, 0x52U, 0x6FU, 0x65U, 0x41U, 0x48U,
+                        0x33U, 0x53U, 0x55U, 0x66U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xBDU && hash[ 1] == 0xA1U && hash[ 2] == 0x62U && hash[ 3] == 0x1EU &&
+                        hash[ 4] == 0x84U && hash[ 5] == 0x12U && hash[ 6] == 0xB3U && hash[ 7] == 0xCCU &&
+                        hash[ 8] == 0x58U && hash[ 9] == 0x19U && hash[10] == 0x9AU && hash[11] == 0x22U &&
+                        hash[12] == 0xCFU && hash[13] == 0x6AU && hash[14] == 0x0AU && hash[15] == 0x43U &&
+                        hash[16] == 0xDEU && hash[17] == 0xB5U && hash[18] == 0xBAU && hash[19] == 0x50U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x6EU, 0x6DU, 0x6FU, 0x6AU, 0x57U, 0x46U, 0x6FU,
+                        0x41U, 0x58U, 0x72U, 0x76U, 0x71U, 0x75U, 0x62U, 0x6FU,
+                        0x45U, 0x77U, 0x4EU, 0x4EU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x5FU && hash[ 1] == 0x26U && hash[ 2] == 0xF9U && hash[ 3] == 0x0AU &&
+                        hash[ 4] == 0xC7U && hash[ 5] == 0xD5U && hash[ 6] == 0x40U && hash[ 7] == 0x2DU &&
+                        hash[ 8] == 0x1FU && hash[ 9] == 0x9EU && hash[10] == 0x46U && hash[11] == 0xAAU &&
+                        hash[12] == 0x6DU && hash[13] == 0x9CU && hash[14] == 0x64U && hash[15] == 0x88U &&
+                        hash[16] == 0x87U && hash[17] == 0xF3U && hash[18] == 0x29U && hash[19] == 0x72U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x61U, 0x33U, 0x57U, 0x65U, 0x64U, 0x69U, 0x71U,
+                        0x58U, 0x37U, 0x34U, 0x79U, 0x42U, 0x42U, 0x68U, 0x48U,
+                        0x4CU, 0x44U, 0x51U, 0x4DU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x25U && hash[ 1] == 0x70U && hash[ 2] == 0x5FU && hash[ 3] == 0x6DU &&
+                        hash[ 4] == 0xA8U && hash[ 5] == 0x60U && hash[ 6] == 0x54U && hash[ 7] == 0xBAU &&
+                        hash[ 8] == 0xD8U && hash[ 9] == 0x33U && hash[10] == 0x41U && hash[11] == 0x48U &&
+                        hash[12] == 0x95U && hash[13] == 0x52U && hash[14] == 0xA6U && hash[15] == 0x22U &&
+                        hash[16] == 0x9DU && hash[17] == 0x82U && hash[18] == 0xA0U && hash[19] == 0x87U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x45U, 0x47U, 0x57U, 0x33U, 0x6BU, 0x6FU, 0x34U,
+                        0x41U, 0x31U, 0x69U, 0x50U, 0x43U, 0x5AU, 0x54U, 0x78U,
+                        0x6DU, 0x77U, 0x6AU, 0x44U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xD4U && hash[ 1] == 0xDAU && hash[ 2] == 0xE0U && hash[ 3] == 0xC7U &&
+                        hash[ 4] == 0x40U && hash[ 5] == 0xC4U && hash[ 6] == 0x28U && hash[ 7] == 0x59U &&
+                        hash[ 8] == 0xA9U && hash[ 9] == 0x6DU && hash[10] == 0x91U && hash[11] == 0xDCU &&
+                        hash[12] == 0x34U && hash[13] == 0x0DU && hash[14] == 0xB9U && hash[15] == 0xE6U &&
+                        hash[16] == 0xE9U && hash[17] == 0x9DU && hash[18] == 0x04U && hash[19] == 0x0BU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x68U, 0x52U, 0x46U, 0x71U, 0x54U, 0x35U, 0x45U,
+                        0x39U, 0x7AU, 0x63U, 0x69U, 0x70U, 0x68U, 0x4CU, 0x54U,
+                        0x39U, 0x78U, 0x6AU, 0x52U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x61U && hash[ 1] == 0x5BU && hash[ 2] == 0xFEU && hash[ 3] == 0x17U &&
+                        hash[ 4] == 0x6EU && hash[ 5] == 0x81U && hash[ 6] == 0x42U && hash[ 7] == 0xFFU &&
+                        hash[ 8] == 0xEEU && hash[ 9] == 0xD7U && hash[10] == 0x1AU && hash[11] == 0x6DU &&
+                        hash[12] == 0x14U && hash[13] == 0x5DU && hash[14] == 0x64U && hash[15] == 0xA8U &&
+                        hash[16] == 0x20U && hash[17] == 0x1AU && hash[18] == 0x33U && hash[19] == 0xC3U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x70U, 0x61U, 0x4AU, 0x69U, 0x34U, 0x4CU, 0x62U,
+                        0x55U, 0x36U, 0x55U, 0x63U, 0x4AU, 0x45U, 0x78U, 0x62U,
+                        0x38U, 0x39U, 0x35U, 0x5AU
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x01U && hash[ 1] == 0x61U && hash[ 2] == 0xA4U && hash[ 3] == 0x8EU &&
+                        hash[ 4] == 0x6DU && hash[ 5] == 0x20U && hash[ 6] == 0xBAU && hash[ 7] == 0x20U &&
+                        hash[ 8] == 0x72U && hash[ 9] == 0x72U && hash[10] == 0x8FU && hash[11] == 0x4FU &&
+                        hash[12] == 0x3FU && hash[13] == 0xE1U && hash[14] == 0xE1U && hash[15] == 0xE7U &&
+                        hash[16] == 0xEBU && hash[17] == 0x15U && hash[18] == 0xA8U && hash[19] == 0x4CU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x34U, 0x59U, 0x78U, 0x47U, 0x46U, 0x71U, 0x51U,
+                        0x64U, 0x47U, 0x70U, 0x71U, 0x6EU, 0x4CU, 0x59U, 0x65U,
+                        0x4DU, 0x38U, 0x56U, 0x52U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0x42U && hash[ 1] == 0xC5U && hash[ 2] == 0x2FU && hash[ 3] == 0x3BU &&
+                        hash[ 4] == 0xB7U && hash[ 5] == 0xD4U && hash[ 6] == 0x54U && hash[ 7] == 0xB4U &&
+                        hash[ 8] == 0x97U && hash[ 9] == 0xB4U && hash[10] == 0xFCU && hash[11] == 0xB0U &&
+                        hash[12] == 0x46U && hash[13] == 0xBAU && hash[14] == 0xB6U && hash[15] == 0xADU &&
+                        hash[16] == 0x93U && hash[17] == 0x8DU && hash[18] == 0xEBU && hash[19] == 0x7DU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x72U, 0x33U, 0x76U, 0x71U, 0x75U, 0x79U, 0x72U, 0x45U,
+                        0x39U, 0x55U, 0x53U, 0x70U, 0x68U, 0x62U, 0x43U, 0x55U,
+                        0x6DU, 0x65U, 0x4BU, 0x55U
+                    };
+                    uint8_t hash[32];
+                    ASSERT(32 == 
+                        util_sha512h((uint32_t)hash, sizeof(hash), raw, 20));
+                    ASSERT(
+                        hash[ 0] == 0xD5U && hash[ 1] == 0x6BU && hash[ 2] == 0x6BU && hash[ 3] == 0x45U &&
+                        hash[ 4] == 0x30U && hash[ 5] == 0xF0U && hash[ 6] == 0x34U && hash[ 7] == 0x76U &&
+                        hash[ 8] == 0x31U && hash[ 9] == 0x56U && hash[10] == 0x8CU && hash[11] == 0x38U &&
+                        hash[12] == 0x0CU && hash[13] == 0x1AU && hash[14] == 0xAFU && hash[15] == 0xABU &&
+                        hash[16] == 0x42U && hash[17] == 0x16U && hash[18] == 0x21U && hash[19] == 0x42U);
+                }
+
+                // Test out of bounds check
+                ASSERT(util_sha512h(1000000, 50, 0, 20) == OUT_OF_BOUNDS);
+                ASSERT(util_sha512h(0, 50, 10000000, 20) == OUT_OF_BOUNDS);
+                uint8_t raw[20] = {
+                    0x8EU, 0xADU, 0xB4U, 0xBBU, 0x71U, 0x2AU, 0x29U, 0x1BU,
+                    0x53U, 0x43U, 0xE0U, 0x03U, 0x1FU, 0x97U, 0x6BU, 0x0DU,
+                    0xA9U, 0xEDU, 0x39U, 0xC2U
+                };
+                ASSERT(util_sha512h(0, 30, raw, 20) == TOO_SMALL);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set util_sha512h"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test util_sha512h"),
+            fee(XRP(1)));
     }
+
 
     void
     test_util_verify()

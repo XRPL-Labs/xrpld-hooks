@@ -3244,7 +3244,8 @@ DEFINE_HOOK_FUNCTION(
     if (write_len < 32)
         return TOO_SMALL;
 
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length) ||
+        NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
     auto hash = ripple::sha512Half(
