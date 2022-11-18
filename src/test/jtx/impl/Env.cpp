@@ -376,9 +376,14 @@ Env::postconditions(JTx const& jt, TER ter, bool didApply)
 std::shared_ptr<STObject const>
 Env::meta()
 {
-    close();
-    auto const item = closed()->txRead(txid_);
-    return item.second;
+    auto cur = current()->txRead(txid_);
+    if (cur.second)
+        return cur.second;
+    else
+    if (cur.first)
+        close();
+
+    return closed()->txRead(txid_).second;
 }
 
 std::shared_ptr<STTx const>

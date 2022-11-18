@@ -25,6 +25,8 @@ cat SetHook_test.cpp | tr '\n' '\f' |
             WAT=`grep -Eo '\(module' <<< $line | wc -l`
             if [ "$WAT" -eq "0" ]
             then
+                echo '#include "api.h"' > /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER.c
+                tr '\f' '\n' <<< $line >> /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER.c
                 wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 
                     hook-cleaner - - 2>/dev/null |
                     xxd -p -u -c 19 | 

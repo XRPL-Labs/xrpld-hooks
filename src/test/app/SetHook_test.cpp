@@ -3731,6 +3731,127 @@ public:
     void
     test_hook_account()
     {
+        testcase("Test hook_account");
+        using namespace jtx;
+
+        
+        auto const test = [&](Account alice)->void
+        {
+            Env env{*this, supported_amendments()};
+
+            auto const bob = Account{"bob"};
+            env.fund(XRP(10000), alice);
+            env.fund(XRP(10000), bob);
+
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_account (uint32_t, uint32_t);
+                #define TOO_SMALL -4
+                #define OUT_OF_BOUNDS -1
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    uint8_t acc[20];
+
+                    // Test out of bounds check
+                    ASSERT(hook_account(1000000, 20) == OUT_OF_BOUNDS);
+                    ASSERT(hook_account((uint32_t)acc, 19) == TOO_SMALL);
+                    ASSERT(hook_account((uint32_t)acc, 20) == 20);
+
+                    // return the accid as the return string
+                    accept((uint32_t)acc, 20, 0);
+                }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set hook_account"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)),
+                M("test hook_account"),
+                fee(XRP(1)));
+
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there was only one hook execution
+                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 1);
+
+                // get the data in the return string of the extention
+                auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+
+                // check that it matches the account id
+                BEAST_EXPECT(retStr.size() == 20);
+                auto const a = alice.id();
+                BEAST_EXPECT(memcmp(retStr.data(), a.data(), 20) == 0);
+            }
+
+            // install the same hook bob
+            env(ripple::test::jtx::hook(bob, {{hso(hook, overrideFlag)}}, 0),
+                M("set hook_account 2"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)),
+                M("test hook_account 2"),
+                fee(XRP(1)));
+
+            // there should be two hook executions, the first should be bob's address
+            // the second should be alice's
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there were two hook executions
+                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 2);
+
+                {
+                    // get the data in the return string of the extention
+                    auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+
+                    // check that it matches the account id
+                    BEAST_EXPECT(retStr.size() == 20);
+                    auto const b = bob.id();
+                    BEAST_EXPECT(memcmp(retStr.data(), b.data(), 20) == 0);
+                }
+
+                {
+                    // get the data in the return string of the extention
+                    auto const retStr = hookExecutions[1].getFieldVL(sfHookReturnString);
+
+                    // check that it matches the account id
+                    BEAST_EXPECT(retStr.size() == 20);
+                    auto const a = alice.id();
+                    BEAST_EXPECT(memcmp(retStr.data(), a.data(), 20) == 0);
+                }
+
+            }
+        };
+
+        test(Account{"alice"});
+        test(Account{"cho"});
     }
 
     void
@@ -3741,6 +3862,172 @@ public:
     void
     test_hook_hash()
     {
+        testcase("Test hook_hash");
+        using namespace jtx;
+
+        
+        auto const test = [&](Account alice)->void
+        {
+            Env env{*this, supported_amendments()};
+
+            auto const bob = Account{"bob"};
+            env.fund(XRP(10000), alice);
+            env.fund(XRP(10000), bob);
+
+            TestHook
+            hook =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_hash (uint32_t, uint32_t, int32_t);
+                #define TOO_SMALL -4
+                #define OUT_OF_BOUNDS -1
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    uint8_t hash[32];
+
+                    // Test out of bounds check
+                    ASSERT(hook_hash(1000000, 32, -1) == OUT_OF_BOUNDS);
+                    ASSERT(hook_hash((uint32_t)hash, 31, -1) == TOO_SMALL);
+                    ASSERT(hook_hash((uint32_t)hash, 32, -1) == 32);
+
+                    // return the hash as the return string
+                    accept((uint32_t)hash, 32, 0);
+                }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set hook_hash"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)),
+                M("test hook_hash"),
+                fee(XRP(1)));
+
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there was only one hook execution
+                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 1);
+
+                // get the data in the return string of the extention
+                auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+
+                // check that it matches the hook hash
+                BEAST_EXPECT(retStr.size() == 32);
+                
+                auto const hash = hookExecutions[0].getFieldH256(sfHookHash);
+                BEAST_EXPECT(memcmp(hash.data(), retStr.data(), 32) == 0);
+            }
+
+            TestHook
+            hook2 =
+            wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_hash (uint32_t, uint32_t, int32_t);
+                #define TOO_SMALL -4
+                #define OUT_OF_BOUNDS -1
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,2);
+                    uint8_t hash[32];
+
+                    // Test out of bounds check
+                    ASSERT(hook_hash(1000000, 32, -1) == OUT_OF_BOUNDS);
+                    ASSERT(hook_hash((uint32_t)hash, 31, -1) == TOO_SMALL);
+                    ASSERT(hook_hash((uint32_t)hash, 32, -1) == 32);
+
+                    // return the hash as the return string
+                    accept((uint32_t)hash, 32, 0);
+                }
+            )[test.hook]"];
+
+            // install a slightly different hook on bob
+            env(ripple::test::jtx::hook(bob, {{hso(hook2, overrideFlag)}}, 0),
+                M("set hook_hash 2"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)),
+                M("test hook_hash 2"),
+                fee(XRP(1)));
+
+
+            // there should be two hook executions, the first should have bob's hook hash
+            // the second should have alice's hook hash
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there was only one hook execution
+                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 2);
+
+                // get the data in the return string of the extention
+                auto const retStr1 = hookExecutions[0].getFieldVL(sfHookReturnString);
+
+                // check that it matches the hook hash
+                BEAST_EXPECT(retStr1.size() == 32);
+                
+                auto const hash1 = hookExecutions[0].getFieldH256(sfHookHash);
+                BEAST_EXPECT(memcmp(hash1.data(), retStr1.data(), 32) == 0);
+                
+                // get the data in the return string of the extention
+                auto const retStr2 = hookExecutions[1].getFieldVL(sfHookReturnString);
+
+                // check that it matches the hook hash
+                BEAST_EXPECT(retStr2.size() == 32);
+                
+                auto const hash2 = hookExecutions[1].getFieldH256(sfHookHash);
+                BEAST_EXPECT(memcmp(hash2.data(), retStr2.data(), 32) == 0);
+
+                // make sure they're not the same
+                BEAST_EXPECT(memcmp(hash1.data(), hash2.data(), 32) != 0);
+
+                // compute the hashes
+                auto computedHash2 =
+                ripple::sha512Half_s(
+                    ripple::Slice(hook.data(), hook.size())                                                  
+                );
+
+                auto computedHash1 = 
+                ripple::sha512Half_s(
+                    ripple::Slice(hook2.data(), hook2.size())                                                  
+                );
+
+                // ensure the computed hashes match
+                BEAST_EXPECT(computedHash1 == hash1);
+                BEAST_EXPECT(computedHash2 == hash2);
+            }
+        };
+
+        test(Account{"alice"});
     }
 
     void

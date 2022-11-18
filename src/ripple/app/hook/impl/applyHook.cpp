@@ -3206,6 +3206,10 @@ DEFINE_HOOK_FUNCTION(
     uint32_t write_ptr, uint32_t ptr_len )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    
+    if (ptr_len < 20)
+        return TOO_SMALL;
+
     if (NOT_IN_BOUNDS(write_ptr, 20, memory_length))
         return OUT_OF_BOUNDS;
 
