@@ -75,7 +75,7 @@ public:
 
     // This is a large fee, large enough that we can set most small test hooks without running into fee issues
     // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
-    #define HSFEE fee(10'000'000)
+    #define HSFEE fee(100'000'000)
     #define M(m) memo(m, "", "")
     void
     testHooksDisabled()
@@ -4516,13 +4516,13 @@ public:
 
         // install the hook on alice
         env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
-            M("set hook_hash"),
+            M("set util_accid"),
             HSFEE);
         env.close();
 
         // invoke the hook
         env(pay(bob, alice, XRP(1)),
-            M("test hook_hash"),
+            M("test util_accid"),
             fee(XRP(1)));
 
     }
@@ -4535,6 +4535,458 @@ public:
     void
     test_util_raddr()
     {
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t util_raddr (uint32_t, uint32_t, uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                {
+                    uint8_t raw[20] = {
+                        0x6BU, 0x30U, 0xE2U, 0x94U, 0xF3U, 0x40U, 0x3FU, 0xF8U,
+                        0x7CU, 0xEFU, 0x9EU, 0x72U, 0x21U, 0x7FU, 0xF7U, 0xEBU,
+                        0x4AU, 0x6AU, 0x43U, 0xF4U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x77U && addr[ 2] == 0x6DU && addr[ 3] == 0x6DU &&
+                        addr[ 4] == 0x31U && addr[ 5] == 0x33U && addr[ 6] == 0x70U && addr[ 7] == 0x37U &&
+                        addr[ 8] == 0x56U && addr[ 9] == 0x67U && addr[10] == 0x36U && addr[11] == 0x4BU &&
+                        addr[12] == 0x6DU && addr[13] == 0x6EU && addr[14] == 0x71U && addr[15] == 0x4BU &&
+                        addr[16] == 0x52U && addr[17] == 0x77U && addr[18] == 0x44U && addr[19] == 0x7AU &&
+                        addr[20] == 0x78U && addr[21] == 0x76U && addr[22] == 0x69U && addr[23] == 0x35U &&
+                        addr[24] == 0x58U && addr[25] == 0x70U && addr[26] == 0x36U && addr[27] == 0x77U &&
+                        addr[28] == 0x6EU && addr[29] == 0x48U && addr[30] == 0x4DU && addr[31] == 0x44U &&
+                        addr[32] == 0x44U && addr[33] == 0x68U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xE4U, 0x0FU, 0xA3U, 0x4EU, 0x3EU, 0x66U, 0x15U, 0x36U,
+                        0x64U, 0x89U, 0x4FU, 0xCBU, 0xFBU, 0xFCU, 0xFEU, 0x2DU,
+                        0x2DU, 0x19U, 0x0DU, 0x69U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4DU && addr[ 2] == 0x38U && addr[ 3] == 0x31U &&
+                        addr[ 4] == 0x6FU && addr[ 5] == 0x48U && addr[ 6] == 0x77U && addr[ 7] == 0x68U &&
+                        addr[ 8] == 0x37U && addr[ 9] == 0x35U && addr[10] == 0x39U && addr[11] == 0x34U &&
+                        addr[12] == 0x6AU && addr[13] == 0x48U && addr[14] == 0x38U && addr[15] == 0x70U &&
+                        addr[16] == 0x36U && addr[17] == 0x31U && addr[18] == 0x57U && addr[19] == 0x65U &&
+                        addr[20] == 0x31U && addr[21] == 0x73U && addr[22] == 0x64U && addr[23] == 0x58U &&
+                        addr[24] == 0x46U && addr[25] == 0x42U && addr[26] == 0x35U && addr[27] == 0x48U &&
+                        addr[28] == 0x52U && addr[29] == 0x52U && addr[30] == 0x79U && addr[31] == 0x4BU &&
+                        addr[32] == 0x76U && addr[33] == 0x4AU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x0CU, 0x90U, 0x4BU, 0x4FU, 0xA5U, 0x59U, 0xBFU, 0x10U,
+                        0x6AU, 0xAEU, 0xB5U, 0x28U, 0x6CU, 0x94U, 0xBAU, 0x34U,
+                        0x18U, 0xFDU, 0xF3U, 0x53U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x70U && addr[ 2] == 0x39U && addr[ 3] == 0x52U &&
+                        addr[ 4] == 0x79U && addr[ 5] == 0x73U && addr[ 6] == 0x42U && addr[ 7] == 0x63U &&
+                        addr[ 8] == 0x55U && addr[ 9] == 0x42U && addr[10] == 0x59U && addr[11] == 0x63U &&
+                        addr[12] == 0x76U && addr[13] == 0x4AU && addr[14] == 0x4AU && addr[15] == 0x4BU &&
+                        addr[16] == 0x38U && addr[17] == 0x54U && addr[18] == 0x48U && addr[19] == 0x45U &&
+                        addr[20] == 0x79U && addr[21] == 0x6FU && addr[22] == 0x79U && addr[23] == 0x74U &&
+                        addr[24] == 0x74U && addr[25] == 0x6BU && addr[26] == 0x57U && addr[27] == 0x58U &&
+                        addr[28] == 0x39U && addr[29] == 0x4BU && addr[30] == 0x52U && addr[31] == 0x62U &&
+                        addr[32] == 0x39U && addr[33] == 0x4DU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x75U, 0x82U, 0xFBU, 0x27U, 0x10U, 0x8CU, 0x0FU, 0x9AU,
+                        0xF2U, 0x67U, 0x35U, 0xCCU, 0x7BU, 0x22U, 0x6BU, 0xD2U,
+                        0x2FU, 0xDFU, 0x4FU, 0x92U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x42U && addr[ 2] == 0x35U && addr[ 3] == 0x4CU &&
+                        addr[ 4] == 0x79U && addr[ 5] == 0x77U && addr[ 6] == 0x6BU && addr[ 7] == 0x54U &&
+                        addr[ 8] == 0x4CU && addr[ 9] == 0x31U && addr[10] == 0x34U && addr[11] == 0x51U &&
+                        addr[12] == 0x64U && addr[13] == 0x55U && addr[14] == 0x64U && addr[15] == 0x77U &&
+                        addr[16] == 0x43U && addr[17] == 0x78U && addr[18] == 0x70U && addr[19] == 0x6EU &&
+                        addr[20] == 0x65U && addr[21] == 0x46U && addr[22] == 0x32U && addr[23] == 0x7AU &&
+                        addr[24] == 0x63U && addr[25] == 0x7AU && addr[26] == 0x46U && addr[27] == 0x66U &&
+                        addr[28] == 0x44U && addr[29] == 0x7AU && addr[30] == 0x57U && addr[31] == 0x46U &&
+                        addr[32] == 0x38U && addr[33] == 0x50U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x6CU, 0xB6U, 0x51U, 0x1FU, 0x20U, 0xECU, 0xCAU, 0x1EU,
+                        0x98U, 0x03U, 0xFCU, 0xFAU, 0x6FU, 0x3EU, 0x56U, 0x75U,
+                        0x72U, 0x29U, 0x51U, 0x97U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x77U && addr[ 2] == 0x75U && addr[ 3] == 0x46U &&
+                        addr[ 4] == 0x50U && addr[ 5] == 0x4BU && addr[ 6] == 0x34U && addr[ 7] == 0x48U &&
+                        addr[ 8] == 0x51U && addr[ 9] == 0x4EU && addr[10] == 0x73U && addr[11] == 0x59U &&
+                        addr[12] == 0x42U && addr[13] == 0x47U && addr[14] == 0x74U && addr[15] == 0x46U &&
+                        addr[16] == 0x52U && addr[17] == 0x4BU && addr[18] == 0x77U && addr[19] == 0x45U &&
+                        addr[20] == 0x6DU && addr[21] == 0x75U && addr[22] == 0x41U && addr[23] == 0x68U &&
+                        addr[24] == 0x63U && addr[25] == 0x4BU && addr[26] == 0x63U && addr[27] == 0x48U &&
+                        addr[28] == 0x39U && addr[29] == 0x5AU && addr[30] == 0x32U && addr[31] == 0x59U &&
+                        addr[32] == 0x7AU && addr[33] == 0x58U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xA5U, 0x31U, 0x30U, 0x28U, 0xF9U, 0x62U, 0xE4U, 0x80U,
+                        0x48U, 0x94U, 0x3BU, 0x1AU, 0x59U, 0xBBU, 0x5EU, 0x36U,
+                        0x96U, 0xB3U, 0x44U, 0x35U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x47U && addr[ 2] == 0x68U && addr[ 3] == 0x54U &&
+                        addr[ 4] == 0x52U && addr[ 5] == 0x4AU && addr[ 6] == 0x5AU && addr[ 7] == 0x31U &&
+                        addr[ 8] == 0x56U && addr[ 9] == 0x4DU && addr[10] == 0x51U && addr[11] == 0x74U &&
+                        addr[12] == 0x36U && addr[13] == 0x6AU && addr[14] == 0x44U && addr[15] == 0x72U &&
+                        addr[16] == 0x66U && addr[17] == 0x4EU && addr[18] == 0x63U && addr[19] == 0x6FU &&
+                        addr[20] == 0x4AU && addr[21] == 0x34U && addr[22] == 0x39U && addr[23] == 0x6AU &&
+                        addr[24] == 0x34U && addr[25] == 0x43U && addr[26] == 0x67U && addr[27] == 0x71U &&
+                        addr[28] == 0x4BU && addr[29] == 0x6DU && addr[30] == 0x52U && addr[31] == 0x32U &&
+                        addr[32] == 0x6FU && addr[33] == 0x36U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xBFU, 0x04U, 0x6CU, 0x79U, 0xA0U, 0x96U, 0xDEU, 0x80U,
+                        0x66U, 0xD3U, 0x74U, 0xC8U, 0xDFU, 0x94U, 0x5FU, 0x89U,
+                        0xF2U, 0x3EU, 0x9AU, 0x27U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4AU && addr[ 2] == 0x52U && addr[ 3] == 0x72U &&
+                        addr[ 4] == 0x34U && addr[ 5] == 0x72U && addr[ 6] == 0x4CU && addr[ 7] == 0x32U &&
+                        addr[ 8] == 0x43U && addr[ 9] == 0x4AU && addr[10] == 0x48U && addr[11] == 0x67U &&
+                        addr[12] == 0x46U && addr[13] == 0x47U && addr[14] == 0x56U && addr[15] == 0x67U &&
+                        addr[16] == 0x31U && addr[17] == 0x6AU && addr[18] == 0x61U && addr[19] == 0x66U &&
+                        addr[20] == 0x39U && addr[21] == 0x4AU && addr[22] == 0x48U && addr[23] == 0x51U &&
+                        addr[24] == 0x70U && addr[25] == 0x56U && addr[26] == 0x6DU && addr[27] == 0x68U &&
+                        addr[28] == 0x76U && addr[29] == 0x45U && addr[30] == 0x37U && addr[31] == 0x68U &&
+                        addr[32] == 0x61U && addr[33] == 0x62U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xE2U, 0x07U, 0xABU, 0xD3U, 0x7DU, 0xC2U, 0xCDU, 0xD4U,
+                        0x6DU, 0x15U, 0x7BU, 0x67U, 0x5AU, 0xC8U, 0x3EU, 0x0EU,
+                        0x05U, 0x9BU, 0x08U, 0x62U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4DU && addr[ 2] == 0x63U && addr[ 3] == 0x33U &&
+                        addr[ 4] == 0x75U && addr[ 5] == 0x4DU && addr[ 6] == 0x6BU && addr[ 7] == 0x4BU &&
+                        addr[ 8] == 0x31U && addr[ 9] == 0x62U && addr[10] == 0x62U && addr[11] == 0x32U &&
+                        addr[12] == 0x64U && addr[13] == 0x4BU && addr[14] == 0x7AU && addr[15] == 0x5AU &&
+                        addr[16] == 0x64U && addr[17] == 0x56U && addr[18] == 0x71U && addr[19] == 0x35U &&
+                        addr[20] == 0x75U && addr[21] == 0x59U && addr[22] == 0x54U && addr[23] == 0x55U &&
+                        addr[24] == 0x37U && addr[25] == 0x5AU && addr[26] == 0x76U && addr[27] == 0x4EU &&
+                        addr[28] == 0x45U && addr[29] == 0x41U && addr[30] == 0x32U && addr[31] == 0x33U &&
+                        addr[32] == 0x67U && addr[33] == 0x44U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x2AU, 0x56U, 0x74U, 0x25U, 0x84U, 0x8DU, 0x41U, 0x6DU,
+                        0xF1U, 0x06U, 0x01U, 0x6CU, 0x2AU, 0xB1U, 0x13U, 0xC3U,
+                        0x1EU, 0x65U, 0x63U, 0x80U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x68U && addr[ 2] == 0x69U && addr[ 3] == 0x69U &&
+                        addr[ 4] == 0x41U && addr[ 5] == 0x78U && addr[ 6] == 0x79U && addr[ 7] == 0x59U &&
+                        addr[ 8] == 0x41U && addr[ 9] == 0x43U && addr[10] == 0x67U && addr[11] == 0x45U &&
+                        addr[12] == 0x52U && addr[13] == 0x4BU && addr[14] == 0x47U && addr[15] == 0x51U &&
+                        addr[16] == 0x4DU && addr[17] == 0x72U && addr[18] == 0x53U && addr[19] == 0x5AU &&
+                        addr[20] == 0x57U && addr[21] == 0x43U && addr[22] == 0x74U && addr[23] == 0x6BU &&
+                        addr[24] == 0x4DU && addr[25] == 0x6FU && addr[26] == 0x69U && addr[27] == 0x58U &&
+                        addr[28] == 0x48U && addr[29] == 0x34U && addr[30] == 0x64U && addr[31] == 0x48U &&
+                        addr[32] == 0x6EU && addr[33] == 0x6FU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x24U, 0xBBU, 0xA9U, 0xC3U, 0x95U, 0x74U, 0x9AU, 0x88U,
+                        0x04U, 0x12U, 0xC0U, 0x91U, 0xE7U, 0x13U, 0x41U, 0x7FU,
+                        0x9AU, 0xD5U, 0x74U, 0x43U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x68U && addr[ 2] == 0x4DU && addr[ 3] == 0x4EU &&
+                        addr[ 4] == 0x33U && addr[ 5] == 0x79U && addr[ 6] == 0x4EU && addr[ 7] == 0x50U &&
+                        addr[ 8] == 0x4EU && addr[ 9] == 0x74U && addr[10] == 0x4BU && addr[11] == 0x70U &&
+                        addr[12] == 0x78U && addr[13] == 0x6BU && addr[14] == 0x71U && addr[15] == 0x4CU &&
+                        addr[16] == 0x78U && addr[17] == 0x51U && addr[18] == 0x32U && addr[19] == 0x63U &&
+                        addr[20] == 0x33U && addr[21] == 0x55U && addr[22] == 0x68U && addr[23] == 0x6FU &&
+                        addr[24] == 0x41U && addr[25] == 0x7AU && addr[26] == 0x66U && addr[27] == 0x75U &&
+                        addr[28] == 0x59U && addr[29] == 0x35U && addr[30] == 0x75U && addr[31] == 0x35U &&
+                        addr[32] == 0x4AU && addr[33] == 0x7AU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x49U, 0x53U, 0x9EU, 0x65U, 0x21U, 0x8AU, 0xCFU, 0x37U,
+                        0x85U, 0x2BU, 0xFFU, 0x87U, 0x14U, 0x76U, 0xDAU, 0x1AU,
+                        0x62U, 0x3AU, 0xEAU, 0x80U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x66U && addr[ 2] == 0x67U && addr[ 3] == 0x35U &&
+                        addr[ 4] == 0x56U && addr[ 5] == 0x41U && addr[ 6] == 0x44U && addr[ 7] == 0x41U &&
+                        addr[ 8] == 0x4DU && addr[ 9] == 0x4DU && addr[10] == 0x42U && addr[11] == 0x78U &&
+                        addr[12] == 0x46U && addr[13] == 0x51U && addr[14] == 0x76U && addr[15] == 0x44U &&
+                        addr[16] == 0x78U && addr[17] == 0x5AU && addr[18] == 0x54U && addr[19] == 0x32U &&
+                        addr[20] == 0x52U && addr[21] == 0x6AU && addr[22] == 0x55U && addr[23] == 0x64U &&
+                        addr[24] == 0x47U && addr[25] == 0x69U && addr[26] == 0x64U && addr[27] == 0x59U &&
+                        addr[28] == 0x61U && addr[29] == 0x35U && addr[30] == 0x76U && addr[31] == 0x69U &&
+                        addr[32] == 0x37U && addr[33] == 0x5AU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xE7U, 0xD3U, 0x03U, 0xBCU, 0xAEU, 0xBDU, 0x62U, 0x20U,
+                        0xAEU, 0xC2U, 0xE1U, 0x7EU, 0x0BU, 0xFFU, 0xDCU, 0x21U,
+                        0x24U, 0x34U, 0x50U, 0x82U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x34U && addr[ 2] == 0x33U && addr[ 3] == 0x6DU &&
+                        addr[ 4] == 0x31U && addr[ 5] == 0x31U && addr[ 6] == 0x66U && addr[ 7] == 0x74U &&
+                        addr[ 8] == 0x36U && addr[ 9] == 0x79U && addr[10] == 0x6FU && addr[11] == 0x50U &&
+                        addr[12] == 0x69U && addr[13] == 0x6DU && addr[14] == 0x36U && addr[15] == 0x56U &&
+                        addr[16] == 0x44U && addr[17] == 0x78U && addr[18] == 0x64U && addr[19] == 0x55U &&
+                        addr[20] == 0x76U && addr[21] == 0x63U && addr[22] == 0x46U && addr[23] == 0x77U &&
+                        addr[24] == 0x36U && addr[25] == 0x57U && addr[26] == 0x38U && addr[27] == 0x41U &&
+                        addr[28] == 0x77U && addr[29] == 0x78U && addr[30] == 0x78U && addr[31] == 0x4BU &&
+                        addr[32] == 0x35U && addr[33] == 0x58U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xC3U, 0xE1U, 0x5FU, 0xABU, 0xC0U, 0x0AU, 0x79U, 0x73U,
+                        0x71U, 0xD0U, 0x55U, 0xC0U, 0x80U, 0x79U, 0xAEU, 0x45U,
+                        0x71U, 0x0FU, 0xA0U, 0x97U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4AU && addr[ 2] == 0x69U && addr[ 3] == 0x35U &&
+                        addr[ 4] == 0x6BU && addr[ 5] == 0x65U && addr[ 6] == 0x58U && addr[ 7] == 0x79U &&
+                        addr[ 8] == 0x33U && addr[ 9] == 0x31U && addr[10] == 0x4AU && addr[11] == 0x31U &&
+                        addr[12] == 0x34U && addr[13] == 0x52U && addr[14] == 0x4BU && addr[15] == 0x73U &&
+                        addr[16] == 0x4EU && addr[17] == 0x59U && addr[18] == 0x41U && addr[19] == 0x46U &&
+                        addr[20] == 0x31U && addr[21] == 0x51U && addr[22] == 0x36U && addr[23] == 0x6AU &&
+                        addr[24] == 0x4DU && addr[25] == 0x56U && addr[26] == 0x69U && addr[27] == 0x45U &&
+                        addr[28] == 0x52U && addr[29] == 0x55U && addr[30] == 0x51U && addr[31] == 0x71U &&
+                        addr[32] == 0x59U && addr[33] == 0x36U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x95U, 0x15U, 0x7FU, 0x2AU, 0xAFU, 0xE3U, 0x2FU, 0x7FU,
+                        0x2EU, 0xF1U, 0xA0U, 0xF5U, 0xEAU, 0xC3U, 0x07U, 0x06U,
+                        0xA1U, 0xD3U, 0xF5U, 0xD9U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4EU && addr[ 2] == 0x62U && addr[ 3] == 0x48U &&
+                        addr[ 4] == 0x53U && addr[ 5] == 0x55U && addr[ 6] == 0x6DU && addr[ 7] == 0x66U &&
+                        addr[ 8] == 0x4BU && addr[ 9] == 0x61U && addr[10] == 0x34U && addr[11] == 0x71U &&
+                        addr[12] == 0x31U && addr[13] == 0x51U && addr[14] == 0x78U && addr[15] == 0x44U &&
+                        addr[16] == 0x45U && addr[17] == 0x5AU && addr[18] == 0x4CU && addr[19] == 0x6EU &&
+                        addr[20] == 0x54U && addr[21] == 0x67U && addr[22] == 0x46U && addr[23] == 0x56U &&
+                        addr[24] == 0x45U && addr[25] == 0x4CU && addr[26] == 0x78U && addr[27] == 0x39U &&
+                        addr[28] == 0x6DU && addr[29] == 0x57U && addr[30] == 0x45U && addr[31] == 0x43U &&
+                        addr[32] == 0x6BU && addr[33] == 0x41U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xF0U, 0xECU, 0x0FU, 0x86U, 0x31U, 0xBBU, 0x2CU, 0xBFU,
+                        0x8FU, 0xB7U, 0xE3U, 0x1CU, 0x82U, 0xA0U, 0xA3U, 0x50U,
+                        0xD5U, 0xE0U, 0xFEU, 0x6BU
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x34U && addr[ 2] == 0x78U && addr[ 3] == 0x31U &&
+                        addr[ 4] == 0x78U && addr[ 5] == 0x46U && addr[ 6] == 0x32U && addr[ 7] == 0x42U &&
+                        addr[ 8] == 0x47U && addr[ 9] == 0x73U && addr[10] == 0x42U && addr[11] == 0x41U &&
+                        addr[12] == 0x7AU && addr[13] == 0x77U && addr[14] == 0x77U && addr[15] == 0x61U &&
+                        addr[16] == 0x4BU && addr[17] == 0x61U && addr[18] == 0x70U && addr[19] == 0x4BU &&
+                        addr[20] == 0x6FU && addr[21] == 0x6FU && addr[22] == 0x35U && addr[23] == 0x57U &&
+                        addr[24] == 0x65U && addr[25] == 0x31U && addr[26] == 0x59U && addr[27] == 0x53U &&
+                        addr[28] == 0x6EU && addr[29] == 0x52U && addr[30] == 0x50U && addr[31] == 0x57U &&
+                        addr[32] == 0x75U && addr[33] == 0x39U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x8DU, 0xA4U, 0x7DU, 0xABU, 0xD1U, 0x19U, 0xDCU, 0xC4U,
+                        0x45U, 0x5FU, 0xAAU, 0xE2U, 0x1CU, 0x39U, 0xCAU, 0x19U,
+                        0x34U, 0xF1U, 0x86U, 0x16U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x44U && addr[ 2] == 0x75U && addr[ 3] == 0x41U &&
+                        addr[ 4] == 0x4CU && addr[ 5] == 0x6EU && addr[ 6] == 0x52U && addr[ 7] == 0x79U &&
+                        addr[ 8] == 0x76U && addr[ 9] == 0x77U && addr[10] == 0x38U && addr[11] == 0x36U &&
+                        addr[12] == 0x43U && addr[13] == 0x63U && addr[14] == 0x55U && addr[15] == 0x5AU &&
+                        addr[16] == 0x39U && addr[17] == 0x74U && addr[18] == 0x52U && addr[19] == 0x55U &&
+                        addr[20] == 0x45U && addr[21] == 0x6DU && addr[22] == 0x35U && addr[23] == 0x43U &&
+                        addr[24] == 0x61U && addr[25] == 0x65U && addr[26] == 0x50U && addr[27] == 0x46U &&
+                        addr[28] == 0x66U && addr[29] == 0x33U && addr[30] == 0x74U && addr[31] == 0x36U &&
+                        addr[32] == 0x61U && addr[33] == 0x31U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xA9U, 0x94U, 0x5AU, 0xE3U, 0x5AU, 0x43U, 0xADU, 0xBEU,
+                        0xBAU, 0xA4U, 0x13U, 0x94U, 0xF5U, 0xDCU, 0x8FU, 0x3BU,
+                        0x01U, 0x14U, 0xFFU, 0xFEU
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x47U && addr[ 2] == 0x54U && addr[ 3] == 0x65U &&
+                        addr[ 4] == 0x76U && addr[ 5] == 0x4AU && addr[ 6] == 0x71U && addr[ 7] == 0x76U &&
+                        addr[ 8] == 0x6BU && addr[ 9] == 0x5AU && addr[10] == 0x76U && addr[11] == 0x48U &&
+                        addr[12] == 0x73U && addr[13] == 0x58U && addr[14] == 0x5AU && addr[15] == 0x71U &&
+                        addr[16] == 0x55U && addr[17] == 0x78U && addr[18] == 0x43U && addr[19] == 0x48U &&
+                        addr[20] == 0x4CU && addr[21] == 0x68U && addr[22] == 0x73U && addr[23] == 0x43U &&
+                        addr[24] == 0x53U && addr[25] == 0x38U && addr[26] == 0x57U && addr[27] == 0x68U &&
+                        addr[28] == 0x79U && addr[29] == 0x4DU && addr[30] == 0x74U && addr[31] == 0x7AU &&
+                        addr[32] == 0x6EU && addr[33] == 0x5AU);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xC1U, 0xE6U, 0x7FU, 0x17U, 0xD3U, 0x00U, 0x9BU, 0x80U,
+                        0x6CU, 0x85U, 0x74U, 0x9CU, 0x80U, 0x40U, 0xAFU, 0x64U,
+                        0xCEU, 0x09U, 0x7EU, 0x2EU
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4AU && addr[ 2] == 0x67U && addr[ 3] == 0x45U &&
+                        addr[ 4] == 0x59U && addr[ 5] == 0x55U && addr[ 6] == 0x37U && addr[ 7] == 0x36U &&
+                        addr[ 8] == 0x45U && addr[ 9] == 0x55U && addr[10] == 0x34U && addr[11] == 0x59U &&
+                        addr[12] == 0x41U && addr[13] == 0x5AU && addr[14] == 0x41U && addr[15] == 0x44U &&
+                        addr[16] == 0x79U && addr[17] == 0x61U && addr[18] == 0x37U && addr[19] == 0x6BU &&
+                        addr[20] == 0x37U && addr[21] == 0x62U && addr[22] == 0x71U && addr[23] == 0x38U &&
+                        addr[24] == 0x4EU && addr[25] == 0x76U && addr[26] == 0x64U && addr[27] == 0x65U &&
+                        addr[28] == 0x4BU && addr[29] == 0x41U && addr[30] == 0x48U && addr[31] == 0x69U &&
+                        addr[32] == 0x32U && addr[33] == 0x50U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0xD8U, 0x74U, 0xCFU, 0x61U, 0x0DU, 0x97U, 0xE4U, 0xABU,
+                        0x76U, 0xA0U, 0x70U, 0x60U, 0xB7U, 0xC5U, 0x9CU, 0x9AU,
+                        0x88U, 0x86U, 0x62U, 0xAAU
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4CU && addr[ 2] == 0x6AU && addr[ 3] == 0x57U &&
+                        addr[ 4] == 0x74U && addr[ 5] == 0x59U && addr[ 6] == 0x52U && addr[ 7] == 0x61U &&
+                        addr[ 8] == 0x6EU && addr[ 9] == 0x61U && addr[10] == 0x6BU && addr[11] == 0x33U &&
+                        addr[12] == 0x74U && addr[13] == 0x52U && addr[14] == 0x43U && addr[15] == 0x5AU &&
+                        addr[16] == 0x42U && addr[17] == 0x69U && addr[18] == 0x61U && addr[19] == 0x38U &&
+                        addr[20] == 0x64U && addr[21] == 0x33U && addr[22] == 0x70U && addr[23] == 0x7AU &&
+                        addr[24] == 0x78U && addr[25] == 0x6BU && addr[26] == 0x6EU && addr[27] == 0x63U &&
+                        addr[28] == 0x73U && addr[29] == 0x7AU && addr[30] == 0x6FU && addr[31] == 0x33U &&
+                        addr[32] == 0x33U && addr[33] == 0x38U);
+                }
+                {
+                    uint8_t raw[20] = {
+                        0x8EU, 0xADU, 0xB4U, 0xBBU, 0x71U, 0x2AU, 0x29U, 0x1BU,
+                        0x53U, 0x43U, 0xE0U, 0x03U, 0x1FU, 0x97U, 0x6BU, 0x0DU,
+                        0xA9U, 0xEDU, 0x39U, 0xC2U
+                    };
+                    uint8_t addr[50];
+                    ASSERT(34 == 
+                        util_raddr((uint32_t)addr, sizeof(addr), raw, 20));
+                    ASSERT(
+                        addr[ 0] == 0x72U && addr[ 1] == 0x4EU && addr[ 2] == 0x72U && addr[ 3] == 0x52U &&
+                        addr[ 4] == 0x73U && addr[ 5] == 0x59U && addr[ 6] == 0x57U && addr[ 7] == 0x69U &&
+                        addr[ 8] == 0x4AU && addr[ 9] == 0x53U && addr[10] == 0x64U && addr[11] == 0x39U &&
+                        addr[12] == 0x47U && addr[13] == 0x4AU && addr[14] == 0x50U && addr[15] == 0x50U &&
+                        addr[16] == 0x36U && addr[17] == 0x51U && addr[18] == 0x71U && addr[19] == 0x33U &&
+                        addr[20] == 0x4AU && addr[21] == 0x61U && addr[22] == 0x44U && addr[23] == 0x43U &&
+                        addr[24] == 0x37U && addr[25] == 0x53U && addr[26] == 0x48U && addr[27] == 0x61U &&
+                        addr[28] == 0x57U && addr[29] == 0x66U && addr[30] == 0x68U && addr[31] == 0x32U &&
+                        addr[32] == 0x33U && addr[33] == 0x4BU);
+                }                
+
+                // Test out of bounds check
+                ASSERT(util_raddr(1000000, 50, 0, 20) == OUT_OF_BOUNDS);
+                ASSERT(util_raddr(0, 50, 10000000, 20) == OUT_OF_BOUNDS);
+                uint8_t raw[20] = {
+                    0x8EU, 0xADU, 0xB4U, 0xBBU, 0x71U, 0x2AU, 0x29U, 0x1BU,
+                    0x53U, 0x43U, 0xE0U, 0x03U, 0x1FU, 0x97U, 0x6BU, 0x0DU,
+                    0xA9U, 0xEDU, 0x39U, 0xC2U
+                };
+                ASSERT(util_raddr(0, 30, raw, 20) == TOO_SMALL);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set util_raddr"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test util_raddr"),
+            fee(XRP(1)));
+
     }
 
     void
