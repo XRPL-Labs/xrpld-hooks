@@ -4188,6 +4188,189 @@ public:
     void
     test_sto_emplace()
     {
+        testcase("Test sto_emplace");
+        using namespace jtx;
+        
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t sto_emplace (
+                uint32_t write_ptr, uint32_t write_len,                                                                            
+                uint32_t sread_ptr, uint32_t sread_len,                                                                            
+                uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id );
+            #define TOO_SMALL -4
+            #define TOO_BIG -3
+            #define OUT_OF_BOUNDS -1
+            #define MEM_OVERLAP -43
+            #define PARSE_ERROR -18
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            
+            uint8_t sto[] =
+            {
+                0x11U,0x00U,0x61U,0x22U,0x00U,0x00U,0x00U,0x00U,0x24U,0x04U,0x1FU,0x94U,0xD9U,0x25U,0x04U,0x5EU,
+                0x84U,0xB7U,0x2DU,0x00U,0x00U,0x00U,0x00U,0x55U,0x13U,0x40U,0xB3U,0x25U,0x86U,0x31U,0x96U,0xB5U,
+                0x6FU,0x41U,0xF5U,0x89U,0xEBU,0x7DU,0x2FU,0xD9U,0x4CU,0x0DU,0x7DU,0xB8U,0x0EU,0x4BU,0x2CU,0x67U,
+                0xA7U,0x78U,0x2AU,0xD6U,0xC2U,0xB0U,0x77U,0x50U,0x62U,0x40U,0x00U,0x00U,0x00U,0x00U,0xA4U,0x79U,
+                0x94U,0x81U,0x14U,0x37U,0xDFU,0x44U,0x07U,0xE7U,0xAAU,0x07U,0xF1U,0xD5U,0xC9U,0x91U,0xF2U,0xD3U,
+                0x6FU,0x9EU,0xB8U,0xC7U,0x34U,0xAFU,0x6CU
+            };
+
+            uint8_t ins[] =
+            {
+                0x56U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U
+            };
+                    
+            uint8_t ans[] = {
+                0x11U,0x00U,0x61U,0x22U,0x00U,0x00U,0x00U,0x00U,0x24U,0x04U,0x1FU,0x94U,0xD9U,0x25U,0x04U,
+                0x5EU,0x84U,0xB7U,0x2DU,0x00U,0x00U,0x00U,0x00U,0x55U,0x13U,0x40U,0xB3U,0x25U,0x86U,0x31U,
+                0x96U,0xB5U,0x6FU,0x41U,0xF5U,0x89U,0xEBU,0x7DU,0x2FU,0xD9U,0x4CU,0x0DU,0x7DU,0xB8U,0x0EU,
+                0x4BU,0x2CU,0x67U,0xA7U,0x78U,0x2AU,0xD6U,0xC2U,0xB0U,0x77U,0x50U,0x56U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x62U,
+                0x40U,0x00U,0x00U,0x00U,0x00U,0xA4U,0x79U,0x94U,0x81U,0x14U,0x37U,0xDFU,0x44U,0x07U,0xE7U,
+                0xAAU,0x07U,0xF1U,0xD5U,0xC9U,0x91U,0xF2U,0xD3U,0x6FU,0x9EU,0xB8U,0xC7U,0x34U,0xAFU,0x6CU
+            };
+
+            uint8_t ans2[] = 
+            {
+                0x11U,0x00U,0x61U,0x22U,0x00U,0x00U,0x00U,0x00U,0x24U,0x04U,0x1FU,0x94U,0xD9U,0x25U,0x04U,
+                0x5EU,0x84U,0xB7U,0x2DU,0x00U,0x00U,0x00U,0x00U,0x54U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,
+                0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x11U,0x55U,0x13U,0x40U,0xB3U,
+                0x25U,0x86U,0x31U,0x96U,0xB5U,0x6FU,0x41U,0xF5U,0x89U,0xEBU,0x7DU,0x2FU,0xD9U,0x4CU,0x0DU,
+                0x7DU,0xB8U,0x0EU,0x4BU,0x2CU,0x67U,0xA7U,0x78U,0x2AU,0xD6U,0xC2U,0xB0U,0x77U,0x50U,0x62U,
+                0x40U,0x00U,0x00U,0x00U,0x00U,0xA4U,0x79U,0x94U,0x81U,0x14U,0x37U,0xDFU,0x44U,0x07U,0xE7U,
+                0xAAU,0x07U,0xF1U,0xD5U,0xC9U,0x91U,0xF2U,0xD3U,0x6FU,0x9EU,0xB8U,0xC7U,0x34U,0xAFU,0x6CU
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(sto_emplace(1000000, 32, 0, 32, 32, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_emplace(0, 1000000, 0, 32, 32, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_emplace(0, 32, 1000000, 32, 32, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_emplace(0, 32, 64, 1000000, 32, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_emplace(0, 32, 64, 32, 1000000, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_emplace(0, 32, 64, 32, 0, 1000000, 1) == OUT_OF_BOUNDS);
+
+                
+                // Test size check
+                {
+                    // write buffer too small
+                    ASSERT(sto_emplace(0,1, 0,2, 0,2, 1) == TOO_SMALL);
+                    // src buffer too small
+                    ASSERT(sto_emplace(0,3, 0,1, 0,2, 1) == TOO_SMALL);
+                    // field buffer too small
+                    ASSERT(sto_emplace(0,3, 0,2, 0,1, 1) == TOO_SMALL);
+                    // field buffer too big
+                    ASSERT(sto_emplace(0, 32000, 0, 1, 0, 5000, 1) == TOO_BIG);
+                    // src buffer too big
+                    ASSERT(sto_emplace(0, 32000, 0, 17000, 0, 4000, 1) == TOO_BIG);
+                }
+
+
+                uint8_t buf[1024];
+
+                // Test overlapping memory
+                ASSERT(sto_emplace(buf, 1024, buf+1, 512, 0, 32, 1) == MEM_OVERLAP);
+                ASSERT(sto_emplace(buf+1, 1024, buf, 512, 0, 32, 1) == MEM_OVERLAP);
+                ASSERT(sto_emplace(0, 700, buf, 512, buf+1, 32, 1) == MEM_OVERLAP);
+
+                // insert ledger index 561111111111111111111111111111111111111111111111111111111111111111
+
+                {
+
+                    ASSERT(sto_emplace(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto),
+                                ins, sizeof(ins), 56U) == 
+                            sizeof(sto) + sizeof(ins));
+                    
+                    for (int i = 0; GUARD(200),  i < sizeof(ans);  ++i)
+                        ASSERT(ans[i] == buf[i]);
+
+                    // flip it to 54 and check it is installed before 
+                    ins[0] = 0x54U;
+                    ASSERT(sto_emplace(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto),
+                                ins, sizeof(ins), 54U) == 
+                            sizeof(sto) + sizeof(ins));
+
+                    
+                    for (int i = 0; GUARD(200),  i < sizeof(ans2);  ++i)
+                        ASSERT(ans2[i] == buf[i]);
+                    
+                }
+
+                // test front insertion
+                {
+                    uint8_t sto[] = {0x22U,0x00U,0x00U,0x00U,0x00U};
+                    uint8_t ins[] = {0x11U,0x11U,0x11U};
+                
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 11U) == 
+                            sizeof(sto) + sizeof(ins));
+                    uint8_t ans[] = {0x11U,0x11U,0x11U,0x22U,0x00U,0x00U,0x00U,0x00U};
+                    for (int i = 0; GUARD(10),  i < sizeof(ans);  ++i)
+                        ASSERT(ans[i] == buf[i]);
+                }
+                
+                // test back insertion
+                {
+                    uint8_t sto[] = {0x22U,0x00U,0x00U,0x00U,0x00U};
+                    uint8_t ins[] = {0x31U,0x11U,0x11U,0x11U,0x11U,0x12U,0x22U,0x22U,0x22U};
+                
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 31U) == 
+                            sizeof(sto) + sizeof(ins));
+                    uint8_t ans[] = {0x22U,0x00U,0x00U,0x00U,0x00U,0x31U,0x11U,0x11U,0x11U,0x11U,0x12U,0x22U,0x22U,
+                                     0x22U};
+                    for (int i = 0; GUARD(20),  i < sizeof(ans);  ++i)
+                        ASSERT(ans[i] == buf[i]);
+
+                    // test replacement
+
+                    uint8_t rep[] = {0x22U,0x10U,0x20U,0x30U,0x40U};
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 22U) == 
+                            sizeof(sto) + sizeof(ins));
+
+                    for (int i = 0; GUARD(20),  i < sizeof(rep);  ++i)
+                        ASSERT(rep[i] == buf[i]);
+                }
+
+                // return the hash as the return string
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set sto_emplace"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test sto_emplace"),
+            fee(XRP(1)));
     }
 
     void

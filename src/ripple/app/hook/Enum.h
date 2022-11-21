@@ -221,6 +221,7 @@ namespace hook_api
         DOES_NOT_MATCH = -40,           // two keylets were required to be the same type but werent
         INVALID_KEY = -41,              // user supplied key was not valid
         NOT_A_STRING = -42,             // nul terminator missing from a string argument
+        MEM_OVERLAP  = -43,             // one or more specified buffers are the same memory
     };
 
     enum ExitType : uint8_t

@@ -3575,6 +3575,51 @@ DEFINE_HOOK_FUNCTION(
         memory, memory_length);
 }
 
+/**
+ * Check if any of the integer intervals overlap
+ * [a,b,  c,d, ... ] ::== {a-b}, {c-d}, ...
+ * TODO: naive implementation consider revising if
+ * will be called with > 4 regions
+ */
+inline
+bool
+overlapping_memory(std::vector<uint64_t> regions)
+{
+    for (uint64_t i = 0; i < regions.size(); i+= 2)
+    {
+        uint64_t a = regions[i + 0];
+        uint64_t b = regions[i + 1];
+
+        for (uint64_t j = 0; j < regions.size(); j+= 2)
+        {
+            if (j == i)
+                continue;
+
+            uint64_t c = regions[j + 0];
+            uint64_t d = regions[j + 1];
+
+            // only valid ways not to overlap are
+            //
+            // |===|  |===|
+            // a   b  c   d
+            //
+            //      or
+            // |===|  |===|
+            // c   d  a   b
+
+            if (d <= a || b <= c)
+            {
+                // no collision
+                continue;
+            }
+        
+            return true;
+        }
+    }
+
+    return false;
+}
+
 
 /**
  * Inject a field into an sto if there is sufficient space
@@ -3609,6 +3654,19 @@ DEFINE_HOOK_FUNCTION(
 
     if (fread_len > 4096)
         return TOO_BIG;
+
+    if (fread_len < 2)
+        return TOO_SMALL;
+
+    if (sread_len < 2)
+        return TOO_SMALL;
+
+    // check for buffer overlaps
+    if (overlapping_memory({
+        write_ptr, write_ptr + write_len,
+        sread_ptr, sread_ptr + sread_len,
+        fread_ptr, fread_ptr + fread_len}))
+        return MEM_OVERLAP;
 
     // we must inject the field at the canonical location....
     // so find that location
@@ -3645,6 +3703,12 @@ DEFINE_HOOK_FUNCTION(
         upto += length;
     }
 
+    // if the scan loop ends past the end of the source object
+    // then the source object is invalid/corrupt, so we must
+    // return an error
+    if (upto > end)
+        return PARSE_ERROR;
+
     // upto is injection point
     int64_t bytes_written = 0;
 
@@ -3664,8 +3728,6 @@ DEFINE_HOOK_FUNCTION(
         (write_ptr + bytes_written), (write_len - bytes_written),
         memory + fread_ptr, fread_len,
         memory, memory_length);
-
-
 
     // part 2
     if (end - inject_end > 0)
