@@ -302,8 +302,8 @@ check_guard(
                 ADVANCE(1);
                 uint64_t call_func_idx = LEB();     // the function being called *must* be the _g function
 
-                printf("iteration_bound: %d, call_func_idx: %ld, guard_func_idx: %d\n",
-                        iteration_bound, call_func_idx, guard_func_idx);
+                //printf("iteration_bound: %d, call_func_idx: %ld, guard_func_idx: %d\n",
+                //        iteration_bound, call_func_idx, guard_func_idx);
 
                 if (iteration_bound == 0)
                     GUARD_ERROR("Guard call cannot specify 0 maxiter.");

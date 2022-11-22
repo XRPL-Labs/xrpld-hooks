@@ -4210,6 +4210,7 @@ public:
                 uint32_t write_ptr, uint32_t write_len,                                                                            
                 uint32_t sread_ptr, uint32_t sread_len,                                                                            
                 uint32_t fread_ptr, uint32_t fread_len, uint32_t field_id );
+            extern int64_t trace_num(uint32_t, uint32_t, int64_t);
             #define TOO_SMALL -4
             #define TOO_BIG -3
             #define OUT_OF_BOUNDS -1
@@ -4282,9 +4283,9 @@ public:
                     // field buffer too small
                     ASSERT(sto_emplace(0,3, 0,2, 0,1, 1) == TOO_SMALL);
                     // field buffer too big
-                    ASSERT(sto_emplace(0, 32000, 0, 1, 0, 5000, 1) == TOO_BIG);
+                    ASSERT(sto_emplace(6000, 32000, 0, 5, 5, 6000, 1) == TOO_BIG);
                     // src buffer too big
-                    ASSERT(sto_emplace(0, 32000, 0, 17000, 0, 4000, 1) == TOO_BIG);
+                    ASSERT(sto_emplace(0, 32000, 32000, 17000, 49000, 4000, 1) == TOO_BIG);
                 }
 
 
@@ -4366,7 +4367,6 @@ public:
                         
                 }
 
-                // return the hash as the return string
                 accept(0,0,0);
             }
         )[test.hook]"];
@@ -4386,6 +4386,142 @@ public:
     void
     test_sto_erase()
     {
+        testcase("Test sto_erase");
+        using namespace jtx;
+        
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t sto_erase (
+                uint32_t write_ptr, uint32_t write_len,                                                                            
+                uint32_t sread_ptr, uint32_t sread_len,                                                                            
+                uint32_t field_id );
+            #define TOO_SMALL -4
+            #define TOO_BIG -3
+            #define OUT_OF_BOUNDS -1
+            #define MEM_OVERLAP -43
+            #define PARSE_ERROR -18
+            #define DOESNT_EXIST -5
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            
+            uint8_t sto[] =
+            {
+                0x11U,0x00U,0x61U,0x22U,0x00U,0x00U,0x00U,0x00U,0x24U,0x04U,0x1FU,0x94U,0xD9U,0x25U,0x04U,0x5EU,
+                0x84U,0xB7U,0x2DU,0x00U,0x00U,0x00U,0x00U,0x55U,0x13U,0x40U,0xB3U,0x25U,0x86U,0x31U,0x96U,0xB5U,
+                0x6FU,0x41U,0xF5U,0x89U,0xEBU,0x7DU,0x2FU,0xD9U,0x4CU,0x0DU,0x7DU,0xB8U,0x0EU,0x4BU,0x2CU,0x67U,
+                0xA7U,0x78U,0x2AU,0xD6U,0xC2U,0xB0U,0x77U,0x50U,0x62U,0x40U,0x00U,0x00U,0x00U,0x00U,0xA4U,0x79U,
+                0x94U,0x81U,0x14U,0x37U,0xDFU,0x44U,0x07U,0xE7U,0xAAU,0x07U,0xF1U,0xD5U,0xC9U,0x91U,0xF2U,0xD3U,
+                0x6FU,0x9EU,0xB8U,0xC7U,0x34U,0xAFU,0x6CU
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(sto_erase(1000000, 32, 0, 32,  1) == OUT_OF_BOUNDS);
+                ASSERT(sto_erase(0, 1000000, 0, 32,  1)  == OUT_OF_BOUNDS);
+                ASSERT(sto_erase(0, 32, 1000000, 32,  1) == OUT_OF_BOUNDS);
+                ASSERT(sto_erase(0, 32, 64, 1000000,  1) == OUT_OF_BOUNDS);
+
+                
+                // Test size check
+                {
+                    // write buffer too small
+                    ASSERT(sto_erase(0,1, 0,2, 1) == TOO_SMALL);
+                    ASSERT(sto_erase(0, 32000, 0, 17000,  1) == TOO_BIG);
+                }
+
+
+                uint8_t buf[1024];
+
+                // Test overlapping memory
+                ASSERT(sto_erase(buf, 1024, buf+1, 512, 1) == MEM_OVERLAP);
+                ASSERT(sto_erase(buf+1, 1024, buf, 512, 1) == MEM_OVERLAP);
+
+
+                // erase field 22
+                {
+                    ASSERT(sto_erase(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto), 0x20002U) == 
+                            sizeof(sto) - 5);
+                    
+                    ASSERT(buf[0] == sto[0] && buf[1] == sto[1] && buf[2] == sto[2]);
+                    for (int i = 3; GUARD(sizeof(sto) + 1),  i < sizeof(sto) - 5;  ++i)
+                        ASSERT(sto[i+5] == buf[i]);
+                }
+                
+                // test front erasure
+                {
+                    ASSERT(sto_erase(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto), 0x10001U) == 
+                            sizeof(sto) - 3);
+                    
+                    for (int i = 3; GUARD(sizeof(sto) + 1),  i < sizeof(sto) - 3;  ++i)
+                        ASSERT(sto[i] == buf[i-3]);
+                }
+
+                // test back erasure
+                {
+                    ASSERT(sto_erase(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto), 0x80001U) == 
+                            sizeof(sto) - 22);
+                    
+                    for (int i = 0; GUARD(sizeof(sto) - 21),  i < sizeof(sto)-22;  ++i)
+                        ASSERT(sto[i] == buf[i]);
+                }
+
+                // test not found
+                {
+                    ASSERT(sto_erase(
+                                buf, sizeof(buf),
+                                sto, sizeof(sto), 0x80002U) == 
+                            DOESNT_EXIST);
+                    
+                    for (int i = 0; GUARD(sizeof(sto) +1),  i < sizeof(sto);  ++i)
+                        ASSERT(sto[i] == buf[i]);
+                }
+
+                // test total erasure
+                {
+                    uint8_t rep[] = {0x22U,0x10U,0x20U,0x30U,0x40U};
+                    ASSERT(sto_erase(buf, sizeof(buf), rep, sizeof(rep), 0x20002U) == 
+                            0);
+                        
+                }
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set sto_erase"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test sto_erase"),
+            fee(XRP(1)));
     }
 
     void
@@ -4401,6 +4537,88 @@ public:
     void
     test_sto_validate()
     {
+        testcase("Test sto_validate");
+        using namespace jtx;
+        
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t sto_validate (
+                uint32_t read_ptr, uint32_t read_len);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            
+            uint8_t sto[] =
+            {
+                0x11U,0x00U,0x61U,0x22U,0x00U,0x00U,0x00U,0x00U,0x24U,0x04U,0x1FU,0x94U,0xD9U,0x25U,0x04U,0x5EU,
+                0x84U,0xB7U,0x2DU,0x00U,0x00U,0x00U,0x00U,0x55U,0x13U,0x40U,0xB3U,0x25U,0x86U,0x31U,0x96U,0xB5U,
+                0x6FU,0x41U,0xF5U,0x89U,0xEBU,0x7DU,0x2FU,0xD9U,0x4CU,0x0DU,0x7DU,0xB8U,0x0EU,0x4BU,0x2CU,0x67U,
+                0xA7U,0x78U,0x2AU,0xD6U,0xC2U,0xB0U,0x77U,0x50U,0x62U,0x40U,0x00U,0x00U,0x00U,0x00U,0xA4U,0x79U,
+                0x94U,0x81U,0x14U,0x37U,0xDFU,0x44U,0x07U,0xE7U,0xAAU,0x07U,0xF1U,0xD5U,0xC9U,0x91U,0xF2U,0xD3U,
+                0x6FU,0x9EU,0xB8U,0xC7U,0x34U,0xAFU,0x6CU
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(sto_validate(1000000, 32) == OUT_OF_BOUNDS);
+                ASSERT(sto_validate(0, 1000000) == OUT_OF_BOUNDS);
+                
+                // Test size check
+                ASSERT(sto_validate(0,1) == TOO_SMALL);
+
+                // Test validation
+                ASSERT(sto_validate(sto, sizeof(sto)) == 1);
+                
+                // Invalidate
+                sto[0] = 0x22U;    
+                ASSERT(sto_validate(sto, sizeof(sto)) == 0);
+
+                // Fix                
+                sto[0] = 0x11U;
+    
+                // Invalidate somewhere else
+                sto[3] = 0x40U;
+                ASSERT(sto_validate(sto, sizeof(sto)) == 0);
+
+                // test small validation
+                {
+                    uint8_t sto[] = {0x22U,0x00U,0x00U,0x00U,0x00U};
+                    ASSERT(sto_validate(sto, sizeof(sto)) == 1);
+                }
+                
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set sto_validate"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test sto_validate"),
+            fee(XRP(1)));
     }
 
     void

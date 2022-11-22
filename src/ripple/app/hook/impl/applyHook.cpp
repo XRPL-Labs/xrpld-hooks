@@ -449,7 +449,6 @@ namespace hook_float
         int32_t mo = log10(man);
         int32_t adjust = 15 - mo;
 
-        printf("normalize_xfl: man: %llu exp: %d mo: %d adjust: %d neg: %d\n", man, exp, mo, adjust, (neg ? 1 : 0));
         if (adjust > 0)
         {
             man *= power_of_ten[adjust];
@@ -3652,21 +3651,33 @@ DEFINE_HOOK_FUNCTION(
     if (sread_len > 1024*16)
         return TOO_BIG;
 
-    if (fread_len > 4096)
-        return TOO_BIG;
-
-    if (fread_len < 2)
-        return TOO_SMALL;
-
     if (sread_len < 2)
         return TOO_SMALL;
 
-    // check for buffer overlaps
-    if (overlapping_memory({
-        write_ptr, write_ptr + write_len,
-        sread_ptr, sread_ptr + sread_len,
-        fread_ptr, fread_ptr + fread_len}))
-        return MEM_OVERLAP;
+    if (fread_len == 0 && fread_ptr == 0)
+    {
+        // this is a delete operation
+        if (overlapping_memory({
+            write_ptr, write_ptr + write_len,
+            sread_ptr, sread_ptr + sread_len}))
+            return MEM_OVERLAP;
+    }
+    else
+    {
+        if (fread_len > 4096)
+            return TOO_BIG;
+
+        if (fread_len < 2)
+            return TOO_SMALL;
+
+        // check for buffer overlaps
+        if (overlapping_memory({
+            write_ptr, write_ptr + write_len,
+            sread_ptr, sread_ptr + sread_len,
+            fread_ptr, fread_ptr + fread_len}))
+            return MEM_OVERLAP;
+    }
+
 
     // we must inject the field at the canonical location....
     // so find that location
@@ -3722,12 +3733,15 @@ DEFINE_HOOK_FUNCTION(
             memory, memory_length);
     }
 
-    // write the field
-    WRITE_WASM_MEMORY(
-        bytes_written,
-        (write_ptr + bytes_written), (write_len - bytes_written),
-        memory + fread_ptr, fread_len,
-        memory, memory_length);
+    if (fread_len > 0)
+    {
+        // write the field (or don't if it's a delete operation)
+        WRITE_WASM_MEMORY(
+            bytes_written,
+            (write_ptr + bytes_written), (write_len - bytes_written),
+            memory + fread_ptr, fread_len,
+            memory, memory_length);
+    }
 
     // part 2
     if (end - inject_end > 0)
@@ -3750,74 +3764,17 @@ DEFINE_HOOK_FUNCTION(
     uint32_t write_ptr, uint32_t write_len,
     uint32_t read_ptr,  uint32_t read_len,  uint32_t field_id )
 {
-    HOOK_SETUP();
+    int64_t ret =
+        sto_emplace(
+                hookCtx, memoryCtx,
+                write_ptr, write_len,
+                read_ptr,   read_len,
+                0, 0, field_id);
 
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    // RH TODO: constants
-    if (read_len > 16*1024)
-        return TOO_BIG;
-
-    if (write_len < read_len)
-        return TOO_SMALL;
-
-    unsigned char* start = (unsigned char*)(memory + read_ptr);
-    unsigned char* upto = start;
-    unsigned char* end = start + read_len;
-    unsigned char* erase_start = 0;
-    unsigned char* erase_end = 0;
-
-    DBG_PRINTF("sto_erase called, looking for field %u type %u\n", field_id & 0xFFFF, (field_id >> 16));
-    for (int j = -5; j < 5; ++j)
-        DBG_PRINTF(( j == 0 ? " >%02X< " : "  %02X  "), *(start + j));
-    DBG_PRINTF("\n");
-
-
-    for (int i = 0; i < 1024 && upto < end; ++i)
-    {
-        int type = -1, field = -1, payload_start = -1, payload_length = -1;
-        int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
-        if (length < 0)
-            return PARSE_ERROR;
-        if ((type << 16) + field == field_id)
-        {
-            erase_start = upto;
-            erase_end = upto + length;
-        }
-        upto += length;
-    }
-
-
-    if (erase_start >= start && erase_end >= start && erase_start <= end && erase_end <= end)
-    {
-        // do erasure via selective copy
-        int64_t bytes_written = 0;
-
-        // part 1
-        if (erase_start - start > 0)
-        WRITE_WASM_MEMORY(
-            bytes_written,
-            write_ptr, write_len,
-            start, (erase_start - start),
-            memory, memory_length);
-
-        // skip the field we're erasing
-
-        // part 2
-        if (end - erase_end > 0)
-        WRITE_WASM_MEMORY(
-            bytes_written,
-            (write_ptr + bytes_written), (write_len - bytes_written),
-            erase_end, (end - erase_end),
-            memory, memory_length);
-        return bytes_written;
-    }
-    return DOESNT_EXIST;
-
+    if (ret > 0 && ret == read_len)
+        return DOESNT_EXIST;
+    
+    return ret;
 }
 
 
@@ -3836,7 +3793,7 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (read_len < 1)
+    if (read_len < 2)
         return TOO_SMALL;
 
     unsigned char* start = (unsigned char*)(memory + read_ptr);
@@ -3853,7 +3810,7 @@ DEFINE_HOOK_FUNCTION(
         upto += length;
     }
 
-    return 1;
+    return upto == end ? 1 : 0;
 }
 
 
