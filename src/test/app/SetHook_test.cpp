@@ -4577,18 +4577,14 @@ public:
 
                 // Test index 0, should be position 1 length 27
                 ASSERT(sto_subarray(sto, sizeof(sto), 0) ==
-                    (1U << 32U) + 27U); 
+                    (1ULL << 32ULL) + 27ULL); 
 
                 // Test index 1, should be position 28 length 27
                 ASSERT(sto_subarray(sto, sizeof(sto), 1) ==
-                    (27U << 32U) + 27U); 
+                    (28ULL << 32ULL) + 27ULL); 
                 
                 // Test index2, doesn't exist
                 ASSERT(sto_subarray(sto, sizeof(sto), 2) == DOESNT_EXIST);
-
-                // Test parse error
-                sto[0] = 0x11U;
-                ASSERT(sto_subarray(sto, sizeof(sto), 0) == PARSE_ERROR);
 
                 accept(0,0,0);
             }
@@ -4658,29 +4654,25 @@ public:
                 // Test size check
                 ASSERT(sto_subfield(0,1, 1) == TOO_SMALL);
 
-                // Test subfield 0x11, should be position 0 length 3
+                // Test subfield 0x11, should be position 0 length 3, payload pos 1, len 2
                 ASSERT(sto_subfield(sto, sizeof(sto),
-                     0x10001U) == 3);
+                     0x10001U) == (1ULL << 32ULL) + 2ULL);
                     
-                // Test subfield 0x22, should be position 3 length 5
+                // Test subfield 0x22, should be position 3 length 5, payload pos 4, len 4
                 ASSERT(sto_subfield(sto, sizeof(sto),
-                     0x20002U) == (3U << 32U) + 5U);
+                     0x20002U) == (4ULL << 32ULL) + 4ULL);
 
-                // Test subfield 0x34, should be at position 25, length = 9
+                // Test subfield 0x34, should be at position 25, length = 9, payload pos 26, len 8
                 ASSERT(sto_subfield(sto, sizeof(sto),
-                     0x30004U) == (25U << 32U) + 9U);
+                     0x30004U) == (26ULL << 32ULL) + 8ULL);
 
-                // Test final subfield, position 34, length 33
+                // Test final subfield, position 34, length 33, payload pos 35, len 32
                 ASSERT(sto_subfield(sto, sizeof(sto),
-                     0x50005U) == (34U << 32U) + 33U);
+                     0x50005U) == (35ULL << 32ULL) + 32ULL);
 
                 // Test not found
                 ASSERT(sto_subfield(sto, sizeof(sto),
                     0x90009U) == DOESNT_EXIST);
-
-                // Test parse error
-                sto[0] = 0x11U;
-                ASSERT(sto_subfield(sto, sizeof(sto), 0) == PARSE_ERROR);
 
                 accept(0,0,0);
             }

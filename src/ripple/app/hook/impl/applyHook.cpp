@@ -3440,16 +3440,18 @@ DEFINE_HOOK_FUNCTION(
             for (int j = -5; j < 5; ++j)
                 DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j));
             DBG_PRINTF("\n");
+            
             if (type == 0xF)    // we return arrays fully formed
                 return (((int64_t)(upto - start)) << 32) /* start of the object */
                     + (uint32_t)(length);
+
             // return pointers to all other objects as payloads
             return (((int64_t)(upto - start + payload_start)) << 32U) /* start of the object */
                 + (uint32_t)(payload_length);
         }
         upto += length;
     }
-
+    
     if (upto != end)
         return PARSE_ERROR;
 
@@ -3474,8 +3476,16 @@ DEFINE_HOOK_FUNCTION(
     unsigned char* upto = start;
     unsigned char* end = start + read_len;
 
-    if ((*upto & 0xF0) == 0xF0)
+    // unwrap the array if it is wrapped,
+    // by removing a byte from the start and end
+    if ((*upto & 0xF0U) == 0xF0U)
+    {
         upto++;
+        end--;
+    }
+
+    if (upto >= end)
+        return PARSE_ERROR;
 
     /*
     DBG_PRINTF("sto_subarray called, looking for index %u\n", index_id);
@@ -3489,6 +3499,7 @@ DEFINE_HOOK_FUNCTION(
         int32_t length = get_stobject_length(upto, end, type, field, payload_start, payload_length, 0);
         if (length < 0)
             return PARSE_ERROR;
+        
         if (i == index_id)
         {
             DBG_PRINTF("sto_subarray returned for index %u\n", index_id);
@@ -3496,8 +3507,9 @@ DEFINE_HOOK_FUNCTION(
                 DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j + length));
             DBG_PRINTF("\n");
 
-            return (((int64_t)(upto - start)) << 32U) /* start of the object */
-                +   (uint32_t)(length);
+            return 
+                (((int64_t)(upto - start)) << 32U) /* start of the object */
+                +   (int64_t)(length);
         }
         upto += length;
     }
