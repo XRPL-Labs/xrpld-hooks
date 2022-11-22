@@ -3413,7 +3413,7 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (read_len < 1)
+    if (read_len < 2)
         return TOO_SMALL;
 
     unsigned char* start = (unsigned char*)(memory + read_ptr);
@@ -3444,11 +3444,14 @@ DEFINE_HOOK_FUNCTION(
                 return (((int64_t)(upto - start)) << 32) /* start of the object */
                     + (uint32_t)(length);
             // return pointers to all other objects as payloads
-            return (((int64_t)(upto - start + payload_start)) << 32) /* start of the object */
+            return (((int64_t)(upto - start + payload_start)) << 32U) /* start of the object */
                 + (uint32_t)(payload_length);
         }
         upto += length;
     }
+
+    if (upto != end)
+        return PARSE_ERROR;
 
     return DOESNT_EXIST;
 }
@@ -3464,7 +3467,7 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (read_len < 1)
+    if (read_len < 2)
         return TOO_SMALL;
 
     unsigned char* start = (unsigned char*)(memory + read_ptr);
@@ -3493,11 +3496,14 @@ DEFINE_HOOK_FUNCTION(
                 DBG_PRINTF(( j == 0 ? " [%02X] " : "  %02X  "), *(upto + j + length));
             DBG_PRINTF("\n");
 
-            return (((int64_t)(upto - start)) << 32) /* start of the object */
+            return (((int64_t)(upto - start)) << 32U) /* start of the object */
                 +   (uint32_t)(length);
         }
         upto += length;
     }
+
+    if (upto != end)
+        return PARSE_ERROR;
 
     return DOESNT_EXIST;
 }

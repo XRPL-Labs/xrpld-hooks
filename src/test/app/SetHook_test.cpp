@@ -4527,11 +4527,175 @@ public:
     void
     test_sto_subarray()
     {
+        testcase("Test sto_subarray");
+        using namespace jtx;
+        
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t sto_subarray(
+                uint32_t read_ptr, uint32_t read_len, uint32_t field_id);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define DOESNT_EXIST -5
+            #define PARSE_ERROR -18
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            
+            uint8_t sto[] =
+            {
+                0xF4U,0xEBU,0x13U,0x00U,0x01U,0x81U,0x14U,0x20U,0x42U,0x88U,0xD2U,0xE4U,0x7FU,0x8EU,0xF6U,0xC9U,
+                0x9BU,0xCCU,0x45U,0x79U,0x66U,0x32U,0x0DU,0x12U,0x40U,0x97U,0x11U,0xE1U,0xEBU,0x13U,0x00U,0x01U,
+                0x81U,0x14U,0x3EU,0x9DU,0x4AU,0x2BU,0x8AU,0xA0U,0x78U,0x0FU,0x68U,0x2DU,0x13U,0x6FU,0x7AU,0x56U,
+                0xD6U,0x72U,0x4EU,0xF5U,0x37U,0x54U,0xE1U,0xF1U
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(sto_subarray(1000000, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_subarray(0, 1000000, 1) == OUT_OF_BOUNDS);
+                
+                // Test size check
+                ASSERT(sto_subarray(0,1, 1) == TOO_SMALL);
+
+                // Test index 0, should be position 1 length 27
+                ASSERT(sto_subarray(sto, sizeof(sto), 0) ==
+                    (1U << 32U) + 27U); 
+
+                // Test index 1, should be position 28 length 27
+                ASSERT(sto_subarray(sto, sizeof(sto), 1) ==
+                    (27U << 32U) + 27U); 
+                
+                // Test index2, doesn't exist
+                ASSERT(sto_subarray(sto, sizeof(sto), 2) == DOESNT_EXIST);
+
+                // Test parse error
+                sto[0] = 0x11U;
+                ASSERT(sto_subarray(sto, sizeof(sto), 0) == PARSE_ERROR);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set sto_subarray"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test sto_subarray"),
+            fee(XRP(1)));
     }
 
     void
     test_sto_subfield()
     {
+        testcase("Test sto_subfield");
+        using namespace jtx;
+        
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t sto_subfield(
+                uint32_t read_ptr, uint32_t read_len, uint32_t field_id);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define DOESNT_EXIST -5
+            #define PARSE_ERROR -18
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            
+            uint8_t sto[] =
+            {
+                0x11U,0x00U,0x53U,0x22U,0x00U,0x00U,0x00U,0x00U,0x25U,0x01U,0x52U,0x70U,0x1AU,0x20U,0x23U,0x00U,
+                0x00U,0x00U,0x02U,0x20U,0x26U,0x00U,0x00U,0x00U,0x00U,0x34U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                0x00U,0x00U,0x55U,0x09U,0xA9U,0xC8U,0x6BU,0xF2U,0x06U,0x95U,0x73U,0x5AU,0xB0U,0x36U,0x20U,0xEBU,
+                0x1CU,0x32U,0x60U,0x66U,0x35U,0xACU,0x3DU,0xA0U,0xB7U,0x02U,0x82U,0xF3U,0x7CU,0x67U,0x4FU,0xC8U,
+                0x89U,0xEFU,0xE7U
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(sto_subfield(1000000, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(sto_subfield(0, 1000000, 1) == OUT_OF_BOUNDS);
+                
+                // Test size check
+                ASSERT(sto_subfield(0,1, 1) == TOO_SMALL);
+
+                // Test subfield 0x11, should be position 0 length 3
+                ASSERT(sto_subfield(sto, sizeof(sto),
+                     0x10001U) == 3);
+                    
+                // Test subfield 0x22, should be position 3 length 5
+                ASSERT(sto_subfield(sto, sizeof(sto),
+                     0x20002U) == (3U << 32U) + 5U);
+
+                // Test subfield 0x34, should be at position 25, length = 9
+                ASSERT(sto_subfield(sto, sizeof(sto),
+                     0x30004U) == (25U << 32U) + 9U);
+
+                // Test final subfield, position 34, length 33
+                ASSERT(sto_subfield(sto, sizeof(sto),
+                     0x50005U) == (34U << 32U) + 33U);
+
+                // Test not found
+                ASSERT(sto_subfield(sto, sizeof(sto),
+                    0x90009U) == DOESNT_EXIST);
+
+                // Test parse error
+                sto[0] = 0x11U;
+                ASSERT(sto_subfield(sto, sizeof(sto), 0) == PARSE_ERROR);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set sto_subfield"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test sto_subfield"),
+            fee(XRP(1)));
     }
 
     void
