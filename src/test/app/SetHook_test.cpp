@@ -4302,7 +4302,7 @@ public:
                     ASSERT(sto_emplace(
                                 buf, sizeof(buf),
                                 sto, sizeof(sto),
-                                ins, sizeof(ins), 56U) == 
+                                ins, sizeof(ins), 0x50006U) == 
                             sizeof(sto) + sizeof(ins));
                     
                     for (int i = 0; GUARD(200),  i < sizeof(ans);  ++i)
@@ -4313,7 +4313,7 @@ public:
                     ASSERT(sto_emplace(
                                 buf, sizeof(buf),
                                 sto, sizeof(sto),
-                                ins, sizeof(ins), 54U) == 
+                                ins, sizeof(ins), 0x50004U) == 
                             sizeof(sto) + sizeof(ins));
 
                     
@@ -4327,7 +4327,7 @@ public:
                     uint8_t sto[] = {0x22U,0x00U,0x00U,0x00U,0x00U};
                     uint8_t ins[] = {0x11U,0x11U,0x11U};
                 
-                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 11U) == 
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 0x10001U) == 
                             sizeof(sto) + sizeof(ins));
                     uint8_t ans[] = {0x11U,0x11U,0x11U,0x22U,0x00U,0x00U,0x00U,0x00U};
                     for (int i = 0; GUARD(10),  i < sizeof(ans);  ++i)
@@ -4339,21 +4339,31 @@ public:
                     uint8_t sto[] = {0x22U,0x00U,0x00U,0x00U,0x00U};
                     uint8_t ins[] = {0x31U,0x11U,0x11U,0x11U,0x11U,0x12U,0x22U,0x22U,0x22U};
                 
-                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 31U) == 
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 0x30001U) == 
                             sizeof(sto) + sizeof(ins));
                     uint8_t ans[] = {0x22U,0x00U,0x00U,0x00U,0x00U,0x31U,0x11U,0x11U,0x11U,0x11U,0x12U,0x22U,0x22U,
                                      0x22U};
                     for (int i = 0; GUARD(20),  i < sizeof(ans);  ++i)
                         ASSERT(ans[i] == buf[i]);
 
+                }
                     // test replacement
-
+                {
                     uint8_t rep[] = {0x22U,0x10U,0x20U,0x30U,0x40U};
-                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), ins, sizeof(ins), 22U) == 
-                            sizeof(sto) + sizeof(ins));
+                    ASSERT(sto_emplace(buf, sizeof(buf), sto, sizeof(sto), rep, sizeof(rep), 0x20002U) == 
+                            sizeof(sto));
 
-                    for (int i = 0; GUARD(20),  i < sizeof(rep);  ++i)
-                        ASSERT(rep[i] == buf[i]);
+                    // check start
+                    ASSERT(buf[0] == sto[0] && buf[1] == sto[1] && buf[2] == sto[2]);
+
+                    // check replaced part
+                    for (int i = 3; GUARD(sizeof(rep)+1), i < sizeof(rep)+3; ++i)
+                        ASSERT(buf[i] == rep[i-3]);
+
+                    // check end
+                    for (int i = sizeof(rep)+3; GUARD(sizeof(sto)),  i < sizeof(sto);  ++i)
+                        ASSERT(sto[i] == buf[i]);
+                        
                 }
 
                 // return the hash as the return string
