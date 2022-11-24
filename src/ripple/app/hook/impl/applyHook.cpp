@@ -2510,7 +2510,7 @@ DEFINE_HOOK_FUNCTION(
             {
                 if (a == 0 || b == 0 || c == 0)
                     return INVALID_ARGUMENT;
-                if (d != 0 || e != 0 || f != 0)
+                if (e != 0 || f != 0)
                     return INVALID_ARGUMENT;
 
                 uint32_t read_ptr = a, read_len = b;
@@ -2524,11 +2524,23 @@ DEFINE_HOOK_FUNCTION(
                 ripple::AccountID id =
                     AccountID::fromVoid(memory + read_ptr);
 
+                std::variant<uint32_t, uint256> seq;
+                if (d == 0)
+                    seq = c;
+                else if (d != 32)
+                    return INVALID_ARGUMENT;
+                else
+                {
+                    if (NOT_IN_BOUNDS(c, 32, memory_length))
+                        return OUT_OF_BOUNDS; 
+                    seq = uint256::fromVoid(memory + c);
+                }
+
                 ripple::Keylet kl =
-                    keylet_type == keylet_code::CHECK       ? ripple::keylet::check(id, c)      :
-                    keylet_type == keylet_code::ESCROW      ? ripple::keylet::escrow(id, c)     :
-                    keylet_type == keylet_code::NFT_OFFER   ? ripple::keylet::nftoffer(id, c)   :
-                    ripple::keylet::offer(id, c);
+                    keylet_type == keylet_code::CHECK       ? ripple::keylet::check(id, seq)      :
+                    keylet_type == keylet_code::ESCROW      ? ripple::keylet::escrow(id, seq)     :
+                    keylet_type == keylet_code::NFT_OFFER   ? ripple::keylet::nftoffer(id, seq)   :
+                    ripple::keylet::offer(id, seq);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }
@@ -2558,7 +2570,7 @@ DEFINE_HOOK_FUNCTION(
             // keylets that take both a 20 byte account id and a 32 byte uint
             case keylet_code::HOOK_STATE:
             {
-                if (a == 0 || b == 0 || c == 0 || d == 0)
+                if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0 || f == 0)
                    return INVALID_ARGUMENT;
 
 
@@ -2585,9 +2597,9 @@ DEFINE_HOOK_FUNCTION(
             // skip is overloaded, has a single, optional 4 byte argument
             case keylet_code::SKIP:
             {
-                if (c != 0 || d != 0 || e != 0 || f != 0)
+                if (c != 0 || d != 0 || e != 0 || f != 0 || b > 1)
                    return INVALID_ARGUMENT;
-
+                
                 ripple::Keylet kl =
                     (b == 0 ? ripple::keylet::skip() :
                     ripple::keylet::skip(a));
