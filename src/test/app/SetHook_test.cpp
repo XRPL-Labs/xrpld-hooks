@@ -5097,6 +5097,560 @@ public:
     void
     test_util_keylet()
     {
+        testcase("Test util_keylet");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        auto const a = alice.id();
+        auto const b = bob.id();
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern
+            int64_t util_keylet (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t keylet_type,
+                uint32_t a,
+                uint32_t b,
+                uint32_t c,
+                uint32_t d,
+                uint32_t e,
+                uint32_t f
+            );
+            #define OUT_OF_BOUNDS -1
+            #define INVALID_ARGUMENT -7
+            #define TOO_SMALL -4
+            #define KEYLET_HOOK 1
+            #define KEYLET_HOOK_STATE 2
+            #define KEYLET_ACCOUNT 3
+            #define KEYLET_AMENDMENTS 4
+            #define KEYLET_CHILD 5
+            #define KEYLET_SKIP 6
+            #define KEYLET_FEES 7
+            #define KEYLET_NEGATIVE_UNL 8
+            #define KEYLET_LINE 9
+            #define KEYLET_OFFER 10
+            #define KEYLET_QUALITY 11
+            #define KEYLET_EMITTED_DIR 12
+            #define KEYLET_SIGNERS 14
+            #define KEYLET_CHECK 15
+            #define KEYLET_DEPOSIT_PREAUTH 16
+            #define KEYLET_UNCHECKED 17
+            #define KEYLET_OWNER_DIR 18
+            #define KEYLET_PAGE 19
+            #define KEYLET_ESCROW 20
+            #define KEYLET_PAYCHAN 21
+            #define KEYLET_EMITTED_TXN 22
+            #define KEYLET_NFT_OFFER 23
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define ASSERT_KL_EQ(b)\
+            {\
+                uint64_t* n = (uint64_t*)(b);\
+                uint64_t* m = (uint64_t*)(buf);\
+                ASSERT(n[0] == m[0] && n[1] == m[1] && n[2] == m[2] && n[3] == m[3]);\
+            } 
+            #define SBUF(x) x,sizeof(x)
+            //C5D0F34B0A1905BC3B29AA1BE139FE04D60C8694D3950A8D80251D10B563A822
+            uint8_t ns[] = 
+            {
+                0xC5U,0xD0U,0xF3U,0x4BU,0x0AU,0x19U,0x05U,0xBCU,0x3BU,0x29U,0xAAU,0x1BU,0xE1U,
+                0x39U,0xFEU,0x04U,0xD6U,0x0CU,0x86U,0x94U,0xD3U,0x95U,0x0AU,0x8DU,0x80U,0x25U,
+                0x1DU,0x10U,0xB5U,0x63U,0xA8U,0x22U
+            };
+
+            //2D0CB3CD60DA33B5AA7FEA321F111663EAED32481C6B700E484550F45AD96223
+            uint8_t klkey[] =
+            {
+                0x00U, 0x00U, 
+                0x2DU,0x0CU,0xB3U,0xCDU,0x60U,0xDAU,0x33U,0xB5U,0xAAU,0x7FU,0xEAU,0x32U,0x1FU,
+                0x11U,0x16U,0x63U,0xEAU,0xEDU,0x32U,0x48U,0x1CU,0x6BU,0x70U,0x0EU,0x48U,0x45U,
+                0x50U,0xF4U,0x5AU,0xD9U,0x62U,0x23U
+            };
+
+            uint8_t cur[] =
+            {
+                0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                0x00U,0x00U,0x55U,0x53U,0x44U,0x00U,0x00U,0x00U,0x00U,0x00U
+                
+            };
+
+            uint8_t* key = klkey + 2;
+
+            uint8_t a[] = //rB6v18pQ765Z9DH5RQsTFevoQPFmRtBqhT
+            {
+                0x75U,0x6EU,0xDEU,0x88U,0xA9U,0x07U,0xD4U,0xCCU,0xF3U,0x8DU,0x6AU,0xDBU,
+                0x9FU,0xC7U,0x94U,0x64U,0x19U,0xF0U,0xC4U,0x1DU
+            };
+
+            uint8_t b[] = //raKM1bZkGmASBqN5v2swrf2uAPJ32Cd8GV
+            {
+                0x3AU,0x51U,0x8AU,0x22U,0x53U,0x81U,0x60U,0x84U,0x1CU,0x14U,0x32U,0xFEU,
+                0x6FU,0x3EU,0x6DU,0x6EU,0x76U,0x29U,0xFBU,0xBAU
+            };
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t buf[34];
+                int64_t e = 0;
+
+
+                // Test out of bounds check
+                ASSERT(util_keylet(1000000, 34, KEYLET_SKIP, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
+                ASSERT(util_keylet((uint32_t)buf, 1000000, KEYLET_SKIP, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
+
+                // Test min size
+                ASSERT(util_keylet((uint32_t)buf, 33, KEYLET_SKIP, 0,0,0,0,0,0) == TOO_SMALL);
+
+
+                // Test one of each type
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_HOOK,
+                    SBUF(a),
+                    0,0,0,0
+                )));
+                
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x48U,0x6CU,0x4BU,0x29U,0xC6U,0x0FU,0x40U,0x5DU,0xB7U,0x6EU,0x87U,
+                        0x65U,0x4AU,0x2FU,0x15U,0x4BU,0xABU,0x99U,0xC7U,0x62U,0x29U,0x80U,0x10U,
+                        0xA1U,0x89U,0x78U,0x52U,0x90U,0x80U,0x2FU,0x78U,0xBDU,0xCCU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_HOOK_STATE,
+                    SBUF(b), key, 32, SBUF(ns)
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x76U,0x28U,0xAFU,0xCCU,0x25U,0x0AU,0x64U,0x41U,0x8EU,0xB7U,0x83U,
+                        0x68U,0xEBU,0x4EU,0xC5U,0x52U,0x4AU,0xEBU,0x97U,0x54U,0xABU,0xC1U,0x0BU,
+                        0x13U,0x06U,0x7FU,0xFBU,0x9FU,0x4BU,0xD8U,0x38U,0x62U,0xF2U
+                    }; 
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_ACCOUNT,
+                    SBUF(b),
+                    0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x61U,0xC6U,0x55U,0xDDU,0x8DU,0x8EU,0xD3U,0xBAU,0xB4U,0xA0U,0xF1U,
+                        0xECU,0x2DU,0xA9U,0x99U,0xF4U,0x1BU,0xA6U,0x82U,0xC6U,0x84U,0xF9U,0x99U,
+                        0x66U,0xB9U,0x3CU,0x9AU,0xC3U,0xE3U,0x5CU,0x9AU,0x81U,0x6DU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_AMENDMENTS,
+                    0,0,0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x66U,0x7DU,0xB0U,0x78U,0x8CU,0x02U,0x0FU,0x02U,0x78U,0x0AU,0x67U,
+                        0x3DU,0xC7U,0x47U,0x57U,0xF2U,0x38U,0x23U,0xFAU,0x30U,0x14U,0xC1U,0x86U,
+                        0x6EU,0x72U,0xCCU,0x4CU,0xD8U,0xB2U,0x26U,0xCDU,0x6EU,0xF4U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_CHILD,
+                    key, 32,
+                    0,0,0,0
+                )));
+
+                {
+                    klkey[0] = 0x1CU;
+                    klkey[1] = 0xD2U;
+                    ASSERT_KL_EQ(klkey);
+                }
+                
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_SKIP,
+                    0,0,0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x68U,0xB4U,0x97U,0x9AU,0x36U,0xCDU,0xC7U,0xF3U,0xD3U,
+                        0xD5U,0xC3U,0x1AU,0x4EU,0xAEU,0x2AU,0xC7U,0xD7U,0x20U,0x9DU,
+                        0xDAU,0x87U,0x75U,0x88U,0xB9U,0xAFU,0xC6U,0x67U,0x99U,0x69U,
+                        0x2AU,0xB0U,0xD6U,0x6BU
+                    };
+
+                    ASSERT_KL_EQ(ans);
+                }
+
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_FEES,
+                    0,0,0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x73U,0x4BU,0xC5U,0x0CU,0x9BU,0x0DU,0x85U,0x15U,0xD3U,
+                        0xEAU,0xAEU,0x1EU,0x74U,0xB2U,0x9AU,0x95U,0x80U,0x43U,0x46U,
+                        0xC4U,0x91U,0xEEU,0x1AU,0x95U,0xBFU,0x25U,0xE4U,0xAAU,0xB8U,
+                        0x54U,0xA6U,0xA6U,0x51U
+                    };
+
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_NEGATIVE_UNL,
+                    0,0,0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x4EU,0x2EU,0x8AU,0x59U,0xAAU,0x9DU,0x3BU,0x5BU,0x18U,
+                        0x6BU,0x0BU,0x9EU,0x0FU,0x62U,0xE6U,0xC0U,0x25U,0x87U,0xCAU,
+                        0x74U,0xA4U,0xD7U,0x78U,0x93U,0x8EU,0x95U,0x7BU,0x63U,0x57U,
+                        0xD3U,0x64U,0xB2U,0x44U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_LINE,
+                    SBUF(a),
+                    SBUF(b),
+                    SBUF(cur)
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x72U,0x0EU,0xB8U,0x2AU,0xDDU,0x5EU,0x15U,0x59U,0x1BU,
+                        0xF6U,0xE3U,0x6DU,0xBCU,0x3CU,0x12U,0xD3U,0x07U,0x6DU,0x43U,
+                        0xA8U,0x53U,0xF8U,0xF9U,0xE8U,0xA7U,0xD8U,0x4FU,0xE1U,0xE9U,
+                        0x7AU,0x2AU,0xC7U,0x3DU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_OFFER,
+                    SBUF(a), 
+                    1,
+                    0,0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x6FU,0x60U,0x14U,0x48U,0x80U,0x97U,0x5FU,0x76U,0x6AU,
+                        0xB2U,0x2CU,0x32U,0x2FU,0x10U,0x8EU,0x03U,0x43U,0x51U,0xDEU,
+                        0x89U,0x6CU,0xF4U,0x9FU,0x6BU,0x4AU,0xC7U,0x2CU,0x54U,0xF7U,
+                        0x27U,0x29U,0x9BU,0xE8U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+
+                // again with a uint256
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_OFFER,
+                    SBUF(a), 
+                    SBUF(ns),
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x6FU,0x23U,0x61U,0x7FU,0x44U,0x91U,0x1CU,0xBAU,0x3BU,
+                        0x5CU,0xBEU,0xE9U,0x42U,0x22U,0xACU,0xA4U,0x29U,0xF4U,0xD6U,
+                        0x60U,0x01U,0xA8U,0xABU,0x9BU,0x98U,0x5EU,0xB8U,0xB8U,0x42U,
+                        0x9FU,0x1EU,0x91U,0x4BU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                // verify that quality returns invalid argument when passed
+                // something that isn't a dir keylet
+                klkey[0] = 0;
+                klkey[1] = 0x65U;
+                ASSERT(INVALID_ARGUMENT == (e=util_keylet(buf, 34, KEYLET_QUALITY,
+                    SBUF(klkey),
+                    0,1,
+                    0,0
+                )));
+
+                // now change it to a dir
+                klkey[1] = 0x64U;
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_QUALITY,
+                    SBUF(klkey),
+                    0,1,
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x64U,0x2DU,0x0CU,0xB3U,0xCDU,0x60U,0xDAU,0x33U,0xB5U,
+                        0xAAU,0x7FU,0xEAU,0x32U,0x1FU,0x11U,0x16U,0x63U,0xEAU,0xEDU,
+                        0x32U,0x48U,0x1CU,0x6BU,0x70U,0x0EU,0x00U,0x00U,0x00U,0x00U,
+                        0x00U,0x00U,0x00U,0x01U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_EMITTED_DIR,
+                    0,0,0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x64U,0xB4U,0xDEU,0x82U,0x30U,0x55U,0xD0U,0x0BU,0xC1U,
+                        0x2CU,0xD7U,0x8FU,0xE1U,0xAAU,0xF7U,0x4EU,0xE6U,0x06U,0x21U,
+                        0x95U,0xB2U,0x62U,0x9FU,0x49U,0xA2U,0x59U,0x15U,0xA3U,0x9CU,
+                        0x64U,0xBEU,0x19U,0x00U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_SIGNERS,
+                    SBUF(a),
+                    0,0,0,0
+                )));
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x53U,0xDFU,0x8FU,0xF0U,0xCEU,0x41U,0x1AU,0x3BU,0x8FU,
+                        0x1BU,0xB5U,0xBBU,0x32U,0x78U,0x17U,0x15U,0xD6U,0x77U,0x42U,
+                        0xF5U,0xB5U,0x63U,0xB8U,0x77U,0xB3U,0x3BU,0x07U,0x76U,0xF6U,
+                        0xF7U,0xBCU,0xDAU,0x1DU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_CHECK,
+                    SBUF(a), 1, 0,
+                    0,0
+                )));
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x43U,0x08U,0x1FU,0x26U,0xFFU,0x79U,0x1AU,0xF7U,0x54U,
+                        0x26U,0xEDU,0xF9U,0xEBU,0x08U,0x44U,0x85U,0x28U,0x58U,0x2CU,
+                        0xB1U,0xA4U,0xEFU,0x4FU,0xD0U,0xB4U,0x49U,0x9BU,0x76U,0x82U,
+                        0xE7U,0x69U,0xA6U,0xB5U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                // ans again with uint256
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_CHECK,
+                    SBUF(a), SBUF(ns),
+                    0,0
+                )));
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x43U,0x94U,0xE3U,0x6FU,0x0DU,0xD3U,0xEDU,0xC0U,0x2CU,
+                        0x49U,0xA5U,0xAAU,0x0EU,0xCCU,0x49U,0x18U,0x39U,0x92U,0xABU,
+                        0x57U,0xC3U,0x2DU,0x9EU,0x45U,0x51U,0x04U,0x78U,0x49U,0x49U,
+                        0xD1U,0xE6U,0xD2U,0x01U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_DEPOSIT_PREAUTH,
+                    SBUF(a), SBUF(b),
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x70U,0x88U,0x90U,0x0FU,0x27U,0x66U,0x57U,0xBCU,0xC0U,
+                        0x5DU,0xA1U,0x67U,0x40U,0xABU,0x9DU,0x33U,0x01U,0x8EU,0x45U,
+                        0x71U,0x7BU,0x0EU,0xC4U,0x2EU,0x4DU,0x11U,0xBDU,0x6DU,0xBDU,
+                        0x94U,0x03U,0x48U,0xE0U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                klkey[0] = 0;
+                klkey[1] = 0;
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_UNCHECKED,
+                    key, 32,
+                    0,0,0,0
+                )));
+
+                ASSERT_KL_EQ(klkey);
+                
+                
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_OWNER_DIR,
+                    SBUF(a),
+                    0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x64U,0xC8U,0x5EU,0x01U,0x29U,0x06U,0x7BU,0x75U,0xADU,
+                        0x30U,0xB0U,0xAAU,0x1CU,0xC2U,0x5BU,0x0AU,0x82U,0xC7U,0xF9U,
+                        0xAAU,0xBDU,0xEEU,0x05U,0xFFU,0x01U,0x66U,0x69U,0xEFU,0x9DU,
+                        0x82U,0xDCU,0xECU,0x30U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_PAGE,
+                    SBUF(ns), 0, 1,
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x64U,0x61U,0xE6U,0x05U,0x1AU,0xB0U,0x49U,0x89U,0x2EU,
+                        0x75U,0xC9U,0x3DU,0x67U,0xFBU,0x7AU,0x63U,0xF1U,0xEFU,0x56U,
+                        0xDDU,0xAFU,0x3EU,0x6BU,0x43U,0x6FU,0x57U,0x6EU,0x8CU,0x01U,
+                        0x81U,0x98U,0x2EU,0x48U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_ESCROW,
+                    SBUF(a), 1, 0,
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x75U,0x13U,0xEFU,0x04U,0xCDU,0x33U,0x6AU,0xADU,0xF6U,
+                        0x3DU,0x0CU,0x7EU,0x05U,0x6CU,0x84U,0x9AU,0x7CU,0xF6U,0x72U,
+                        0x5EU,0x99U,0xBCU,0x93U,0x80U,0x1EU,0xF5U,0x78U,0xA0U,0x32U,
+                        0x72U,0x5BU,0x84U,0xFEU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+                
+                // again with a uint256
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_ESCROW,
+                    SBUF(a), 
+                    SBUF(ns),
+                    0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x75U,0xC1U,0xC6U,0xC5U,0x23U,0x74U,0x87U,0x12U,0x56U,
+                        0xAAU,0x7AU,0x1FU,0xB3U,0x29U,0x7AU,0x0AU,0x55U,0x88U,0x7DU,
+                        0x16U,0x6AU,0xCFU,0x85U,0x28U,0x59U,0x88U,0xC2U,0xDAU,0x81U,
+                        0x7FU,0x03U,0x90U,0x43U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+                
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_PAYCHAN,
+                    SBUF(a), SBUF(b), 1, 0
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x78U,0xEDU,0x04U,0xCEU,0x27U,0x20U,0x21U,0x55U,0x2BU,
+                        0xBFU,0xA1U,0xE5U,0xFFU,0xBBU,0x53U,0xB6U,0x45U,0xA2U,0xFFU,
+                        0x8AU,0x44U,0x66U,0xD5U,0x76U,0x24U,0xB5U,0x71U,0xE6U,0x44U,
+                        0x9EU,0xEBU,0xFCU,0x5AU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+
+                // again with uint256
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_PAYCHAN,
+                    SBUF(a), SBUF(b), SBUF(ns)
+                )));
+
+                {
+                    uint8_t ans[] = 
+                    {
+                        0x00U,0x78U,0x7DU,0xE1U,0x01U,0xF6U,0x2BU,0xB0U,0x55U,0x80U,
+                        0xB9U,0xD6U,0xB0U,0x3FU,0x3BU,0xB0U,0x01U,0xBDU,0xE6U,0x9BU,
+                        0x89U,0x0FU,0x8AU,0xCDU,0xBEU,0x71U,0x73U,0x5EU,0xC3U,0x63U,
+                        0xF8U,0xC5U,0x4BU,0x9BU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_EMITTED_TXN,
+                    ns, 32,
+                    0,0,0,0
+                )));
+
+                {
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x45U,0xF3U,0x51U,0x2DU,0x1CU,0x80U,0xA3U,0xC0U,0xB1U,
+                        0x46U,0x04U,0xE1U,0xADU,0xDBU,0x90U,0x1CU,0x66U,0x32U,0x10U,
+                        0x08U,0xCCU,0xD0U,0xABU,0xD2U,0xDBU,0xBEU,0xC4U,0x08U,0xA6U,
+                        0x0FU,0x6AU,0x62U,0xE9U
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_NFT_OFFER,
+                    SBUF(a), 1, 0,
+                    0,0
+                )));
+
+
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_NFT_OFFER,
+                    SBUF(a), SBUF(ns),
+                    0,0
+                )));
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set util_keylet"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test util_keylet"),
+            fee(XRP(1)));
+
     }
 
     void

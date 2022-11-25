@@ -2405,7 +2405,7 @@ DEFINE_HOOK_FUNCTION(
     if (write_len < 34)
         return TOO_SMALL;
 
-    if (keylet_type < 1 || keylet_type > 21)
+    if (keylet_type < 1 || keylet_type > keylet_code::LAST_KLTYPE)
         return INVALID_ARGUMENT;
 
     try
@@ -2416,7 +2416,7 @@ DEFINE_HOOK_FUNCTION(
             // keylets that take a keylet and an 8 byte uint
             case keylet_code::QUALITY:
             {
-                if (a == 0 || b == 0 || c == 0 || d == 0)
+                if (a == 0 || b == 0)
                     return INVALID_ARGUMENT;
                 if (e != 0 || f != 0)
                     return INVALID_ARGUMENT;
@@ -2427,6 +2427,10 @@ DEFINE_HOOK_FUNCTION(
                    return OUT_OF_BOUNDS;
 
                 if (read_len != 34)
+                    return INVALID_ARGUMENT;
+
+                // ensure it's a dir keylet or we will fail an assertion
+                if (*(read_ptr + memory) != 0 || *(read_ptr + memory + 1) != 0x64U)
                     return INVALID_ARGUMENT;
 
                 std::optional<ripple::Keylet> kl = unserialize_keylet(memory + read_ptr, read_len);
@@ -2508,7 +2512,7 @@ DEFINE_HOOK_FUNCTION(
             case keylet_code::ESCROW:
             case keylet_code::NFT_OFFER:
             {
-                if (a == 0 || b == 0 || c == 0)
+                if (a == 0 || b == 0)
                     return INVALID_ARGUMENT;
                 if (e != 0 || f != 0)
                     return INVALID_ARGUMENT;
@@ -2548,7 +2552,7 @@ DEFINE_HOOK_FUNCTION(
             // keylets that take a 32 byte uint and an 8byte uint64
             case keylet_code::PAGE:
             {
-                if (a == 0 || b == 0 || c == 0 || d == 0)
+                if (a == 0 || b == 0)
                    return INVALID_ARGUMENT;
 
                 if (e != 0 || f != 0)
@@ -2700,9 +2704,6 @@ DEFINE_HOOK_FUNCTION(
                 if (a == 0 || b == 0 || c == 0 || d == 0 || e == 0)
                    return INVALID_ARGUMENT;
 
-                if (f != 0)
-                   return INVALID_ARGUMENT;
-
                 uint32_t aread_ptr = a, aread_len = b;
                 uint32_t bread_ptr = c, bread_len = d;
 
@@ -2718,8 +2719,20 @@ DEFINE_HOOK_FUNCTION(
                 ripple::AccountID bid =
                     AccountID::fromVoid(memory + bread_ptr);
 
+                std::variant<uint32_t, uint256> seq;
+                if (f == 0)
+                    seq = e;
+                else if (f != 32)
+                    return INVALID_ARGUMENT;
+                else
+                {
+                    if (NOT_IN_BOUNDS(e, 32, memory_length))
+                        return OUT_OF_BOUNDS; 
+                    seq = uint256::fromVoid(memory + e);
+                }
+
                 ripple::Keylet kl =
-                    ripple::keylet::payChan(aid, bid, e);
+                    ripple::keylet::payChan(aid, bid, seq);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }

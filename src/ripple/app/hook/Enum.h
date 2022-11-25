@@ -163,7 +163,8 @@ namespace hook_api
             ESCROW = 20,
             PAYCHAN = 21,
             EMITTED_TXN = 22,
-            NFT_OFFER = 23
+            NFT_OFFER = 23,
+            LAST_KLTYPE = NFT_OFFER
         };
     }
 
