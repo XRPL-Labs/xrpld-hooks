@@ -5656,6 +5656,7 @@ public:
     void
     test_util_raddr()
     {
+        testcase("Test util_raddr");
         using namespace jtx;
         Env env{*this, supported_amendments()};
 
@@ -6113,6 +6114,7 @@ public:
     void
     test_util_sha512h()
     {
+        testcase("Test util_sha512h");
         using namespace jtx;
         Env env{*this, supported_amendments()};
 
@@ -6490,6 +6492,120 @@ public:
     void
     test_util_verify()
     {
+        testcase("Test util_verify");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t util_verify (uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define INVALID_KEY -41
+            #define SBUF(x) ((uint32_t)(x)), sizeof(x)
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+            // secp256k1
+            uint8_t pubkey_sec[] =
+            {
+                0x02U,0xC7U,0x38U,0x7FU,0xFCU,0x25U,0xC1U,0x56U,0xCAU,0x7FU,
+                0x8AU,0x6DU,0x76U,0x0CU,0x8DU,0x01U,0xEFU,0x64U,0x2CU,0xEEU,
+                0x9CU,0xE4U,0x68U,0x0CU,0x33U,0xFFU,0xB3U,0xFFU,0x39U,0xAFU,
+                0xECU,0xFEU,0x70U
+            };
+
+            uint8_t sig_sec[] =
+            {
+                0x30U,0x45U,0x02U,0x21U,0x00U,0x95U,0x6EU,0x7DU,0x1FU,0x01U,
+                0x16U,0xF1U,0x65U,0x00U,0xD2U,0xCCU,0xD8U,0x8DU,0x2AU,0x2FU,
+                0xEFU,0xF6U,0x52U,0x16U,0x85U,0x42U,0xF4U,0x4EU,0x43U,0xDBU,
+                0xE6U,0xF4U,0x53U,0xE8U,0x03U,0xB8U,0x4FU,0x02U,0x20U,0x0AU,
+                0xB6U,0xC3U,0x4BU,0x5FU,0x0CU,0xC6U,0x6BU,0x4FU,0x1FU,0x83U,
+                0xE9U,0x89U,0x74U,0xB8U,0x80U,0xA2U,0x2FU,0xAEU,0x52U,0x91U,
+                0x6BU,0xA2U,0xCEU,0x96U,0xA3U,0x61U,0x05U,0x3FU,0xFFU,0x81U,
+                0xE9U
+            };
+
+            // ed25519
+            uint8_t pubkey_ed[] =
+            {
+                0xEDU,0xD9U,0xB3U,0x59U,0x98U,0x02U,0xB2U,0x14U,0xA9U,0x9DU,
+                0x75U,0x77U,0x12U,0xD6U,0xABU,0xDFU,0x72U,0xF8U,0x3CU,0x63U,
+                0xBBU,0xD5U,0x38U,0x61U,0x41U,0x17U,0x90U,0xB1U,0x3DU,0x04U,
+                0xB2U,0xC5U,0xC9U
+            };
+
+            uint8_t sig_ed[] =
+            {
+                0x56U,0x68U,0x80U,0x76U,0x70U,0xFEU,0xCEU,0x60U,0x34U,0xAFU,
+                0xD6U,0xCDU,0x1BU,0xB4U,0xC6U,0x60U,0xAEU,0x08U,0x39U,0x6DU,
+                0x6DU,0x8BU,0x7DU,0x22U,0x71U,0x3BU,0xDAU,0x26U,0x43U,0xC1U,
+                0xE1U,0x91U,0xC4U,0xE4U,0x4DU,0x8EU,0x02U,0xE8U,0x57U,0x8BU,
+                0x20U,0x45U,0xDAU,0xD4U,0x8FU,0x97U,0xFCU,0x16U,0xF8U,0x92U,
+                0x5BU,0x6BU,0x51U,0xFBU,0x3BU,0xE5U,0x0FU,0xB0U,0x4BU,0x3AU,
+                0x20U,0x4CU,0x53U,0x04U
+            };
+
+
+            uint8_t msg[] =
+            {
+                0xDEU,0xADU,0xBEU,0xEFU
+            };
+
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                // Test out of bounds check
+                ASSERT(util_verify(1000000, 33, 0, 20, 0, 20) == OUT_OF_BOUNDS);
+                ASSERT(util_verify(0, 33, 10000000, 20, 0, 20) == OUT_OF_BOUNDS);
+                ASSERT(util_verify(0, 33, 0, 20, 10000000, 20) == OUT_OF_BOUNDS);
+                
+                ASSERT(util_verify(0, 1000000, 33, 1, 20, 30) == OUT_OF_BOUNDS);
+                ASSERT(util_verify(0, 33, 0, 10000000, 20, 30) == OUT_OF_BOUNDS);
+                ASSERT(util_verify(0, 33, 0, 2, 20, 10000000) == OUT_OF_BOUNDS);
+
+                ASSERT(util_verify(0, 30, 0, 1, 0, 30) == INVALID_KEY);
+// RHTODO: fix this
+//                ASSERT(util_verify(0, 33, 0, 0, 0, 30) == TOO_SMALL);
+//                ASSERT(util_verify(0, 33, 0, 1, 0, 29) == TOO_SMALL);
+
+                // test secp256k1 verification
+                ASSERT(util_verify(SBUF(msg), SBUF(sig_sec), SBUF(pubkey_sec)) == 1);
+                ASSERT(util_verify(msg + 1, sizeof(msg) - 1, SBUF(sig_sec), SBUF(pubkey_sec)) == 0);
+
+                // test ed25519 verification
+                ASSERT(util_verify(SBUF(msg), SBUF(sig_ed), SBUF(pubkey_ed)) == 1);
+                ASSERT(util_verify(msg + 1, sizeof(msg) - 1, SBUF(sig_ed), SBUF(pubkey_ed)) == 0);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set util_verify"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test util_verify"),
+            fee(XRP(1)));
     }
 
     void

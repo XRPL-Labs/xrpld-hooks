@@ -3874,6 +3874,15 @@ DEFINE_HOOK_FUNCTION(
         NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
         return OUT_OF_BOUNDS;
 
+    if (kread_len != 33)
+        return INVALID_KEY;
+
+    if (dread_len == 0)
+        return TOO_SMALL;
+
+    if (sread_len < 30)
+        return TOO_SMALL;
+
     ripple::Slice keyslice  {reinterpret_cast<const void*>(kread_ptr + memory), kread_len};
     ripple::Slice data {reinterpret_cast<const void*>(dread_ptr + memory), dread_len};
     ripple::Slice sig  {reinterpret_cast<const void*>(sread_ptr + memory), sread_len};
