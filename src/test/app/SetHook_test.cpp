@@ -6580,9 +6580,8 @@ public:
                 ASSERT(util_verify(0, 33, 0, 2, 20, 10000000) == OUT_OF_BOUNDS);
 
                 ASSERT(util_verify(0, 30, 0, 1, 0, 30) == INVALID_KEY);
-// RHTODO: fix this
-//                ASSERT(util_verify(0, 33, 0, 0, 0, 30) == TOO_SMALL);
-//                ASSERT(util_verify(0, 33, 0, 1, 0, 29) == TOO_SMALL);
+                ASSERT(util_verify(0, 33, 0, 0, SBUF(pubkey_sec)) == TOO_SMALL);
+                ASSERT(util_verify(0, 0, 0, 100, SBUF(pubkey_sec)) == TOO_SMALL);
 
                 // test secp256k1 verification
                 ASSERT(util_verify(SBUF(msg), SBUF(sig_sec), SBUF(pubkey_sec)) == 1);
