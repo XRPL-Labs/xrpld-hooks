@@ -628,19 +628,21 @@ uint32_t hook::maxHookChainLength(void)
 }
 
 // many datatypes can be encoded into an int64_t
-inline int64_t data_as_int64(
-        void const* ptr_raw,
-        uint32_t len)
+inline
+int64_t
+data_as_int64(void const* ptr_raw, uint32_t len)
 {
-    uint8_t const* ptr = reinterpret_cast<uint8_t const*>(ptr_raw);
     if (len > 8)
         return hook_api::hook_return_code::TOO_BIG;
+    
+    uint8_t const* ptr = reinterpret_cast<uint8_t const*>(ptr_raw);
     uint64_t output = 0;
-    for (int i = 0, j = (len-1)*8; i < len; ++i, j-=8)
+    for (int i = 0, 
+             j = (len-1)*8; i < len; ++i, j-=8)
         output += (((uint64_t)ptr[i]) << j);
-    if ((1ULL<<63) & output)
+    if ((1ULL<<63U) & output)
         return hook_api::hook_return_code::TOO_BIG;
-    return output;
+    return (int64_t)output;
 }
 
 /* returns true iff every even char is ascii and every odd char is 00
@@ -2009,13 +2011,21 @@ DEFINE_HOOK_FUNCTION(
     uint32_t slot_no )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    
+    if (write_ptr == 0)
+    {
+        // in this mode the function returns the data encoded in an int64_t
+        if (write_len != 0)
+            return INVALID_ARGUMENT;
+    }
+    else
+    {
+        if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+            return OUT_OF_BOUNDS;
 
-    if (!(write_ptr == 0 && write_len == 0) &&
-        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    if (write_ptr != 0 && write_len == 0)
-        return TOO_SMALL;
+        if (write_len < 1)
+            return TOO_SMALL;
+    }
 
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;

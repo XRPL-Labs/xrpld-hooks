@@ -4118,6 +4118,119 @@ public:
     void
     test_slot()
     {
+        testcase("Test slot");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot (
+                uint32_t write_ptr, uint32_t write_len, uint32_t slot_no );
+            extern int64_t slot_subfield (
+                uint32_t parent_slot,
+                uint32_t field_id,
+                uint32_t new_slot
+            );
+            extern int64_t util_keylet (
+                uint32_t write_ptr, uint32_t write_len, uint32_t keylet_type,
+                uint32_t a, uint32_t b, uint32_t c,
+                uint32_t d, uint32_t e, uint32_t f
+            );
+            extern int64_t sto_subfield(uint32_t, uint32_t, uint32_t);
+            extern int64_t slot_set(uint32_t, uint32_t, uint32_t);
+            extern int64_t sto_validate(uint32_t, uint32_t);
+            extern int64_t hook_account(uint32_t, uint32_t);
+            extern int64_t slot_size(uint32_t);
+            #define sfBalance ((6U << 16U) + 2U)
+            #define sfFlags ((2U << 16U) + 2U)
+            #define DOESNT_EXIST -5
+            #define TOO_SMALL -4
+            #define TOO_BIG -3
+            #define OUT_OF_BOUNDS -1
+            #define INVALID_ARGUMENT -7
+            #define KEYLET_ACCOUNT 3
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                // bounds check
+                ASSERT(slot(1, 1000000, 0) == OUT_OF_BOUNDS);
+                ASSERT(slot(1000000, 1024, 0) == OUT_OF_BOUNDS);
+
+                // this function can return data as an int64_t,
+                // but requires 0,0 as arguments
+                ASSERT(slot(0,1, 0) == INVALID_ARGUMENT);
+               
+                // slot 0 hasn't been set yet so
+                ASSERT(slot(0,0,0) == DOESNT_EXIST);
+
+                // grab the hook account
+                uint8_t acc[20];
+                ASSERT(20 == hook_account(SBUF(acc)));
+
+                // turn it into account root keylet
+                uint8_t kl[34];
+                ASSERT(34 == util_keylet(SBUF(kl), KEYLET_ACCOUNT, SBUF(acc), 0,0,0,0));
+
+                // slot the account root into a new slot
+                int64_t slot_no = 0;
+                ASSERT((slot_no = slot_set(SBUF(kl), 0)) > 0);
+
+                int64_t size = 0;
+                ASSERT((size = slot_size(slot_no)) > 0);
+
+                // the slotted item is too large for return as int64
+                ASSERT(slot(0,0,slot_no) == TOO_BIG);
+
+                // big buffer, large enough to hold the account_root
+                uint8_t buf[1024];
+                
+                // the slot call should return the bytes written which should exactly
+                // match the size of the slotted object
+                ASSERT(slot(SBUF(buf), slot_no) == size);
+
+                // do a quick sanity check on the object using sto api
+                ASSERT(sto_validate(buf, size) == 1);
+                
+                // grab a field
+                ASSERT(sto_subfield(buf, size, sfBalance) > 0);
+
+                // subslot a subfield we can return as an int64_t
+                ASSERT(slot_subfield(slot_no, sfBalance, 200) == 200);
+
+                // retrieve the slotted object as an int64_t
+                ASSERT(slot(0,0,200) > 0);
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test slot"),
+            fee(XRP(1)));
     }
 
     void
@@ -6640,36 +6753,39 @@ public:
         test_etxn_reserve();
         test_fee_base();
 
-        test_float_compare();
-        test_float_divide();
-        test_float_int();
-        test_float_invert();
-        test_float_log();
-        test_float_mantissa();
-        test_float_mulratio();
-        test_float_multiply();
-        test_float_negate();
-        test_float_one();
-        test_float_root();
-        test_float_set();
-        test_float_sign();
-        test_float_sto();
+        test_float_compare();       //
+        test_float_divide();        //
+        test_float_int();           //
+        test_float_invert();        //
+        test_float_log();           //
+        test_float_mantissa();      //
+        test_float_mulratio();      //
+        test_float_multiply();      //
+        test_float_negate();        //
+        test_float_one();           //
+        test_float_root();          //
+        test_float_set();           //
+        test_float_sign();          //
+        test_float_sto();           
         test_float_sto_set();
-        test_float_sum();
+        test_float_sum();           //
 
-        test_hook_account();
+        test_hook_account();        //
         test_hook_again();
-        test_hook_hash();
-        test_hook_param();
+        test_hook_hash();           //
+        test_hook_param();          
         test_hook_param_set();
         test_hook_pos();
         test_hook_skip();
+        
         test_ledger_keylet();
         test_ledger_last_hash();
         test_ledger_last_time();
         test_ledger_nonce();
         test_ledger_seq();
+        
         test_meta_slot();
+        
         test_otxn_burden();
         test_otxn_field();
         test_otxn_field_txt();
@@ -6677,6 +6793,7 @@ public:
         test_otxn_id();
         test_otxn_slot();
         test_otxn_type();
+
         test_slot();
         test_slot_clear();
         test_slot_count();
@@ -6687,28 +6804,33 @@ public:
         test_slot_subarray();
         test_slot_subfield();
         test_slot_type();
+
         test_state();
         test_state_foreign();
         test_state_foreign_set();
         test_state_set();
-        test_sto_emplace();
-        test_sto_erase();
-        test_sto_subarray();
-        test_sto_subfield();
-        test_sto_validate();
+        
+        test_sto_emplace();     //
+        test_sto_erase();       //
+        test_sto_subarray();    //
+        test_sto_subfield();    //
+        test_sto_validate();    //
+        
         test_str_compare();
         test_str_concat();
         test_str_find();
         test_str_replace();
+        
         test_trace();
         test_trace_float();
         test_trace_num();
         test_trace_slot();
-        test_util_accid();
-        test_util_keylet();
-        test_util_raddr();
-        test_util_sha512h();
-        test_util_verify();
+        
+        test_util_accid();      //
+        test_util_keylet();     //
+        test_util_raddr();      //
+        test_util_sha512h();    //
+        test_util_verify();     //
     }
 
 private:
