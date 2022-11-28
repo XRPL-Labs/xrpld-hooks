@@ -4135,8 +4135,7 @@ public:
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            extern int64_t slot (
-                uint32_t write_ptr, uint32_t write_len, uint32_t slot_no );
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
             extern int64_t slot_subfield (
                 uint32_t parent_slot,
                 uint32_t field_id,
@@ -4236,16 +4235,211 @@ public:
     void
     test_slot_clear()
     {
+        testcase("Test slot_clear");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot_clear(uint32_t slot_no);
+            extern int64_t otxn_slot (uint32_t slot_no);
+            extern int64_t slot_size(uint32_t);
+            #define sfBalance ((6U << 16U) + 2U)
+            #define sfFlags ((2U << 16U) + 2U)
+            #define DOESNT_EXIST -5
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                ASSERT(otxn_slot(1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+
+                ASSERT(slot_clear(1) == 1);
+
+                ASSERT(slot_size(1) == DOESNT_EXIST);
+                
+                ASSERT(slot_clear(1) == DOESNT_EXIST);
+                ASSERT(slot_clear(10) == DOESNT_EXIST);
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_clear"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test slot_clear"),
+            fee(XRP(1)));
     }
 
     void
     test_slot_count()
     {
+        testcase("Test slot_count");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t otxn_slot (uint32_t slot_no);
+            extern int64_t slot_size(uint32_t);
+            extern int64_t slot_count(uint32_t);
+            extern int64_t slot_subfield (
+                uint32_t parent_slot,
+                uint32_t field_id,
+                uint32_t new_slot);
+            #define NOT_AN_ARRAY -22
+            #define DOESNT_EXIST -5
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            #define sfMemos ((15U << 16U) + 9U)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                ASSERT(otxn_slot(1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+
+                ASSERT(slot_count(1) == NOT_AN_ARRAY);
+
+                ASSERT(slot_count(0) == DOESNT_EXIST);
+
+                ASSERT(slot_subfield(1, sfMemos, 1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+    
+                ASSERT(slot_count(1) == 1);
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_count"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test slot_count"),
+            fee(XRP(1)));
     }
 
     void
     test_slot_float()
     {
+        testcase("Test slot_float");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook
+        hook =
+        wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t otxn_slot (uint32_t slot_no);
+            extern int64_t slot_size(uint32_t);
+            extern int64_t slot_count(uint32_t);
+            extern int64_t slot_float(uint32_t);
+            extern int64_t float_int (
+                int64_t float1,
+                uint32_t decimal_places,
+                uint32_t absolute
+            );
+            extern int64_t slot_subfield (
+                uint32_t parent_slot,
+                uint32_t field_id,
+                uint32_t new_slot);
+            #define NOT_AN_ARRAY -22
+            #define DOESNT_EXIST -5
+            #define NOT_AN_AMOUNT -32
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            #define sfFee ((6U << 16U) + 8U)  
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                ASSERT(otxn_slot(1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+
+                ASSERT(slot_subfield(1, sfFee, 2) == 2);
+
+                ASSERT(slot_size(2) > 0);
+  
+                ASSERT(slot_float(0) == DOESNT_EXIST);
+            
+                ASSERT(slot_float(1) == NOT_AN_AMOUNT);
+ 
+                int64_t xfl = slot_float(2);
+                ASSERT(xfl > 0);
+
+                ASSERT(float_int(xfl, 6, 0) == 1000000LL);                
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_float"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)),
+            M("test slot_float"),
+            fee(XRP(1)));
     }
 
     void
