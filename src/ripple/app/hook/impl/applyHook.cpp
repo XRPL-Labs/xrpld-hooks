@@ -1801,7 +1801,6 @@ DEFINE_HOOK_FUNCTION(
             : applyCtx.tx.getTransactionID();
 
     hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
-            .id = std::vector<uint8_t>{ txID.data(), txID.data() + txID.size() },
             .storage = st_tx,
             .entry = 0
     }});
@@ -2085,33 +2084,6 @@ DEFINE_HOOK_FUNCTION(
     return hookCtx.slot[slot_no].entry->downcast<ripple::STArray>().size();
 }
 
-
-
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    slot_id,
-    uint32_t write_ptr, uint32_t write_len,
-    uint32_t slot_no )
-{
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
-    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
-        return DOESNT_EXIST;
-
-    auto& e = hookCtx.slot[slot_no].id;
-
-    if (write_len < e.size())
-        return TOO_SMALL;
-
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    WRITE_WASM_MEMORY_AND_RETURN(
-        write_ptr, write_len,
-        e.data(), e.size(),
-        memory, memory_length);
-}
-
 DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_set,
@@ -2172,7 +2144,6 @@ DEFINE_HOOK_FUNCTION(
 
 
     hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
-            .id = slot_key,
             .storage = *slot_value,
             .entry = 0
     }});
@@ -2364,41 +2335,6 @@ DEFINE_HOOK_FUNCTION(
     }
 
 }
-
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    trace_slot,
-    uint32_t read_ptr, uint32_t read_len,
-    uint32_t slot_no )
-{
-
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-
-    if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
-        return DOESNT_EXIST;
-
-    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    uint8_t* id = hookCtx.slot[slot_no].id.data();
-    size_t id_size = hookCtx.slot[slot_no].id.size();
-    uint8_t output[64];
-    if (id_size > 32) id_size = 32;
-    for (int i = 0; i < id_size; ++i)
-    {
-        unsigned char high = (id[i] >> 4) & 0xF;
-        unsigned char low  = (id[i] & 0xF);
-        high += ( high < 10U ? '0' : 'A' - 10 );
-        low  += ( low  < 10U ? '0' : 'A' - 10 );
-        output[i*2 + 0] = high;
-        output[i*2 + 1] = low;
-    }
-
-    RETURN_HOOK_TRACE(read_ptr, read_len,
-            "Slot " << slot_no << " - "
-            << std::string_view((const char*)output, (size_t)(id_size*2)));
-}
-
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -4985,12 +4921,6 @@ DEFINE_HOOK_FUNCTION(
         slot_into = get_free_slot(hookCtx);
 
     hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
-            .id = { 
-                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
-                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
-                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
-                0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 
-            },
             .storage = hookCtx.result.provisionalMeta,
             .entry = 0
     }});

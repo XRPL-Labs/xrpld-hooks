@@ -68,18 +68,6 @@ namespace hook
         {ttNFTOKEN_ACCEPT_OFFER,    tshROLLBACK }
     };
 
-/*
-    ttNFTOKEN_MINT = 25,                                                                                               
-                                                                                                                       
-    ttNFTOKEN_BURN = 26,                                                                                               
-                                                                                                                       
-    ttNFTOKEN_CREATE_OFFER = 27,                                                                                       
-                                                                                                                       
-    ttNFTOKEN_CANCEL_OFFER = 28,                                                                                       
-                                                                                                                       
-    ttNFTOKEN_ACCEPT_OFFER = 29,        
-    */
-
 
     std::vector<std::pair<AccountID, bool>>
     getTransactionalStakeHolders(STTx const& tx, ReadView const& rv);
@@ -91,7 +79,7 @@ namespace hook_api
 #define TER_TO_HOOK_RETURN_CODE(x)\
     (((TERtoInt(x)) << 16)*-1)
 
-// for debugging if you want a lot of output change these to if (1)
+// for debugging if you want a lot of output change to 1
 #define HOOK_DBG 0
 #define DBG_PRINTF if (HOOK_DBG) printf
 #define DBG_FPRINTF if (HOOK_DBG) fprintf
@@ -179,7 +167,6 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_id,            uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len, int32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
@@ -199,7 +186,6 @@ namespace hook_api
                                                         uint32_t kread_ptr, uint32_t kread_len,
                                                         uint32_t nread_ptr, uint32_t nread_len,
                                                         uint32_t aread_ptr, uint32_t aread_len );
-    DECLARE_HOOK_FUNCTION(int64_t,	trace_slot,         uint32_t read_ptr, uint32_t read_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	trace,              uint32_t mread_ptr, uint32_t mread_len,
                                                         uint32_t dread_ptr, uint32_t dread_len, uint32_t as_hex );
     DECLARE_HOOK_FUNCTION(int64_t,	trace_num,          uint32_t read_ptr, uint32_t read_len, int64_t number );
@@ -326,7 +312,6 @@ namespace hook
 
     struct SlotEntry
     {
-        std::vector<uint8_t> id;
         std::shared_ptr<const ripple::STObject> storage;
         const ripple::STBase* entry; // raw pointer into the storage, that can be freely pointed around inside
     };
@@ -618,7 +603,6 @@ namespace hook
             ADD_HOOK_FUNCTION(slot, ctx);
             ADD_HOOK_FUNCTION(slot_clear, ctx);
             ADD_HOOK_FUNCTION(slot_count, ctx);
-            ADD_HOOK_FUNCTION(slot_id, ctx);
             ADD_HOOK_FUNCTION(slot_set, ctx);
             ADD_HOOK_FUNCTION(slot_size, ctx);
             ADD_HOOK_FUNCTION(slot_subarray, ctx);
@@ -627,7 +611,6 @@ namespace hook
             ADD_HOOK_FUNCTION(slot_float, ctx);
 
             ADD_HOOK_FUNCTION(trace, ctx);
-            ADD_HOOK_FUNCTION(trace_slot, ctx);
             ADD_HOOK_FUNCTION(trace_num, ctx);
             ADD_HOOK_FUNCTION(trace_float, ctx);
 

@@ -16,12 +16,12 @@
     OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 //==============================================================================
+#include <ripple/app/tx/impl/SetHook.h>
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
+#include <test/app/SetHook_wasm.h>
 #include <test/jtx.h>
 #include <test/jtx/hook.h>
-#include <test/app/SetHook_wasm.h>
-#include <ripple/app/tx/impl/SetHook.h>
 #include <unordered_map>
 
 namespace ripple {
@@ -35,7 +35,8 @@ using TestHook = std::vector<uint8_t> const&;
 class JSSHasher
 {
 public:
-    size_t operator()(const Json::StaticString& n) const
+    size_t
+    operator()(const Json::StaticString& n) const
     {
         return std::hash<std::string_view>{}(n.c_str());
     }
@@ -44,23 +45,24 @@ public:
 class JSSEq
 {
 public:
-    bool operator()(const Json::StaticString& a, const Json::StaticString& b) const
+    bool
+    operator()(const Json::StaticString& a, const Json::StaticString& b) const
     {
         return a == b;
     }
 };
 
-using JSSMap = std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JSSEq>;
+using JSSMap =
+    std::unordered_map<Json::StaticString, Json::Value, JSSHasher, JSSEq>;
 
 // Identical to BEAST_EXPECT except it returns from the function
 // if the condition isn't met (and would otherwise therefore cause a crash)
-#define BEAST_REQUIRE(x)\
-{\
-    BEAST_EXPECT(!!(x));\
-    if (!(x))\
-        return;\
-}
-
+#define BEAST_REQUIRE(x)     \
+    {                        \
+        BEAST_EXPECT(!!(x)); \
+        if (!(x))            \
+            return;          \
+    }
 
 class SetHook_test : public beast::unit_test::suite
 {
@@ -72,11 +74,11 @@ private:
     }
 
 public:
-
-    // This is a large fee, large enough that we can set most small test hooks without running into fee issues
-    // we only want to test fee code specifically in fee unit tests, the rest of the time we want to ignore it.
-    #define HSFEE fee(100'000'000)
-    #define M(m) memo(m, "", "")
+// This is a large fee, large enough that we can set most small test hooks
+// without running into fee issues we only want to test fee code specifically in
+// fee unit tests, the rest of the time we want to ignore it.
+#define HSFEE fee(100'000'000)
+#define M(m) memo(m, "", "")
     void
     testHooksDisabled()
     {
@@ -86,10 +88,12 @@ public:
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
 
-        // RH TODO: does it matter that passing malformed txn here gives back temMALFORMED (and not disabled)?
+        // RH TODO: does it matter that passing malformed txn here gives back
+        // temMALFORMED (and not disabled)?
         env(ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0),
             M("Hooks Disabled"),
-            HSFEE, ter(temDISABLED));
+            HSFEE,
+            ter(temDISABLED));
     }
 
     void
@@ -107,21 +111,25 @@ public:
 
         env(ripple::test::jtx::hook(alice, {}, 0),
             M("Must have a hooks field"),
-            HSFEE, ter(temMALFORMED));
-
+            HSFEE,
+            ter(temMALFORMED));
 
         env(ripple::test::jtx::hook(alice, {{}}, 0),
             M("Must have a non-empty hooks field"),
-            HSFEE, ter(temMALFORMED));
+            HSFEE,
+            ter(temMALFORMED));
 
-        env(ripple::test::jtx::hook(alice, {{
-                hso(accept_wasm),
-                hso(accept_wasm),
-                hso(accept_wasm),
-                hso(accept_wasm),
-                hso(accept_wasm)}}, 0),
+        env(ripple::test::jtx::hook(
+                alice,
+                {{hso(accept_wasm),
+                  hso(accept_wasm),
+                  hso(accept_wasm),
+                  hso(accept_wasm),
+                  hso(accept_wasm)}},
+                0),
             M("Must have fewer than 5 entries"),
-            HSFEE, ter(temMALFORMED));
+            HSFEE,
+            ter(temMALFORMED));
 
         {
             Json::Value jv;
@@ -137,15 +145,14 @@ public:
             jv[jss::Hooks][0U][jss::Memo] = iv;
             env(jv,
                 M("Hooks Array must contain Hook objects"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
-
-
-
     }
 
-    void testGrants()
+    void
+    testGrants()
     {
         testcase("Checks malformed grants on install operation");
         using namespace jtx;
@@ -164,7 +171,7 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value grants {Json::arrayValue};
+            Json::Value grants{Json::arrayValue};
             for (uint32_t i = 0; i < 9; ++i)
             {
                 Json::Value pv;
@@ -177,7 +184,8 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("HSO must not include more than 8 grants"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -185,22 +193,24 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value grants {Json::arrayValue};
+            Json::Value grants{Json::arrayValue};
             grants[0U] = Json::Value{};
             grants[0U][jss::Memo] = Json::Value{};
-            grants[0U][jss::Memo][jss::MemoFormat] = strHex(std::string(12, 'a'));
+            grants[0U][jss::Memo][jss::MemoFormat] =
+                strHex(std::string(12, 'a'));
             grants[0U][jss::Memo][jss::MemoData] = strHex(std::string(12, 'a'));
             iv[jss::HookGrants] = grants;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("HSO grant array can only contain HookGrant objects"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
-
     }
 
-    void testParams()
+    void
+    testParams()
     {
         testcase("Checks malformed params on install operation");
         using namespace jtx;
@@ -219,13 +229,15 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value params {Json::arrayValue};
+            Json::Value params{Json::arrayValue};
             for (uint32_t i = 0; i < 17; ++i)
             {
                 Json::Value pv;
                 Json::Value piv;
-                piv[jss::HookParameterName] = strHex("param" + std::to_string(i));
-                piv[jss::HookParameterValue] = strHex("value" + std::to_string(i));
+                piv[jss::HookParameterName] =
+                    strHex("param" + std::to_string(i));
+                piv[jss::HookParameterValue] =
+                    strHex("value" + std::to_string(i));
                 pv[jss::HookParameter] = piv;
                 params[i] = pv;
             }
@@ -233,7 +245,8 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("HSO must not include more than 16 parameters"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -241,18 +254,20 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value params {Json::arrayValue};
+            Json::Value params{Json::arrayValue};
             for (uint32_t i = 0; i < 2; ++i)
             {
                 params[i] = Json::Value{};
                 params[i][jss::HookParameter] = Json::Value{};
-                params[i][jss::HookParameter][jss::HookParameterName] = strHex(std::string{"param"});
+                params[i][jss::HookParameter][jss::HookParameterName] =
+                    strHex(std::string{"param"});
             }
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("HSO must not repeat parameter names"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -260,15 +275,18 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value params {Json::arrayValue};
+            Json::Value params{Json::arrayValue};
             params[0U] = Json::Value{};
             params[0U][jss::HookParameter] = Json::Value{};
-            params[0U][jss::HookParameter][jss::HookParameterName] = strHex(std::string(33, 'a'));
+            params[0U][jss::HookParameter][jss::HookParameterName] =
+                strHex(std::string(33, 'a'));
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must must not contain parameter names longer than 32 bytes"),
-                HSFEE, ter(temMALFORMED));
+                M("HSO must must not contain parameter names longer than 32 "
+                  "bytes"),
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -276,16 +294,20 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value params {Json::arrayValue};
+            Json::Value params{Json::arrayValue};
             params[0U] = Json::Value{};
             params[0U][jss::HookParameter] = Json::Value{};
-            params[0U][jss::HookParameter][jss::HookParameterName] = strHex(std::string(32, 'a'));
-            params[0U][jss::HookParameter][jss::HookParameterValue] = strHex(std::string(129, 'a'));
+            params[0U][jss::HookParameter][jss::HookParameterName] =
+                strHex(std::string(32, 'a'));
+            params[0U][jss::HookParameter][jss::HookParameterValue] =
+                strHex(std::string(129, 'a'));
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must must not contain parameter values longer than 128 bytes"),
-                HSFEE, ter(temMALFORMED));
+                M("HSO must must not contain parameter values longer than 128 "
+                  "bytes"),
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -293,22 +315,24 @@ public:
         {
             Json::Value iv;
             iv[jss::HookHash] = to_string(uint256{beast::zero});
-            Json::Value params {Json::arrayValue};
+            Json::Value params{Json::arrayValue};
             params[0U] = Json::Value{};
             params[0U][jss::Memo] = Json::Value{};
-            params[0U][jss::Memo][jss::MemoFormat] = strHex(std::string(12, 'a'));
+            params[0U][jss::Memo][jss::MemoFormat] =
+                strHex(std::string(12, 'a'));
             params[0U][jss::Memo][jss::MemoData] = strHex(std::string(12, 'a'));
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("HSO parameter array can only contain HookParameter objects"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
-
     }
 
-    void testInstall()
+    void
+    testInstall()
     {
         testcase("Checks malformed install operation");
         using namespace jtx;
@@ -322,12 +346,11 @@ public:
 
         // create a hook that we can then install
         {
-            env(ripple::test::jtx::hook(bob, {{
-                hso(accept_wasm),
-                hso(rollback_wasm)
-            }}, 0),
+            env(ripple::test::jtx::hook(
+                    bob, {{hso(accept_wasm), hso(rollback_wasm)}}, 0),
                 M("First set = tesSUCCESS"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
         }
 
         Json::Value jv;
@@ -344,18 +367,22 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation cannot set apiversion"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
         // can't set non-existent hook
         {
             Json::Value iv;
-            iv[jss::HookHash] = "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEF";
+            iv[jss::HookHash] =
+                "DEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBEEFDEADBE"
+                "EF";
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation cannot set non existent hook hash"),
-                HSFEE, ter(terNO_HOOK));
+                HSFEE,
+                ter(terNO_HOOK));
             env.close();
         }
 
@@ -366,7 +393,8 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation can set extant hook hash"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
             env.close();
         }
 
@@ -377,7 +405,8 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation can set extant hook hash"),
-                HSFEE, ter(tecREQUIRES_FLAG));
+                HSFEE,
+                ter(tecREQUIRES_FLAG));
             env.close();
         }
 
@@ -389,12 +418,14 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook Install operation can set extant hook hash"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
             env.close();
         }
     }
 
-    void testDelete()
+    void
+    testDelete()
     {
         testcase("Checks malformed delete operation");
         using namespace jtx;
@@ -416,7 +447,8 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook DELETE operation must include hsfOVERRIDE flag"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -428,27 +460,29 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Hook DELETE operation must include hsfOVERRIDE flag"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
-        // grants, parameters, hookon, hookapiversion, hooknamespace keys must be absent
-        for (auto const& [key, value]:
-            JSSMap {
-                {jss::HookGrants, Json::arrayValue},
-                {jss::HookParameters, Json::arrayValue},
-                {jss::HookOn, "0"},
-                {jss::HookApiVersion, "0"},
-                {jss::HookNamespace, to_string(uint256{beast::zero})}
-            })
+        // grants, parameters, hookon, hookapiversion, hooknamespace keys must
+        // be absent
+        for (auto const& [key, value] : JSSMap{
+                 {jss::HookGrants, Json::arrayValue},
+                 {jss::HookParameters, Json::arrayValue},
+                 {jss::HookOn, "0"},
+                 {jss::HookApiVersion, "0"},
+                 {jss::HookNamespace, to_string(uint256{beast::zero})}})
         {
             Json::Value iv;
             iv[jss::CreateCode] = "";
             iv[key] = value;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("Hook DELETE operation cannot include: grants, params, hookon, apiversion, namespace"),
-                HSFEE, ter(temMALFORMED));
+                M("Hook DELETE operation cannot include: grants, params, "
+                  "hookon, apiversion, namespace"),
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -457,9 +491,7 @@ public:
             {
                 Json::Value jv =
                     ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
-                env(jv,
-                    M("Normal accept create"),
-                    HSFEE, ter(tesSUCCESS));
+                env(jv, M("Normal accept create"), HSFEE, ter(tesSUCCESS));
                 env.close();
             }
 
@@ -470,9 +502,7 @@ public:
             iv[jss::Flags] = hsfOVERRIDE;
             jv[jss::Hooks][0U][jss::Hook] = iv;
 
-            env(jv,
-                M("Normal hook DELETE"),
-                HSFEE);
+            env(jv, M("Normal hook DELETE"), HSFEE);
             env.close();
 
             // check to ensure definition is deleted and hooks object too
@@ -481,23 +511,20 @@ public:
 
             BEAST_EXPECT(!def);
             BEAST_EXPECT(!hook);
-
         }
 
         // create four hooks then delete the second last one
         {
             // create
             {
-                Json::Value jv =
-                    ripple::test::jtx::hook(alice, {{
-                            hso(accept_wasm),
-                            hso(makestate_wasm),
-                            hso(rollback_wasm),
-                            hso(accept2_wasm)
-                            }}, 0);
-                env(jv,
-                    M("Create four"),
-                    HSFEE, ter(tesSUCCESS));
+                Json::Value jv = ripple::test::jtx::hook(
+                    alice,
+                    {{hso(accept_wasm),
+                      hso(makestate_wasm),
+                      hso(rollback_wasm),
+                      hso(accept2_wasm)}},
+                    0);
+                env(jv, M("Create four"), HSFEE, ter(tesSUCCESS));
                 env.close();
             }
 
@@ -510,14 +537,11 @@ public:
                     jv[jss::Hooks][i][jss::Hook] = Json::Value{};
                 jv[jss::Hooks][2U][jss::Hook] = iv;
 
-                env(jv,
-                    M("Normal hooki DELETE (third pos)"),
-                    HSFEE);
+                env(jv, M("Normal hooki DELETE (third pos)"), HSFEE);
                 env.close();
 
-
-                // check the hook definitions are consistent with reference count
-                // dropping to zero on the third
+                // check the hook definitions are consistent with reference
+                // count dropping to zero on the third
                 auto const accept_def = env.le(accept_keylet);
                 auto const rollback_def = env.le(rollback_keylet);
                 auto const makestate_def = env.le(makestate_keylet);
@@ -543,9 +567,9 @@ public:
 
                 // check hashes on the three remaining
                 BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
-                BEAST_EXPECT(hooks[1].getFieldH256(sfHookHash) == makestate_hash);
+                BEAST_EXPECT(
+                    hooks[1].getFieldH256(sfHookHash) == makestate_hash);
                 BEAST_EXPECT(hooks[3].getFieldH256(sfHookHash) == accept2_hash);
-
             }
 
             // delete rest and check
@@ -556,9 +580,9 @@ public:
                 for (uint8_t i = 0; i < 4; ++i)
                 {
                     if (i != 2U)
-                       jv[jss::Hooks][i][jss::Hook] = iv;
+                        jv[jss::Hooks][i][jss::Hook] = iv;
                     else
-                       jv[jss::Hooks][i][jss::Hook] = Json::Value{};
+                        jv[jss::Hooks][i][jss::Hook] = Json::Value{};
                 }
 
                 env(jv,
@@ -566,8 +590,8 @@ public:
                     HSFEE);
                 env.close();
 
-                // check the hook definitions are consistent with reference count
-                // dropping to zero on the third
+                // check the hook definitions are consistent with reference
+                // count dropping to zero on the third
                 auto const accept_def = env.le(accept_keylet);
                 auto const rollback_def = env.le(rollback_keylet);
                 auto const makestate_def = env.le(makestate_keylet);
@@ -581,12 +605,12 @@ public:
                 // check the hooks object is gone
                 auto const hook = env.le(keylet::hook(Account("alice").id()));
                 BEAST_EXPECT(!hook);
-
             }
         }
     }
 
-    void testNSDelete()
+    void
+    testNSDelete()
     {
         testcase("Checks malformed nsdelete operation");
         using namespace jtx;
@@ -604,13 +628,12 @@ public:
         jv[jss::Flags] = 0;
         jv[jss::Hooks] = Json::Value{Json::arrayValue};
 
-        for (auto const& [key, value]:
-            JSSMap {
-                {jss::HookGrants, Json::arrayValue},
-                {jss::HookParameters, Json::arrayValue},
-                {jss::HookOn, "0"},
-                {jss::HookApiVersion, "0"},
-            })
+        for (auto const& [key, value] : JSSMap{
+                 {jss::HookGrants, Json::arrayValue},
+                 {jss::HookParameters, Json::arrayValue},
+                 {jss::HookOn, "0"},
+                 {jss::HookApiVersion, "0"},
+             })
         {
             Json::Value iv;
             iv[key] = value;
@@ -618,33 +641,35 @@ public:
             iv[jss::HookNamespace] = to_string(uint256{beast::zero});
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("Hook NSDELETE operation cannot include: grants, params, hookon, apiversion"),
-                HSFEE, ter(temMALFORMED));
+                M("Hook NSDELETE operation cannot include: grants, params, "
+                  "hookon, apiversion"),
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
-        auto const key = uint256::fromVoid((std::array<uint8_t,32>{
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-            0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
-            0x00U, 0x00U, 0x00U, 0x00U,    'k',   'e',  'y', 0x00U
-        }).data());
+        auto const key = uint256::fromVoid(
+            (std::array<uint8_t, 32>{
+                 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+                 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+                 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U, 0x00U,
+                 0x00U, 0x00U, 0x00U, 0x00U, 'k',   'e',   'y',   0x00U})
+                .data());
 
-        auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
-            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-            0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
-        }).data());
+        auto const ns = uint256::fromVoid(
+            (std::array<uint8_t, 32>{
+                 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU})
+                .data());
 
         auto const stateKeylet =
-            keylet::hookState(
-                Account("alice").id(),
-                key,
-                ns);
+            keylet::hookState(Account("alice").id(), key, ns);
 
         // create a namespace
-        std::string ns_str = "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
+        std::string ns_str =
+            "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE";
         {
             // create hook
             Json::Value jv =
@@ -660,7 +685,6 @@ public:
                 fee(XRP(1)));
             env.close();
 
-
             // check if the hookstate object was created
             auto const hookstate = env.le(stateKeylet);
             BEAST_EXPECT(!!hookstate);
@@ -669,8 +693,8 @@ public:
             auto const& data = hookstate->getFieldVL(sfHookStateData);
             BEAST_REQUIRE(data.size() == 6);
             BEAST_EXPECT(
-                    data[0] == 'v' && data[1] == 'a' && data[2] == 'l' &&
-                    data[3] == 'u' && data[4] == 'e' && data[5] == '\0');
+                data[0] == 'v' && data[1] == 'a' && data[2] == 'l' &&
+                data[3] == 'u' && data[4] == 'e' && data[5] == '\0');
         }
 
         // delete the namespace
@@ -679,9 +703,7 @@ public:
             iv[jss::Flags] = hsfNSDELETE;
             iv[jss::HookNamespace] = ns_str;
             jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Normal NSDELETE operation"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Normal NSDELETE operation"), HSFEE, ter(tesSUCCESS));
             env.close();
 
             // ensure the hook is still installed
@@ -695,17 +717,17 @@ public:
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == makestate_hash);
 
             // ensure the directory is gone
-            auto const dirKeylet = keylet::hookStateDir(Account("alice").id(), ns);
+            auto const dirKeylet =
+                keylet::hookStateDir(Account("alice").id(), ns);
             BEAST_EXPECT(!env.le(dirKeylet));
 
             // ensure the state object is gone
             BEAST_EXPECT(!env.le(stateKeylet));
-
         }
-
     }
 
-    void testCreate()
+    void
+    testCreate()
     {
         testcase("Checks malformed create operation");
         using namespace jtx;
@@ -717,16 +739,17 @@ public:
         auto const alice = Account{"alice"};
         env.fund(XRP(10000), alice);
 
-
         // test normal create and missing override flag
         {
             env(ripple::test::jtx::hook(bob, {{hso(accept_wasm)}}, 0),
-                    M("First set = tesSUCCESS"),
-                    HSFEE, ter(tesSUCCESS));
+                M("First set = tesSUCCESS"),
+                HSFEE,
+                ter(tesSUCCESS));
 
             env(ripple::test::jtx::hook(bob, {{hso(accept_wasm)}}, 0),
-                    M("Second set = tecREQUIRES_FLAG"),
-                    HSFEE, ter(tecREQUIRES_FLAG));
+                M("Second set = tecREQUIRES_FLAG"),
+                HSFEE,
+                ter(tecREQUIRES_FLAG));
             env.close();
         }
 
@@ -740,7 +763,8 @@ public:
         {
             env(ripple::test::jtx::hook(alice, {{hso(long_wasm)}}, 0),
                 M("If CreateCode is present, then it must be less than 64kib"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -755,7 +779,8 @@ public:
 
             env(jv,
                 M("HSO Create operation must contain namespace"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -770,7 +795,8 @@ public:
 
             env(jv,
                 M("HSO Create operation must contain api version"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -786,7 +812,8 @@ public:
 
             env(jv,
                 M("HSO Create operation must contain valid api version"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -801,7 +828,8 @@ public:
 
             env(jv,
                 M("HSO Create operation must contain hookon"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -814,18 +842,16 @@ public:
             jv[jss::Hooks][0U] = iv;
             env(jv,
                 M("Cannot have both CreateCode and HookHash"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
-
 
         // correctly formed
         {
             Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(accept_wasm)}}, 0);
-            env(jv,
-                M("Normal accept"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Normal accept"), HSFEE, ter(tesSUCCESS));
             env.close();
 
             auto const def = env.le(accept_keylet);
@@ -847,7 +873,8 @@ public:
             // check if the wasm binary was correctly set
             BEAST_EXPECT(def->isFieldPresent(sfCreateCode));
             auto const& wasm = def->getFieldVL(sfCreateCode);
-            auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
+            auto const wasm_hash =
+                sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
             BEAST_EXPECT(wasm_hash == accept_hash);
         }
 
@@ -861,7 +888,8 @@ public:
             jv[jss::Hooks][1U] = iv;
             env(jv,
                 M("Normal accept, second position"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
             env.close();
 
             auto const def = env.le(accept_keylet);
@@ -887,17 +915,14 @@ public:
         }
 
         auto const rollback_hash = ripple::sha512Half_s(
-            ripple::Slice(rollback_wasm.data(), rollback_wasm.size())
-        );
+            ripple::Slice(rollback_wasm.data(), rollback_wasm.size()));
 
         // test override
         {
             Json::Value jv =
                 ripple::test::jtx::hook(alice, {{hso(rollback_wasm)}}, 0);
             jv[jss::Hooks][0U][jss::Hook][jss::Flags] = hsfOVERRIDE;
-            env(jv,
-                M("Rollback override"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Rollback override"), HSFEE, ter(tesSUCCESS));
             env.close();
 
             auto const rollback_def = env.le(rollback_keylet);
@@ -923,7 +948,8 @@ public:
             // check if the wasm binary was correctly set
             BEAST_EXPECT(rollback_def->isFieldPresent(sfCreateCode));
             auto const& wasm = rollback_def->getFieldVL(sfCreateCode);
-            auto const wasm_hash = sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
+            auto const wasm_hash =
+                sha512Half_s(ripple::Slice(wasm.data(), wasm.size()));
             BEAST_EXPECT(wasm_hash == rollback_hash);
 
             // check if the reference count was correctly incremented
@@ -936,7 +962,8 @@ public:
         }
     }
 
-    void testUpdate()
+    void
+    testUpdate()
     {
         testcase("Checks malformed update operation");
         using namespace jtx;
@@ -964,19 +991,21 @@ public:
             iv[jss::HookParameters] = Json::Value{Json::arrayValue};
             iv[jss::HookParameters][0U] = Json::Value{};
             iv[jss::HookParameters][0U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterName ] = "AAAAAAAAAAAA";
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterValue] = "BBBBBB";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterName] = "AAAAAAAAAAAA";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterValue] = "BBBBBB";
 
             iv[jss::HookParameters][1U] = Json::Value{};
             iv[jss::HookParameters][1U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterName ] = "CAFE";
-            iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterValue] = "FACADE";
+            iv[jss::HookParameters][1U][jss::HookParameter]
+              [jss::HookParameterName] = "CAFE";
+            iv[jss::HookParameters][1U][jss::HookParameter]
+              [jss::HookParameterValue] = "FACADE";
 
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Create accept"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Create accept"), HSFEE, ter(tesSUCCESS));
             env.close();
         }
 
@@ -991,7 +1020,8 @@ public:
 
             env(jv,
                 M("Override flag not allowed on update"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -1003,11 +1033,12 @@ public:
             jv[jss::Hooks][0U][jss::Hook] = iv;
 
             env(jv,
-                M("NSDELETE flag not allowed on update unless HookNamespace also present"),
-                HSFEE, ter(temMALFORMED));
+                M("NSDELETE flag not allowed on update unless HookNamespace "
+                  "also present"),
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
-
 
         // api version not allowed in update
         {
@@ -1018,7 +1049,8 @@ public:
 
             env(jv,
                 M("ApiVersion not allowed in update"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
@@ -1029,29 +1061,25 @@ public:
             params[0U][jss::HookParameter][jss::HookParameterName] = "CAFE";
             params[0U][jss::HookParameter][jss::HookParameterValue] = "BABE";
 
-
             Json::Value grants{Json::arrayValue};
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = accept_hash_str;
 
-            for (auto const& [key, value]:
-                JSSMap{
-                    {jss::HookOn, "1"},
-                    {jss::HookNamespace, "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"},
-                    {jss::HookParameters, params},
-                    {jss::HookGrants, grants}
-                })
+            for (auto const& [key, value] : JSSMap{
+                     {jss::HookOn, "1"},
+                     {jss::HookNamespace,
+                      "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"
+                      "CAFECAFE"},
+                     {jss::HookParameters, params},
+                     {jss::HookGrants, grants}})
             {
                 Json::Value iv;
                 iv[key] = value;
                 jv[jss::Hooks][0U] = Json::Value{};
                 jv[jss::Hooks][0U][jss::Hook] = iv;
 
-                env(jv,
-                    M("Normal update"),
-                    HSFEE, ter(tesSUCCESS));
+                env(jv, M("Normal update"), HSFEE, ter(tesSUCCESS));
                 env.close();
-
             }
 
             // ensure hook still exists
@@ -1063,17 +1091,17 @@ public:
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
 
-
             // check all fields were updated to correct values
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookOn));
             BEAST_EXPECT(hooks[0].getFieldU64(sfHookOn) == 1ULL);
 
-            auto const ns = uint256::fromVoid((std::array<uint8_t,32>{
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
-                0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU
-            }).data());
+            auto const ns = uint256::fromVoid(
+                (std::array<uint8_t, 32>{
+                     0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                     0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                     0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU,
+                     0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU, 0xCAU, 0xFEU})
+                    .data());
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookNamespace));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookNamespace) == ns);
 
@@ -1089,7 +1117,7 @@ public:
 
             const auto pv = p[0].getFieldVL(sfHookParameterValue);
             BEAST_REQUIRE(pv.size() == 2);
-            BEAST_REQUIRE(pv[0] == 0xBAU&& pv[1] == 0xBEU);
+            BEAST_REQUIRE(pv[0] == 0xBAU && pv[1] == 0xBEU);
 
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookGrants));
             const auto& g = hooks[0].getFieldArray(sfHookGrants);
@@ -1100,20 +1128,16 @@ public:
 
         // reset hookon and namespace to defaults
         {
-            for (auto const& [key, value]:
-                JSSMap{
-                    {jss::HookOn, "0"},
-                    {jss::HookNamespace, to_string(uint256{beast::zero})}
-                })
+            for (auto const& [key, value] : JSSMap{
+                     {jss::HookOn, "0"},
+                     {jss::HookNamespace, to_string(uint256{beast::zero})}})
             {
                 Json::Value iv;
                 iv[key] = value;
                 jv[jss::Hooks][0U] = Json::Value{};
                 jv[jss::Hooks][0U][jss::Hook] = iv;
 
-                env(jv,
-                    M("Reset to default"),
-                    HSFEE, ter(tesSUCCESS));
+                env(jv, M("Reset to default"), HSFEE, ter(tesSUCCESS));
                 env.close();
             }
 
@@ -1126,42 +1150,45 @@ public:
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
 
-            // ensure the two fields are now absent (because they were reset to the defaults on the hook def)
+            // ensure the two fields are now absent (because they were reset to
+            // the defaults on the hook def)
             BEAST_EXPECT(!hooks[0].isFieldPresent(sfHookOn));
             BEAST_EXPECT(!hooks[0].isFieldPresent(sfHookNamespace));
         }
 
         // add three additional parameters
-        std::map<ripple::Blob, ripple::Blob> params {
+        std::map<ripple::Blob, ripple::Blob> params{
             {{0xFEU, 0xEDU, 0xFAU, 0xCEU}, {0xF0U, 0x0DU}},
             {{0xA0U}, {0xB0U}},
             {{0xCAU, 0xFEU}, {0xBAU, 0xBEU}},
-            {{0xAAU}, {0xBBU, 0xCCU}}
-        };
+            {{0xAAU}, {0xBBU, 0xCCU}}};
         {
-
             Json::Value iv;
             iv[jss::HookParameters] = Json::Value{Json::arrayValue};
             iv[jss::HookParameters][0U] = Json::Value{};
             iv[jss::HookParameters][0U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterName ] = "FEEDFACE";
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterValue] = "F00D";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterName] = "FEEDFACE";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterValue] = "F00D";
 
             iv[jss::HookParameters][1U] = Json::Value{};
             iv[jss::HookParameters][1U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterName ] = "A0";
-            iv[jss::HookParameters][1U][jss::HookParameter][jss::HookParameterValue] = "B0";
+            iv[jss::HookParameters][1U][jss::HookParameter]
+              [jss::HookParameterName] = "A0";
+            iv[jss::HookParameters][1U][jss::HookParameter]
+              [jss::HookParameterValue] = "B0";
 
             iv[jss::HookParameters][2U] = Json::Value{};
             iv[jss::HookParameters][2U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][2U][jss::HookParameter][jss::HookParameterName ] = "AA";
-            iv[jss::HookParameters][2U][jss::HookParameter][jss::HookParameterValue] = "BBCC";
+            iv[jss::HookParameters][2U][jss::HookParameter]
+              [jss::HookParameterName] = "AA";
+            iv[jss::HookParameters][2U][jss::HookParameter]
+              [jss::HookParameterValue] = "BBCC";
 
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Add three parameters"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Add three parameters"), HSFEE, ter(tesSUCCESS));
             env.close();
 
             // ensure hook still exists
@@ -1195,7 +1222,6 @@ public:
                 BEAST_EXPECT(params[pn] == pv);
                 already.emplace(pn);
             }
-
         }
 
         // try to reset CAFE parameter to default
@@ -1204,13 +1230,15 @@ public:
             iv[jss::HookParameters] = Json::Value{Json::arrayValue};
             iv[jss::HookParameters][0U] = Json::Value{};
             iv[jss::HookParameters][0U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterName ] = "CAFE";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterName] = "CAFE";
 
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Reset cafe param to default using Absent Value"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
             env.close();
 
             // ensure hook still exists
@@ -1229,7 +1257,8 @@ public:
             const auto& p = hooks[0].getFieldArray(sfHookParameters);
             BEAST_REQUIRE(p.size() == params.size());
 
-            // and that they still have the expected values and that there are no duplicates
+            // and that they still have the expected values and that there are
+            // no duplicates
             std::set<ripple::Blob> already;
             for (uint8_t i = 0; i < params.size(); ++i)
             {
@@ -1248,20 +1277,24 @@ public:
             }
         }
 
-        // now re-add CAFE parameter but this time as an explicit blank (Empty value)
+        // now re-add CAFE parameter but this time as an explicit blank (Empty
+        // value)
         {
             Json::Value iv;
             iv[jss::HookParameters] = Json::Value{Json::arrayValue};
             iv[jss::HookParameters][0U] = Json::Value{};
             iv[jss::HookParameters][0U][jss::HookParameter] = Json::Value{};
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterName ] = "CAFE";
-            iv[jss::HookParameters][0U][jss::HookParameter][jss::HookParameterValue ] = "";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterName] = "CAFE";
+            iv[jss::HookParameters][0U][jss::HookParameter]
+              [jss::HookParameterValue] = "";
 
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
                 M("Set cafe param to blank using Empty Value"),
-                HSFEE, ter(tesSUCCESS));
+                HSFEE,
+                ter(tesSUCCESS));
             env.close();
 
             // ensure hook still exists
@@ -1273,14 +1306,15 @@ public:
             BEAST_EXPECT(hooks[0].isFieldPresent(sfHookHash));
             BEAST_EXPECT(hooks[0].getFieldH256(sfHookHash) == accept_hash);
 
-            params[Blob{0xCAU, 0xFEU}]= Blob{};
+            params[Blob{0xCAU, 0xFEU}] = Blob{};
 
             // check there right number of parameters exist
             BEAST_REQUIRE(hooks[0].isFieldPresent(sfHookParameters));
             const auto& p = hooks[0].getFieldArray(sfHookParameters);
             BEAST_REQUIRE(p.size() == params.size());
 
-            // and that they still have the expected values and that there are no duplicates
+            // and that they still have the expected values and that there are
+            // no duplicates
             std::set<ripple::Blob> already;
             for (uint8_t i = 0; i < params.size(); ++i)
             {
@@ -1299,17 +1333,15 @@ public:
             }
         }
 
-
-        // try to delete all parameters (reset to defaults) using EMA (Empty Parameters Array)
+        // try to delete all parameters (reset to defaults) using EMA (Empty
+        // Parameters Array)
         {
             Json::Value iv;
             iv[jss::HookParameters] = Json::Value{Json::arrayValue};
 
             jv[jss::Hooks][0U] = Json::Value{};
             jv[jss::Hooks][0U][jss::Hook] = iv;
-            env(jv,
-                M("Unset all params on hook"),
-                HSFEE, ter(tesSUCCESS));
+            env(jv, M("Unset all params on hook"), HSFEE, ter(tesSUCCESS));
             env.close();
 
             // ensure hook still exists
@@ -1325,9 +1357,6 @@ public:
             BEAST_REQUIRE(!hooks[0].isFieldPresent(sfHookParameters));
         }
 
-
-
-
         // try to set each type of field on a non existent hook
         {
             Json::Value params{Json::arrayValue};
@@ -1335,18 +1364,17 @@ public:
             params[0U][jss::HookParameter][jss::HookParameterName] = "CAFE";
             params[0U][jss::HookParameter][jss::HookParameterValue] = "BABE";
 
-
             Json::Value grants{Json::arrayValue};
             grants[0U][jss::HookGrant] = Json::Value{};
             grants[0U][jss::HookGrant][jss::HookHash] = accept_hash_str;
 
-            for (auto const& [key, value]:
-                JSSMap{
-                    {jss::HookOn, "1"},
-                    {jss::HookNamespace, "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"},
-                    {jss::HookParameters, params},
-                    {jss::HookGrants, grants}
-                })
+            for (auto const& [key, value] : JSSMap{
+                     {jss::HookOn, "1"},
+                     {jss::HookNamespace,
+                      "CAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFECAFE"
+                      "CAFECAFE"},
+                     {jss::HookParameters, params},
+                     {jss::HookGrants, grants}})
             {
                 Json::Value iv;
                 iv[key] = value;
@@ -1357,7 +1385,8 @@ public:
 
                 env(jv,
                     M("Invalid update on non existent hook"),
-                    HSFEE, ter(tecNO_ENTRY));
+                    HSFEE,
+                    ter(tecNO_ENTRY));
                 env.close();
             }
 
@@ -1377,7 +1406,8 @@ public:
                 // add a second hook
                 env(ripple::test::jtx::hook(alice, {{{}, hso(accept_wasm)}}, 0),
                     M("Add second hook"),
-                    HSFEE, ter(tesSUCCESS));
+                    HSFEE,
+                    ter(tesSUCCESS));
             }
 
             Json::Value grants{Json::arrayValue};
@@ -1394,9 +1424,7 @@ public:
             jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
             jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = grants;
 
-            env(jv,
-                M("Add grants"),
-                HSFEE);
+            env(jv, M("Add grants"), HSFEE);
             env.close();
 
             // ensure hook still exists
@@ -1426,13 +1454,12 @@ public:
                 BEAST_REQUIRE(grants[1].isFieldPresent(sfHookHash));
                 BEAST_EXPECT(!grants[1].isFieldPresent(sfAuthorize));
 
-
-                BEAST_EXPECT(grants[0].getFieldH256(sfHookHash) == rollback_hash);
+                BEAST_EXPECT(
+                    grants[0].getFieldH256(sfHookHash) == rollback_hash);
                 BEAST_EXPECT(grants[0].getAccountID(sfAuthorize) == bob.id());
 
                 BEAST_EXPECT(grants[1].getFieldH256(sfHookHash) == accept_hash);
             }
-
         }
 
         // update grants
@@ -1447,9 +1474,7 @@ public:
             jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
             jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = grants;
 
-            env(jv,
-                M("update grants"),
-                HSFEE);
+            env(jv, M("update grants"), HSFEE);
             env.close();
 
             // ensure hook still exists
@@ -1469,9 +1494,9 @@ public:
                 auto const& grants = hooks[1].getFieldArray(sfHookGrants);
                 BEAST_REQUIRE(grants.size() == 1);
                 BEAST_REQUIRE(grants[0].isFieldPresent(sfHookHash));
-                BEAST_EXPECT(grants[0].getFieldH256(sfHookHash) == makestate_hash);
+                BEAST_EXPECT(
+                    grants[0].getFieldH256(sfHookHash) == makestate_hash);
             }
-
         }
 
         // use an empty grants array to reset the grants
@@ -1482,9 +1507,7 @@ public:
             jv[jss::Hooks][1U][jss::Hook] = Json::Value{};
             jv[jss::Hooks][1U][jss::Hook][jss::HookGrants] = Json::arrayValue;
 
-            env(jv,
-                M("clear grants"),
-                HSFEE);
+            env(jv, M("clear grants"), HSFEE);
             env.close();
 
             // ensure hook still exists
@@ -1500,12 +1523,11 @@ public:
             // check there right number of grants exist
             // hook 1 should have 0 grants
             BEAST_REQUIRE(!hooks[1].isFieldPresent(sfHookGrants));
-
         }
     }
 
-
-    void testInferHookSetOperation()
+    void
+    testInferHookSetOperation()
     {
         testcase("Test operation inference");
 
@@ -1532,17 +1554,18 @@ public:
         // hsoINSTALL
         {
             STObject hso{sfHook};
-            hso.setFieldH256(sfHookHash, uint256{beast::zero});  // all zeros hook hash
+            hso.setFieldH256(
+                sfHookHash, uint256{beast::zero});  // all zeros hook hash
             BEAST_EXPECT(SetHook::inferOperation(hso) == hsoINSTALL);
         }
 
         // hsoNSDELETE
         {
             STObject hso{sfHook};
-            hso.setFieldH256(sfHookNamespace, uint256{beast::zero});  // all zeros hook hash
+            hso.setFieldH256(
+                sfHookNamespace, uint256{beast::zero});  // all zeros hook hash
             hso.setFieldU32(sfFlags, hsfNSDELETE);
             BEAST_EXPECT(SetHook::inferOperation(hso) == hsoNSDELETE);
-
         }
 
         // hsoUPDATE
@@ -1552,11 +1575,12 @@ public:
             BEAST_EXPECT(SetHook::inferOperation(hso) == hsoUPDATE);
         }
 
-        //hsoINVALID
+        // hsoINVALID
         {
             STObject hso{sfHook};
             hso.setFieldVL(sfCreateCode, {1});  // non-empty create code
-            hso.setFieldH256(sfHookHash, uint256{beast::zero});  // all zeros hook hash
+            hso.setFieldH256(
+                sfHookHash, uint256{beast::zero});  // all zeros hook hash
             BEAST_EXPECT(SetHook::inferOperation(hso) == hsoINVALID);
         }
     }
@@ -1572,12 +1596,14 @@ public:
         env.fund(XRP(10000), alice);
 
         env(ripple::test::jtx::hook(alice, {{hso(noguard_wasm)}}, 0),
-                M("Must import guard"),
-                HSFEE, ter(temMALFORMED));
+            M("Must import guard"),
+            HSFEE,
+            ter(temMALFORMED));
 
         env(ripple::test::jtx::hook(alice, {{hso(illegalfunc_wasm)}}, 0),
-                M("Must only contain hook and cbak"),
-                HSFEE, ter(temMALFORMED));
+            M("Must only contain hook and cbak"),
+            HSFEE,
+            ter(temMALFORMED));
     }
 
     void
@@ -1597,11 +1623,8 @@ public:
             HSFEE);
         env.close();
 
-        env(pay(bob, alice, XRP(1)),
-            M("Test Accept Hook"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("Test Accept Hook"), fee(XRP(1)));
         env.close();
-
     }
 
     void
@@ -1623,7 +1646,8 @@ public:
 
         env(pay(bob, alice, XRP(1)),
             M("Test Rollback Hook"),
-            fee(XRP(1)), ter(tecHOOK_REJECTED));
+            fee(XRP(1)),
+            ter(tecHOOK_REJECTED));
         env.close();
     }
 
@@ -1641,9 +1665,7 @@ public:
 
         // test a simple loop without a guard call
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 (module
                   (type (;0;) (func (param i32 i32) (result i64)))
                   (type (;1;) (func (param i32 i32) (result i32)))
@@ -1676,15 +1698,14 @@ public:
 
             env(ripple::test::jtx::hook(alice, {{hso(hook)}}, 0),
                 M("Loop 1 no guards"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
 
         // same loop again but with a guard call
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 (module
                   (type (;0;) (func (param i32 i32) (result i64)))
                   (type (;1;) (func (param i32 i32) (result i32)))
@@ -1727,9 +1748,7 @@ public:
 
         // simple looping, c
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -1751,17 +1770,13 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("Test Loop 2"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("Test Loop 2"), fee(XRP(1)));
             env.close();
         }
 
         // complex looping, c
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -1799,17 +1814,13 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("Test Loop 3"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("Test Loop 3"), fee(XRP(1)));
             env.close();
         }
 
         // complex looping missing a guard
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -1845,7 +1856,8 @@ public:
 
             env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
                 M("Loop 4 in C"),
-                HSFEE, ter(temMALFORMED));
+                HSFEE,
+                ter(temMALFORMED));
             env.close();
         }
     }
@@ -1903,9 +1915,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2020,12 +2030,9 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_compare"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_compare"), fee(XRP(1)));
             env.close();
         }
-
     }
 
     void
@@ -2041,9 +2048,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2224,9 +2229,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_divide"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_divide"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2244,9 +2247,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2357,9 +2358,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_int"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_int"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2377,9 +2376,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2449,9 +2446,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_invert"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_invert"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2469,9 +2464,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2536,9 +2529,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_log"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_log"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2556,9 +2547,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2669,9 +2658,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_mantissa"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_mantissa"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2689,9 +2676,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -2828,9 +2813,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_mulratio"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_mulratio"), fee(XRP(1)));
             env.close();
         }
     }
@@ -2848,9 +2831,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3131,9 +3112,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_multiply"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_multiply"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3151,9 +3130,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3206,9 +3183,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_negate"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_negate"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3226,9 +3201,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3251,9 +3224,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_one"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_one"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3271,9 +3242,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3333,9 +3302,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_root"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_root"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3353,9 +3320,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -3410,9 +3375,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_set"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_set"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3430,9 +3393,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3527,9 +3488,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_sign"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_sign"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3557,9 +3516,7 @@ public:
         env.fund(XRP(10000), bob);
 
         {
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3721,9 +3678,7 @@ public:
                 HSFEE);
             env.close();
 
-            env(pay(bob, alice, XRP(1)),
-                M("test float_sum"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test float_sum"), fee(XRP(1)));
             env.close();
         }
     }
@@ -3734,18 +3689,14 @@ public:
         testcase("Test hook_account");
         using namespace jtx;
 
-        
-        auto const test = [&](Account alice)->void
-        {
+        auto const test = [&](Account alice) -> void {
             Env env{*this, supported_amendments()};
 
             auto const bob = Account{"bob"};
             env.fund(XRP(10000), alice);
             env.fund(XRP(10000), bob);
 
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3779,9 +3730,7 @@ public:
             env.close();
 
             // invoke the hook
-            env(pay(bob, alice, XRP(1)),
-                M("test hook_account"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test hook_account"), fee(XRP(1)));
 
             {
                 auto meta = env.meta();
@@ -3791,11 +3740,13 @@ public:
                 BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
 
                 // ensure there was only one hook execution
-                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
                 BEAST_REQUIRE(hookExecutions.size() == 1);
 
                 // get the data in the return string of the extention
-                auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+                auto const retStr =
+                    hookExecutions[0].getFieldVL(sfHookReturnString);
 
                 // check that it matches the account id
                 BEAST_EXPECT(retStr.size() == 20);
@@ -3810,12 +3761,10 @@ public:
             env.close();
 
             // invoke the hook
-            env(pay(bob, alice, XRP(1)),
-                M("test hook_account 2"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test hook_account 2"), fee(XRP(1)));
 
-            // there should be two hook executions, the first should be bob's address
-            // the second should be alice's
+            // there should be two hook executions, the first should be bob's
+            // address the second should be alice's
             {
                 auto meta = env.meta();
 
@@ -3824,12 +3773,14 @@ public:
                 BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
 
                 // ensure there were two hook executions
-                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
                 BEAST_REQUIRE(hookExecutions.size() == 2);
 
                 {
                     // get the data in the return string of the extention
-                    auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+                    auto const retStr =
+                        hookExecutions[0].getFieldVL(sfHookReturnString);
 
                     // check that it matches the account id
                     BEAST_EXPECT(retStr.size() == 20);
@@ -3839,14 +3790,14 @@ public:
 
                 {
                     // get the data in the return string of the extention
-                    auto const retStr = hookExecutions[1].getFieldVL(sfHookReturnString);
+                    auto const retStr =
+                        hookExecutions[1].getFieldVL(sfHookReturnString);
 
                     // check that it matches the account id
                     BEAST_EXPECT(retStr.size() == 20);
                     auto const a = alice.id();
                     BEAST_EXPECT(memcmp(retStr.data(), a.data(), 20) == 0);
                 }
-
             }
         };
 
@@ -3865,18 +3816,14 @@ public:
         testcase("Test hook_hash");
         using namespace jtx;
 
-        
-        auto const test = [&](Account alice)->void
-        {
+        auto const test = [&](Account alice) -> void {
             Env env{*this, supported_amendments()};
 
             auto const bob = Account{"bob"};
             env.fund(XRP(10000), alice);
             env.fund(XRP(10000), bob);
 
-            TestHook
-            hook =
-            wasm[R"[test.hook](
+            TestHook hook = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3910,9 +3857,7 @@ public:
             env.close();
 
             // invoke the hook
-            env(pay(bob, alice, XRP(1)),
-                M("test hook_hash"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test hook_hash"), fee(XRP(1)));
 
             {
                 auto meta = env.meta();
@@ -3922,22 +3867,22 @@ public:
                 BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
 
                 // ensure there was only one hook execution
-                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
                 BEAST_REQUIRE(hookExecutions.size() == 1);
 
                 // get the data in the return string of the extention
-                auto const retStr = hookExecutions[0].getFieldVL(sfHookReturnString);
+                auto const retStr =
+                    hookExecutions[0].getFieldVL(sfHookReturnString);
 
                 // check that it matches the hook hash
                 BEAST_EXPECT(retStr.size() == 32);
-                
+
                 auto const hash = hookExecutions[0].getFieldH256(sfHookHash);
                 BEAST_EXPECT(memcmp(hash.data(), retStr.data(), 32) == 0);
             }
 
-            TestHook
-            hook2 =
-            wasm[R"[test.hook](
+            TestHook hook2 = wasm[R"[test.hook](
                 #include <stdint.h>
                 extern int32_t _g       (uint32_t id, uint32_t maxiter);
                 #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -3971,13 +3916,10 @@ public:
             env.close();
 
             // invoke the hook
-            env(pay(bob, alice, XRP(1)),
-                M("test hook_hash 2"),
-                fee(XRP(1)));
+            env(pay(bob, alice, XRP(1)), M("test hook_hash 2"), fee(XRP(1)));
 
-
-            // there should be two hook executions, the first should have bob's hook hash
-            // the second should have alice's hook hash
+            // there should be two hook executions, the first should have bob's
+            // hook hash the second should have alice's hook hash
             {
                 auto meta = env.meta();
 
@@ -3986,24 +3928,27 @@ public:
                 BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
 
                 // ensure there was only one hook execution
-                auto const hookExecutions = meta->getFieldArray(sfHookExecutions);
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
                 BEAST_REQUIRE(hookExecutions.size() == 2);
 
                 // get the data in the return string of the extention
-                auto const retStr1 = hookExecutions[0].getFieldVL(sfHookReturnString);
+                auto const retStr1 =
+                    hookExecutions[0].getFieldVL(sfHookReturnString);
 
                 // check that it matches the hook hash
                 BEAST_EXPECT(retStr1.size() == 32);
-                
+
                 auto const hash1 = hookExecutions[0].getFieldH256(sfHookHash);
                 BEAST_EXPECT(memcmp(hash1.data(), retStr1.data(), 32) == 0);
-                
+
                 // get the data in the return string of the extention
-                auto const retStr2 = hookExecutions[1].getFieldVL(sfHookReturnString);
+                auto const retStr2 =
+                    hookExecutions[1].getFieldVL(sfHookReturnString);
 
                 // check that it matches the hook hash
                 BEAST_EXPECT(retStr2.size() == 32);
-                
+
                 auto const hash2 = hookExecutions[1].getFieldH256(sfHookHash);
                 BEAST_EXPECT(memcmp(hash2.data(), retStr2.data(), 32) == 0);
 
@@ -4011,15 +3956,11 @@ public:
                 BEAST_EXPECT(memcmp(hash1.data(), hash2.data(), 32) != 0);
 
                 // compute the hashes
-                auto computedHash2 =
-                ripple::sha512Half_s(
-                    ripple::Slice(hook.data(), hook.size())                                                  
-                );
+                auto computedHash2 = ripple::sha512Half_s(
+                    ripple::Slice(hook.data(), hook.size()));
 
-                auto computedHash1 = 
-                ripple::sha512Half_s(
-                    ripple::Slice(hook2.data(), hook2.size())                                                  
-                );
+                auto computedHash1 = ripple::sha512Half_s(
+                    ripple::Slice(hook2.data(), hook2.size()));
 
                 // ensure the computed hashes match
                 BEAST_EXPECT(computedHash1 == hash1);
@@ -4127,9 +4068,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4227,9 +4166,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test slot"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test slot"), fee(XRP(1)));
     }
 
     void
@@ -4244,9 +4181,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4289,9 +4224,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test slot_clear"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test slot_clear"), fee(XRP(1)));
     }
 
     void
@@ -4306,9 +4239,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4358,9 +4289,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test slot_count"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test slot_count"), fee(XRP(1)));
     }
 
     void
@@ -4375,9 +4304,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4437,14 +4364,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test slot_float"),
-            fee(XRP(1)));
-    }
-
-    void
-    test_slot_id()
-    {
+        env(pay(bob, alice, XRP(1)), M("test slot_float"), fee(XRP(1)));
     }
 
     void
@@ -4497,7 +4417,7 @@ public:
     {
         testcase("Test sto_emplace");
         using namespace jtx;
-        
+
         Env env{*this, supported_amendments()};
 
         auto const bob = Account{"bob"};
@@ -4505,9 +4425,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4685,9 +4603,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test sto_emplace"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test sto_emplace"), fee(XRP(1)));
     }
 
     void
@@ -4695,7 +4611,7 @@ public:
     {
         testcase("Test sto_erase");
         using namespace jtx;
-        
+
         Env env{*this, supported_amendments()};
 
         auto const bob = Account{"bob"};
@@ -4703,9 +4619,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4826,9 +4740,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test sto_erase"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test sto_erase"), fee(XRP(1)));
     }
 
     void
@@ -4836,7 +4748,7 @@ public:
     {
         testcase("Test sto_subarray");
         using namespace jtx;
-        
+
         Env env{*this, supported_amendments()};
 
         auto const bob = Account{"bob"};
@@ -4844,9 +4756,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4904,9 +4814,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test sto_subarray"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test sto_subarray"), fee(XRP(1)));
     }
 
     void
@@ -4914,7 +4822,7 @@ public:
     {
         testcase("Test sto_subfield");
         using namespace jtx;
-        
+
         Env env{*this, supported_amendments()};
 
         auto const bob = Account{"bob"};
@@ -4922,9 +4830,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -4992,9 +4898,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test sto_subfield"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test sto_subfield"), fee(XRP(1)));
     }
 
     void
@@ -5002,7 +4906,7 @@ public:
     {
         testcase("Test sto_validate");
         using namespace jtx;
-        
+
         Env env{*this, supported_amendments()};
 
         auto const bob = Account{"bob"};
@@ -5010,9 +4914,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -5079,9 +4981,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test sto_validate"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test sto_validate"), fee(XRP(1)));
     }
 
     void
@@ -5107,25 +5007,19 @@ public:
     void
     test_trace()
     {
-        //TODO
+        // TODO
     }
 
     void
     test_trace_float()
     {
-        //TODO
+        // TODO
     }
 
     void
     test_trace_num()
     {
-        //TODO
-    }
-
-    void
-    test_trace_slot()
-    {
-        //TODO
+        // TODO
     }
 
     void
@@ -5139,9 +5033,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -5395,10 +5287,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test util_accid"),
-            fee(XRP(1)));
-
+        env(pay(bob, alice, XRP(1)), M("test util_accid"), fee(XRP(1)));
     }
 
     void
@@ -5413,13 +5302,11 @@ public:
         auto const bob = Account{"bob"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
-        
+
         auto const a = alice.id();
         auto const b = bob.id();
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -5954,10 +5841,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test util_keylet"),
-            fee(XRP(1)));
-
+        env(pay(bob, alice, XRP(1)), M("test util_keylet"), fee(XRP(1)));
     }
 
     void
@@ -5972,9 +5856,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -6412,10 +6294,7 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test util_raddr"),
-            fee(XRP(1)));
-
+        env(pay(bob, alice, XRP(1)), M("test util_raddr"), fee(XRP(1)));
     }
 
     void
@@ -6430,9 +6309,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -6790,11 +6667,8 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test util_sha512h"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test util_sha512h"), fee(XRP(1)));
     }
-
 
     void
     test_util_verify()
@@ -6808,9 +6682,7 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        TestHook
-        hook =
-        wasm[R"[test.hook](
+        TestHook hook = wasm[R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
@@ -6909,15 +6781,13 @@ public:
         env.close();
 
         // invoke the hook
-        env(pay(bob, alice, XRP(1)),
-            M("test util_verify"),
-            fee(XRP(1)));
+        env(pay(bob, alice, XRP(1)), M("test util_verify"), fee(XRP(1)));
     }
 
     void
     run() override
     {
-        //testTicketSetHook();  // RH TODO
+        // testTicketSetHook();  // RH TODO
         testHooksDisabled();
         testTxStructure();
         testInferHookSetOperation();
@@ -6947,39 +6817,39 @@ public:
         test_etxn_reserve();
         test_fee_base();
 
-        test_float_compare();       //
-        test_float_divide();        //
-        test_float_int();           //
-        test_float_invert();        //
-        test_float_log();           //
-        test_float_mantissa();      //
-        test_float_mulratio();      //
-        test_float_multiply();      //
-        test_float_negate();        //
-        test_float_one();           //
-        test_float_root();          //
-        test_float_set();           //
-        test_float_sign();          //
-        test_float_sto();           
+        test_float_compare();   //
+        test_float_divide();    //
+        test_float_int();       //
+        test_float_invert();    //
+        test_float_log();       //
+        test_float_mantissa();  //
+        test_float_mulratio();  //
+        test_float_multiply();  //
+        test_float_negate();    //
+        test_float_one();       //
+        test_float_root();      //
+        test_float_set();       //
+        test_float_sign();      //
+        test_float_sto();
         test_float_sto_set();
-        test_float_sum();           //
+        test_float_sum();  //
 
-        test_hook_account();        //
+        test_hook_account();  //
         test_hook_again();
-        test_hook_hash();           //
-        test_hook_param();          
+        test_hook_hash();  //
+        test_hook_param();
         test_hook_param_set();
         test_hook_pos();
         test_hook_skip();
-        
+
         test_ledger_keylet();
         test_ledger_last_hash();
         test_ledger_last_time();
         test_ledger_nonce();
         test_ledger_seq();
-        
+
         test_meta_slot();
-        
+
         test_otxn_burden();
         test_otxn_field();
         test_otxn_field_txt();
@@ -6992,7 +6862,6 @@ public:
         test_slot_clear();
         test_slot_count();
         test_slot_float();
-        test_slot_id();
         test_slot_set();
         test_slot_size();
         test_slot_subarray();
@@ -7003,40 +6872,39 @@ public:
         test_state_foreign();
         test_state_foreign_set();
         test_state_set();
-        
-        test_sto_emplace();     //
-        test_sto_erase();       //
-        test_sto_subarray();    //
-        test_sto_subfield();    //
-        test_sto_validate();    //
-        
+
+        test_sto_emplace();   //
+        test_sto_erase();     //
+        test_sto_subarray();  //
+        test_sto_subfield();  //
+        test_sto_validate();  //
+
         test_str_compare();
         test_str_concat();
         test_str_find();
         test_str_replace();
-        
+
         test_trace();
         test_trace_float();
         test_trace_num();
-        test_trace_slot();
-        
-        test_util_accid();      //
-        test_util_keylet();     //
-        test_util_raddr();      //
-        test_util_sha512h();    //
-        test_util_verify();     //
+
+        test_util_accid();    //
+        test_util_keylet();   //
+        test_util_raddr();    //
+        test_util_sha512h();  //
+        test_util_verify();   //
     }
 
 private:
-#define HASH_WASM(x)\
-    uint256 const x##_hash = ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size()));\
-    std::string const x##_hash_str = to_string(x##_hash);\
+#define HASH_WASM(x)                                                           \
+    uint256 const x##_hash =                                                   \
+        ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size())); \
+    std::string const x##_hash_str = to_string(x##_hash);                      \
     Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
 
-    TestHook
-    accept_wasm =   // WASM: 0
-    wasm[
-        R"[test.hook](
+    TestHook accept_wasm =  // WASM: 0
+        wasm[
+            R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -7045,15 +6913,13 @@ private:
                 _g(1,1);
                 return accept(0,0,0);
             }
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
     HASH_WASM(accept);
 
-    TestHook
-    rollback_wasm = // WASM: 1
-    wasm[
-        R"[test.hook](
+    TestHook rollback_wasm =  // WASM: 1
+        wasm[
+            R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -7063,15 +6929,13 @@ private:
                 _g(1,1);
                 return rollback(SBUF("Hook Rejected"),0);
             }
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
     HASH_WASM(rollback);
 
-    TestHook
-    noguard_wasm =  // WASM: 2
-    wasm[
-        R"[test.hook](
+    TestHook noguard_wasm =  // WASM: 2
+        wasm[
+            R"[test.hook](
             (module
               (type (;0;) (func (param i32 i32 i64) (result i64)))
               (type (;1;) (func (param i32) (result i64)))
@@ -7084,13 +6948,11 @@ private:
               (memory (;0;) 2)
               (export "memory" (memory 0))
               (export "hook" (func 1)))
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
-    TestHook
-    illegalfunc_wasm = // WASM: 3
-    wasm[
-        R"[test.hook](
+    TestHook illegalfunc_wasm =  // WASM: 3
+        wasm[
+            R"[test.hook](
             (module
               (type (;0;) (func (param i32 i32) (result i32)))
               (type (;1;) (func (param i32 i32 i64) (result i64)))
@@ -7121,13 +6983,11 @@ private:
               (export "memory" (memory 0))
               (export "hook" (func 2))
               (export "bad_func" (func 3)))
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
-    TestHook
-    long_wasm = // WASM: 4
-    wasm[
-        R"[test.hook](
+    TestHook long_wasm =  // WASM: 4
+        wasm[
+            R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -7141,13 +7001,11 @@ private:
                 char ret[] = M_REPEAT_1000("abcdefghijklmnopqrstuvwxyzabcdefghijklmnopqrstuvwxyz01234567890123");
                 return accept(SBUF(ret), 0);
             }
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
-    TestHook
-    makestate_wasm = // WASM: 5
-    wasm[
-        R"[test.hook](
+    TestHook makestate_wasm =  // WASM: 5
+        wasm[
+            R"[test.hook](
             #include <stdint.h>
             extern int32_t _g           (uint32_t id, uint32_t maxiter);
             extern int64_t accept       (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -7160,16 +7018,14 @@ private:
                 uint8_t test_value[] = "value";
                 return accept(0,0, state_set(SBUF(test_value), SBUF(test_key)));
             }
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
     HASH_WASM(makestate);
 
     // this is just used as a second small hook with a unique hash
-    TestHook
-    accept2_wasm =   // WASM: 6
-    wasm[
-        R"[test.hook](
+    TestHook accept2_wasm =  // WASM: 6
+        wasm[
+            R"[test.hook](
             #include <stdint.h>
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
@@ -7178,13 +7034,10 @@ private:
                 _g(1,1);
                 return accept(0,0,2);
             }
-        )[test.hook]"
-    ];
+        )[test.hook]"];
 
     HASH_WASM(accept2);
-
 };
 BEAST_DEFINE_TESTSUITE(SetHook, tx, ripple);
 }  // namespace test
 }  // namespace ripple
-
