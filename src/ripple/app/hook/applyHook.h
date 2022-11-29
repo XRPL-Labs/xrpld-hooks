@@ -167,7 +167,7 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,	slot,               uint32_t write_ptr, uint32_t write_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_clear,         uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_count,         uint32_t slot );
-    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len, int32_t slot );
+    DECLARE_HOOK_FUNCTION(int64_t,	slot_set,           uint32_t read_ptr,  uint32_t read_len, uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_size,          uint32_t slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subarray,      uint32_t parent_slot, uint32_t array_id, uint32_t new_slot );
     DECLARE_HOOK_FUNCTION(int64_t,	slot_subfield,      uint32_t parent_slot, uint32_t field_id, uint32_t new_slot );
@@ -323,12 +323,12 @@ namespace hook
         // the map stores pairs consisting of a memory view and whatever shared or unique ptr is required to
         // keep the underlying object alive for the duration of the hook's execution
         // slot number -> { keylet or hash, { pointer to current object, storage for that object } }
-        std::map<int, SlotEntry> slot {};
-        uint8_t slot_counter { 1 };
-        std::queue<int> slot_free {};
+        std::map<uint32_t, SlotEntry> slot {};
+        std::queue<uint32_t> slot_free {};
+        uint32_t slot_counter { 0 }; // uint16 to avoid accidental overflow and to allow more slots in future
+        uint16_t emit_nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
+        uint16_t ledger_nonce_counter { 0 };
         int64_t expected_etxn_count { -1 }; // make this a 64bit int so the uint32 from the hookapi cant overflow it
-        uint8_t emit_nonce_counter { 0 }; // incremented whenever nonce is called to ensure unique nonces
-        uint8_t ledger_nonce_counter { 0 };
         std::map<ripple::uint256, bool> nonce_used {};
         uint32_t generation = 0; // used for caching, only generated when txn_generation is called
         uint64_t burden = 0;      // used for caching, only generated when txn_burden is called

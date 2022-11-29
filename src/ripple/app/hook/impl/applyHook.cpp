@@ -542,7 +542,7 @@ get_free_slot(hook::HookContext& hookCtx)
 
     // no slots were available in the queue so increment slot counter
     if (slot_into == 0)
-        slot_into = hookCtx.slot_counter++;
+        slot_into = ++hookCtx.slot_counter;
 
     return slot_into;
 }
@@ -1800,7 +1800,7 @@ DEFINE_HOOK_FUNCTION(
             ? applyCtx.tx.getFieldH256(sfTransactionHash)
             : applyCtx.tx.getTransactionID();
 
-    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+    hookCtx.slot.emplace( std::pair<uint32_t, hook::SlotEntry> { slot_into, hook::SlotEntry {
             .storage = st_tx,
             .entry = 0
     }});
@@ -2088,13 +2088,13 @@ DEFINE_HOOK_FUNCTION(
     int64_t,
     slot_set,
     uint32_t read_ptr, uint32_t read_len,   // readptr is a keylet
-    int32_t slot_into /* providing 0 allocates a slot to you */ )
+    uint32_t slot_into /* providing 0 allocates a slot to you */ )
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if ((read_len != 32 && read_len != 34) || slot_into < 0 || slot_into > hook_api::max_slots)
+    if ((read_len != 32 && read_len != 34) || slot_into > hook_api::max_slots)
         return INVALID_ARGUMENT;
 
     // check if we can emplace the object to a slot
@@ -2110,7 +2110,10 @@ DEFINE_HOOK_FUNCTION(
         if (!kl)
             return DOESNT_EXIST;
 
-        auto sle = applyCtx.view().peek(*kl);
+        if (kl->key == beast::zero)
+            return DOESNT_EXIST;
+
+        auto const sle = applyCtx.view().read(*kl);
         if (!sle)
             return DOESNT_EXIST;
 
@@ -2119,9 +2122,7 @@ DEFINE_HOOK_FUNCTION(
     else if (read_len == 32)
     {
 
-        uint256 hash;
-        if (!hash.parseHex((const char*)(memory + read_ptr)))
-            return INVALID_ARGUMENT;
+        uint256 hash = ripple::base_uint<256>::fromVoid(memory + read_ptr);
 
         ripple::error_code_i ec { ripple::error_code_i::rpcUNKNOWN };
 
@@ -2142,11 +2143,10 @@ DEFINE_HOOK_FUNCTION(
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
-
-    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+    hookCtx.slot[slot_into] = hook::SlotEntry {
             .storage = *slot_value,
             .entry = 0
-    }});
+    };
     hookCtx.slot[slot_into].entry = &(*hookCtx.slot[slot_into].storage);
 
     return slot_into;
@@ -4920,7 +4920,7 @@ DEFINE_HOOK_FUNCTION(
     if (slot_into == 0)
         slot_into = get_free_slot(hookCtx);
 
-    hookCtx.slot.emplace( std::pair<int, hook::SlotEntry> { slot_into, hook::SlotEntry {
+    hookCtx.slot.emplace( std::pair<uint32_t, hook::SlotEntry> { slot_into, hook::SlotEntry {
             .storage = hookCtx.result.provisionalMeta,
             .entry = 0
     }});
