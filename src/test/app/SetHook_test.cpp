@@ -4480,6 +4480,80 @@ public:
     void
     test_slot_size()
     {
+        testcase("Test slot_size");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot_set(uint32_t, uint32_t, uint32_t);
+            extern int64_t slot_size(uint32_t);
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
+            extern int64_t sto_validate(uint32_t, uint32_t);
+            #define sfBalance ((6U << 16U) + 2U)
+            #define sfFlags ((2U << 16U) + 2U)
+            #define DOESNT_EXIST -5
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+
+            // skip keylet
+            uint8_t kl_sk[] =                                                                                          
+            {                                                                                                          
+                0x00U, 0x68U,                                                                                          
+                0xB4U,0x97U,0x9AU,0x36U,0xCDU,0xC7U,0xF3U,0xD3U,0xD5U,0xC3U,                                           
+                0x1AU,0x4EU,0xAEU,0x2AU,0xC7U,0xD7U,0x20U,0x9DU,0xDAU,0x87U,                                           
+                0x75U,0x88U,0xB9U,0xAFU,0xC6U,0x67U,0x99U,0x69U,0x2AU,0xB0U,                                           
+                0xD6U,0x6BU                                                                                            
+            };  
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                ASSERT(slot_size(1) == DOESNT_EXIST);
+
+                // request a valid keylet, twice
+                ASSERT(slot_set(SBUF(kl_sk), 1) == 1);
+                ASSERT(slot_set(SBUF(kl_sk), 255) == 255);
+                
+                // check the sizes are equal
+                ASSERT(slot_size(1) == slot_size(255));
+
+                // check the sizes are > 0
+                int64_t s = slot_size(1);
+                ASSERT(s > 0);
+
+                // pull the object out into a buffer, check the number of bytes written is correct
+                uint8_t buf[4096];
+                ASSERT(slot(SBUF(buf), 1) == s);
+
+                // check the object is valid
+                ASSERT(sto_validate(buf, s) == 1);
+            
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_size"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test slot_size"), fee(XRP(1)));
     }
 
     void

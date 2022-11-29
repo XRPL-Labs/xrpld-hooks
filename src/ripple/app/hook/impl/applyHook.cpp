@@ -2160,7 +2160,7 @@ DEFINE_HOOK_FUNCTION(
     if (hookCtx.slot.find(slot_no) == hookCtx.slot.end())
         return DOESNT_EXIST;
 
-    //RH TODO: this is a very expensive way of computing size, fix it
+    //RH TODO: this is a very expensive way of computing size, cache it
     Serializer s;
     hookCtx.slot[slot_no].entry->add(s);
     return s.getDataLength();
