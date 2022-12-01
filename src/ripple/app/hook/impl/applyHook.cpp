@@ -523,7 +523,7 @@ inline
 int32_t
 no_free_slots(hook::HookContext& hookCtx)
 {
-    return (hookCtx.slot_counter > hook_api::max_slots && hookCtx.slot_free.size() == 0);
+    return hook_api::max_slots - hookCtx.slot.size() <= 0;
 }
 
 
@@ -531,19 +531,28 @@ inline
 int32_t
 get_free_slot(hook::HookContext& hookCtx)
 {
-    int32_t slot_into = 0;
 
     // allocate a slot
+    int32_t slot_into = 0;
     if (hookCtx.slot_free.size() > 0)
     {
         slot_into = hookCtx.slot_free.front();
         hookCtx.slot_free.pop();
+        return slot_into;
     }
 
-    // no slots were available in the queue so increment slot counter
-    if (slot_into == 0)
+    // no slots were available in the queue so increment slot counter until we find a free slot
+    // usually this will be the next available but the hook developer may have allocated any
+    // slot ahead of when the counter gets there
+    do
+    {
         slot_into = ++hookCtx.slot_counter;
-
+    }
+    while (hookCtx.slot.find(slot_into) != hookCtx.slot.end() && 
+        // this condition should always be met, if for some reason, somehow it is not
+        // then we will return the final slot every time.
+        hookCtx.slot_counter <= hook_api::max_slots);
+    
     return slot_into;
 }
 
@@ -2094,7 +2103,8 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if ((read_len != 32 && read_len != 34) || slot_into > hook_api::max_slots)
+    if ((read_len != 32 && read_len != 34) ||
+        slot_into > hook_api::max_slots)
         return INVALID_ARGUMENT;
 
     // check if we can emplace the object to a slot
@@ -2183,6 +2193,9 @@ DEFINE_HOOK_FUNCTION(
     if (new_slot == 0 && no_free_slots(hookCtx))
         return NO_FREE_SLOTS;
 
+    if (new_slot > hook_api::max_slots)
+        return INVALID_ARGUMENT;
+
     bool copied = false;
     try
     {
@@ -2190,7 +2203,8 @@ DEFINE_HOOK_FUNCTION(
             const_cast<ripple::STBase&>(*hookCtx.slot[parent_slot].entry).downcast<ripple::STArray>();
 
         if (parent_obj.size() <= array_id)
-        return DOESNT_EXIST;
+            return DOESNT_EXIST;
+
         new_slot = ( new_slot == 0 ? get_free_slot(hookCtx) : new_slot );
 
         // copy
@@ -2226,6 +2240,9 @@ DEFINE_HOOK_FUNCTION(
 
     if (new_slot == 0 && no_free_slots(hookCtx))
         return NO_FREE_SLOTS;
+    
+    if (new_slot > hook_api::max_slots)
+        return INVALID_ARGUMENT;
 
     SField const& fieldCode = ripple::SField::getField( field_id );
 

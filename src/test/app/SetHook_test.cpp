@@ -4436,7 +4436,7 @@ public:
                 ASSERT(slot_size(1) > 0);
 
                 // fill up all slots
-                for (uint32_t i = 1; GUARD(257), i < 256; ++i)
+                for (uint32_t i = 1; GUARD(257), i < 255; ++i)
                     ASSERT(slot_set(SBUF(kl_sk), 0) > 0);
                     
                 // request a final slot that should fail
@@ -4559,6 +4559,141 @@ public:
     void
     test_slot_subarray()
     {
+        testcase("Test slot_subarray");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot_size(uint32_t);
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
+            extern int64_t slot_subarray(uint32_t, uint32_t, uint32_t);
+            extern int64_t otxn_slot(uint32_t);
+            extern int64_t slot_subfield(uint32_t, uint32_t, uint32_t);
+            extern int64_t slot_count(uint32_t);
+            extern int64_t slot_set(uint32_t, uint32_t, uint32_t);
+            #define sfMemos ((15U << 16U) + 9U)
+            #define sfMemoData ((7U << 16U) + 13U)
+                        
+            #define DOESNT_EXIST -5
+            #define NO_FREE_SLOTS -6
+            #define NOT_AN_ARRAY -22
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            // skip keylet
+            uint8_t kl_sk[] =                                                                                          
+            {                                                                                                          
+                0x00U, 0x68U,                                                                                          
+                0xB4U,0x97U,0x9AU,0x36U,0xCDU,0xC7U,0xF3U,0xD3U,0xD5U,0xC3U,                                           
+                0x1AU,0x4EU,0xAEU,0x2AU,0xC7U,0xD7U,0x20U,0x9DU,0xDAU,0x87U,                                           
+                0x75U,0x88U,0xB9U,0xAFU,0xC6U,0x67U,0x99U,0x69U,0x2AU,0xB0U,                                           
+                0xD6U,0x6BU                                                                                            
+            };  
+
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+               
+                ASSERT(slot_subarray(1, 1, 1) == DOESNT_EXIST);
+ 
+                // request a valid keylet that doesn't contain an array
+                ASSERT(slot_set(SBUF(kl_sk), 1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+    
+                ASSERT(slot_subarray(1,1,1) == NOT_AN_ARRAY);
+
+                // now request an object that contains an array (this txn)
+                ASSERT(otxn_slot(2) == 2);
+    
+                // slot the array
+                ASSERT(slot_subfield(2, sfMemos, 3) == 3);
+
+                // it should contain 9 entries
+                ASSERT(slot_count(3) == 9);
+
+                // now index into the array
+                ASSERT(slot_subarray(3, 0, 0) > 0);
+
+                // take element at index 5 and place it in slot 100
+                ASSERT(slot_subarray(3, 5, 100) == 100);
+                
+                // override it and replace with element 6
+                ASSERT(slot_subarray(3, 6, 100) == 100);
+            
+                // check the value is correct
+                ASSERT(slot_subfield(100, sfMemoData, 100) == 100);
+                
+                uint8_t buf[16];
+
+                ASSERT(6 == slot(SBUF(buf), 100));
+               
+                ASSERT(
+                    buf[0] == 0x05U &&
+                    buf[1] == 0xC0U && buf[2] == 0x01U && buf[3] == 0xCAU && buf[4] == 0xFEU && buf[5] == 0x06U);
+
+                // override it and replace with element 0
+                ASSERT(slot_subarray(3, 0, 100) == 100);
+            
+                // check the value is correct
+                ASSERT(slot_subfield(100, sfMemoData, 100) == 100);
+                
+                ASSERT(slot(SBUF(buf), 100) == 6);
+
+                ASSERT(
+                    buf[0] == 0x05U &&
+                    buf[1] == 0xC0U && buf[2] == 0x01U && buf[3] == 0xCAU && buf[4] == 0xFEU && buf[5] == 0x00U);
+                
+                // test slot exhaustion
+                for (int i = 0; GUARD(255), i < 250; ++i)
+                    ASSERT(slot_subarray(3, 0, 0) > 0);
+                    
+                ASSERT(slot_subarray(3, 0, 0) == NO_FREE_SLOTS);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_subarray"),
+            HSFEE);
+        env.close();
+
+        // generate an array of memos to attach
+        Json::Value jv;
+        jv[jss::Account] = bob.human();
+        jv[jss::TransactionType] = jss::Payment;
+        jv[jss::Flags] = 0;
+        jv[jss::Amount] = "1";
+        jv[jss::Memos] = Json::Value{Json::arrayValue};
+        jv[jss::Destination] = alice.human();
+        Json::Value iv;
+        for (uint32_t i = 0; i < 8; ++i)
+        {
+            std::string v = "C001CAFE00";
+            v.data()[9] = '0' + i; 
+            iv[jss::MemoData] = v.c_str();
+            iv[jss::MemoFormat] = "";
+            iv[jss::MemoType] = "";
+            jv[jss::Memos][i][jss::Memo] = iv;
+        }
+
+        // invoke the hook
+        env(jv, M("test slot_subarray"), fee(XRP(1)));
     }
 
     void
@@ -7011,11 +7146,11 @@ public:
         test_float_sign();      //
         test_float_sto();
         test_float_sto_set();
-        test_float_sum();  //
+        test_float_sum();       //
 
-        test_hook_account();  //
+        test_hook_account();    //
         test_hook_again();
-        test_hook_hash();  //
+        test_hook_hash();       //
         test_hook_param();
         test_hook_param_set();
         test_hook_pos();
@@ -7037,12 +7172,12 @@ public:
         test_otxn_slot();
         test_otxn_type();
 
-        test_slot();
-        test_slot_clear();
-        test_slot_count();
+        test_slot();           //
+        test_slot_clear();     //
+        test_slot_count();     //
         test_slot_float();
-        test_slot_set();
-        test_slot_size();
+        test_slot_set();       //
+        test_slot_size();      //
         test_slot_subarray();
         test_slot_subfield();
         test_slot_type();

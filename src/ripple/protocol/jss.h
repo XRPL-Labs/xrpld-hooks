@@ -420,6 +420,7 @@ JSS(method);    // RPC
 JSS(methods);
 JSS(metrics);                    // out: Peers
 JSS(Memo);                       // Field
+JSS(Memos);                      // Field
 JSS(MemoFormat);                 // Field
 JSS(MemoData);                   // Field
 JSS(MemoType);                   // Field
