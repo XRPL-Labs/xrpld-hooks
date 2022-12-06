@@ -1932,43 +1932,6 @@ DEFINE_HOOK_FUNCNARG(
         ).count();
 }
 
-// Dump a field in 'full text' form into the hook's memory
-DEFINE_HOOK_FUNCTION(
-    int64_t,
-    otxn_field_txt,
-    uint32_t write_ptr, uint32_t write_len,
-    uint32_t field_id )
-{
-    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-
-    SField const& fieldType = ripple::SField::getField( field_id );
-
-    if (fieldType == sfInvalid)
-        return INVALID_FIELD;
-
-    if (!applyCtx.tx.isFieldPresent(fieldType))
-        return DOESNT_EXIST;
-
-    auto const& field =
-        hookCtx.emitFailure
-        ? hookCtx.emitFailure->getField(fieldType)
-        : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
-
-    std::string out = field.getText();
-
-    if (out.size() > write_len)
-        return TOO_SMALL;
-
-    WRITE_WASM_MEMORY_AND_RETURN(
-        write_ptr, write_len,
-        out.data(), out.size(),
-        memory, memory_length);
-
-}
-
 // Dump a field from the originating transaction into the hook's memory
 DEFINE_HOOK_FUNCTION(
     int64_t,

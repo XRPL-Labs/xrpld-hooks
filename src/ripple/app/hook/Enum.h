@@ -278,7 +278,6 @@ namespace hook_api
         "ledger_keylet",
         "otxn_burden",
         "otxn_field",
-        "otxn_field_txt",
         "otxn_slot",
         "otxn_generation",
         "otxn_id",

@@ -4032,11 +4032,6 @@ public:
     }
 
     void
-    test_otxn_field_txt()
-    {
-    }
-
-    void
     test_otxn_generation()
     {
     }
@@ -7400,11 +7395,11 @@ public:
         test_float_sign();      //
         test_float_sto();
         test_float_sto_set();
-        test_float_sum();  //
+        test_float_sum();       //
 
-        test_hook_account();  //
+        test_hook_account();    //
         test_hook_again();
-        test_hook_hash();  //
+        test_hook_hash();       //
         test_hook_param();
         test_hook_param_set();
         test_hook_pos();
@@ -7420,32 +7415,31 @@ public:
 
         test_otxn_burden();
         test_otxn_field();
-        test_otxn_field_txt();
         test_otxn_generation();
         test_otxn_id();
         test_otxn_slot();
         test_otxn_type();
 
-        test_slot();        //
-        test_slot_clear();  //
-        test_slot_count();  //
+        test_slot();            //
+        test_slot_clear();      //
+        test_slot_count();      //
         test_slot_float();
-        test_slot_set();       //
-        test_slot_size();      //
-        test_slot_subarray();  //
-        test_slot_subfield();
-        test_slot_type();
+        test_slot_set();        //
+        test_slot_size();       //
+        test_slot_subarray();   //
+        test_slot_subfield();   //
+        test_slot_type();       //
 
         test_state();
         test_state_foreign();
         test_state_foreign_set();
         test_state_set();
 
-        test_sto_emplace();   //
-        test_sto_erase();     //
-        test_sto_subarray();  //
-        test_sto_subfield();  //
-        test_sto_validate();  //
+        test_sto_emplace();     //
+        test_sto_erase();       //
+        test_sto_subarray();    //
+        test_sto_subfield();    //
+        test_sto_validate();    //
 
         test_str_compare();
         test_str_concat();
@@ -7456,11 +7450,11 @@ public:
         test_trace_float();
         test_trace_num();
 
-        test_util_accid();    //
-        test_util_keylet();   //
-        test_util_raddr();    //
-        test_util_sha512h();  //
-        test_util_verify();   //
+        test_util_accid();      //
+        test_util_keylet();     //
+        test_util_raddr();      //
+        test_util_sha512h();    //
+        test_util_verify();     //
     }
 
 private:
