@@ -1756,7 +1756,8 @@ DEFINE_HOOK_FUNCTION(
     if (txID.size() > write_len)
         return TOO_SMALL;
 
-    if (NOT_IN_BOUNDS(write_ptr, txID.size(), memory_length))
+    if (NOT_IN_BOUNDS(write_ptr, txID.size(), memory_length) ||
+        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     WRITE_WASM_MEMORY_AND_RETURN(
