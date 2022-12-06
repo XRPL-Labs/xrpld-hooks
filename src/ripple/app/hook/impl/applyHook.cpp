@@ -2621,13 +2621,63 @@ DEFINE_HOOK_FUNCTION(
                     NOT_IN_BOUNDS(cu_ptr, cu_len, memory_length))
                    return OUT_OF_BOUNDS;
 
-                if (hi_len != 20 || lo_len != 20 || cu_len != 20)
+                if (hi_len != 20 || lo_len != 20)
                     return INVALID_ARGUMENT;
+
+                if (cu_len == 20)
+                {
+                    // pass
+                } 
+                else if (cu_len == 3)
+                {
+                    // need to check what data is in these three bytes, to ensure ISO4217 compliance
+                    auto const validateChar = [](uint8_t c) -> bool
+                    {
+                        return 
+                            (c >= 'a' && c <= 'z') ||
+                            (c >= 'A' && c <= 'Z') ||
+                            (c >= '0' && c <= '9') ||
+                            c == '?' || c == '!' || c == '@' ||
+                            c == '#' || c == '$' || c == '%' ||
+                            c == '^' || c == '&' || c == '*' ||
+                            c == '<' || c == '>' || c == '(' ||
+                            c == ')' || c == '{' || c == '}' ||
+                            c == '[' || c == ']' || c == '|';
+                    };
+
+                    if (!validateChar(*((uint8_t*)(cu_ptr + memory + 0U))) ||
+                        !validateChar(*((uint8_t*)(cu_ptr + memory + 1U))) ||
+                        !validateChar(*((uint8_t*)(cu_ptr + memory + 2U))))
+                        return INVALID_ARGUMENT;
+                }
+                else
+                    return INVALID_ARGUMENT;
+
+                std::optional<Currency> cur;
+                
+                // special case, 3 byte ascii
+                if (cu_len == 3)
+                {
+                    uint8_t cur_buf[20] =
+                    {
+                        0,0,0,0,
+                        0,0,0,0,
+                        0,0,0,0,            
+                        *((uint8_t*)(cu_ptr + memory + 0U)),
+                        *((uint8_t*)(cu_ptr + memory + 1U)),
+                        *((uint8_t*)(cu_ptr + memory + 2U)),
+                        0,0,0,0,0
+                    };
+                    cur = Currency::fromVoid(cur_buf); 
+                }
+                else
+                    cur = Currency::fromVoid(memory + cu_ptr);
+
 
                 auto kl = ripple::keylet::line(
                     AccountID::fromVoid(memory + hi_ptr), 
                     AccountID::fromVoid(memory + lo_ptr),
-                    Currency::fromVoid(memory + cu_ptr));                
+                    *cur);
                 return serialize_keylet(kl, memory, write_ptr, write_len);
             }
 

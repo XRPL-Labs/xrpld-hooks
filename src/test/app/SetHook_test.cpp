@@ -4800,6 +4800,141 @@ public:
     void
     test_slot_type()
     {
+        testcase("Test slot_type");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        // set up a trustline which we can retrieve later
+        env(trust(alice, bob["USD"](600)));        
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot_size(uint32_t);
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
+            extern int64_t otxn_slot(uint32_t);
+            extern int64_t slot_subfield(uint32_t, uint32_t, uint32_t);
+            extern int64_t slot_count(uint32_t);
+            extern int64_t slot_type(uint32_t, uint32_t);
+            extern int64_t slot_set(uint32_t, uint32_t, uint32_t);
+            extern int64_t otxn_field (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t field_id
+            );
+            extern
+            int64_t util_keylet (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t keylet_type,
+                uint32_t a,
+                uint32_t b,
+                uint32_t c,
+                uint32_t d,
+                uint32_t e,
+                uint32_t f
+            );
+            extern int64_t hook_account(uint32_t, uint32_t);
+            #define sfMemos ((15U << 16U) + 9U)
+            #define sfMemoData ((7U << 16U) + 13U)
+            #define sfLastLedgerSequence ((2U << 16U) + 0x1BU)
+            #define sfHashes ((19U << 16U) + 2U)
+            #define NOT_AN_OBJECT -23
+            #define DOESNT_EXIST -5
+            #define NO_FREE_SLOTS -6
+            #define INVALID_FIELD -17
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            // skip keylet
+            uint8_t kl_sk[] =                                                                                          
+            {                                                                                                          
+                0x00U, 0x68U,                                                                                          
+                0xB4U,0x97U,0x9AU,0x36U,0xCDU,0xC7U,0xF3U,0xD3U,0xD5U,0xC3U,                                           
+                0x1AU,0x4EU,0xAEU,0x2AU,0xC7U,0xD7U,0x20U,0x9DU,0xDAU,0x87U,                                           
+                0x75U,0x88U,0xB9U,0xAFU,0xC6U,0x67U,0x99U,0x69U,0x2AU,0xB0U,                                           
+                0xD6U,0x6BU                                                                                            
+            };  
+            #define sfLedgerEntry ((10002U << 16U) + 257U)
+            #define sfTransaction ((10001U << 16U) + 257U)
+            #define sfAmount ((6U << 16U) + 1U)
+            #define sfHighLimit ((6U << 16U) + 7U)
+            #define sfAccount ((8U << 16U) + 1U)
+            #define NOT_AN_AMOUNT -32
+            #define KEYLET_LINE 9
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+               
+                ASSERT(slot_type(1, 0) == DOESNT_EXIST);
+ 
+                ASSERT(slot_set(SBUF(kl_sk), 1) == 1);
+
+                ASSERT(slot_size(1) > 0);
+ 
+                ASSERT(slot_type(1, 0) == sfLedgerEntry);   
+
+                ASSERT(slot_subfield(1, sfLastLedgerSequence, 0) == 2);
+
+                ASSERT(slot_size(2) >0);
+
+                ASSERT(slot_size(1) > slot_size(2));
+
+                ASSERT(slot_type(2, 0) == sfLastLedgerSequence);
+
+                ASSERT(otxn_slot(3) == 3);
+
+                ASSERT(slot_type(3, 0) == sfTransaction);
+
+                ASSERT(slot_subfield(3, sfAmount, 4) == 4);
+
+                // this will determine if the amount is native by returning 1 if it is
+                ASSERT(slot_type(4, 1) == 1);
+
+                ASSERT(slot_type(3, 1) == NOT_AN_AMOUNT);
+
+                // there's a trustline between alice and bob
+                // we can find alice and bob's addresses from otxn
+                uint8_t addra[20];
+                uint8_t addrb[20];
+                ASSERT(hook_account(SBUF(addra)) == 20);
+                ASSERT(otxn_field(SBUF(addrb), sfAccount) == 20);
+
+                // build the keylet for the tl
+                uint8_t kl_tr[34];
+                ASSERT(util_keylet(SBUF(kl_tr), KEYLET_LINE, SBUF(addra), SBUF(addrb), "USD", 3) == 34);
+
+                // slot the ripplestate object
+                ASSERT(slot_set(SBUF(kl_tr), 5) == 5);
+
+                // subfield into the high limit
+                ASSERT(slot_subfield(5, sfHighLimit, 6) == 6);
+
+                // this is a non-native balance so we should get 0 back when testing the amount type
+                ASSERT(slot_type(6, 1) == 0);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set slot_subfield"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test slot_type"), fee(XRP(1)));
     }
 
     void
