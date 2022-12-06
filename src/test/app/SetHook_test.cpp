@@ -4204,6 +4204,72 @@ public:
     void
     test_otxn_type()
     {
+        testcase("Test otxn_type");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
+            extern int64_t otxn_slot (
+              uint32_t slot_no
+            );
+            extern int64_t slot_subfield(
+                uint32_t parent_slot,
+                uint32_t field_id,
+                uint32_t new_slot
+            );
+            extern int64_t otxn_type(void);
+            #define sfTransactionType ((1U << 16U) + 2U)
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                ASSERT(otxn_slot(1) == 1);
+            
+                ASSERT(slot_subfield(1, sfTransactionType, 2) == 2);
+        
+                int64_t tt = slot(0,0,2);
+
+                ASSERT(tt == otxn_type());
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set otxn_type"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test otxn_type"), fee(XRP(1)));
+
+        // invoke it another way
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::AccountSet;
+        jv[jss::Flags] = 0;
+
+        // invoke the hook
+        env(jv, M("test otxn_type 2"), fee(XRP(1)));
+        
+        // RH TODO: test behaviour on emit failure
     }
 
     void
@@ -7572,7 +7638,7 @@ public:
         test_otxn_field();
         test_otxn_generation();
         test_otxn_id();         //
-        test_otxn_slot();
+        test_otxn_slot();       //
         test_otxn_type();
 
         test_slot();            //
