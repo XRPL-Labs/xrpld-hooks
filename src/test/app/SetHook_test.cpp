@@ -6094,6 +6094,29 @@ public:
                     };
                     ASSERT_KL_EQ(ans);
                 }
+                
+                // test 3 byte code
+                ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_LINE,
+                    SBUF(a),
+                    SBUF(b),
+                    (uint32_t)"USD", 3
+                )));
+
+                {
+                    // same answer
+                    uint8_t ans[] =
+                    {
+                        0x00U,0x72U,0x0EU,0xB8U,0x2AU,0xDDU,0x5EU,0x15U,0x59U,0x1BU,
+                        0xF6U,0xE3U,0x6DU,0xBCU,0x3CU,0x12U,0xD3U,0x07U,0x6DU,0x43U,
+                        0xA8U,0x53U,0xF8U,0xF9U,0xE8U,0xA7U,0xD8U,0x4FU,0xE1U,0xE9U,
+                        0x7AU,0x2AU,0xC7U,0x3DU
+                    };
+                    ASSERT_KL_EQ(ans);
+                }
+
+                // test invalid 3 byte code
+                ASSERT(INVALID_ARGUMENT ==
+                     util_keylet(buf, 34, KEYLET_LINE, SBUF(a), SBUF(b), (uint32_t)"`SD", 3));
 
                 ASSERT(34 == (e=util_keylet(buf, 34, KEYLET_OFFER,
                     SBUF(a), 

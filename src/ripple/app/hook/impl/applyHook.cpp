@@ -2624,12 +2624,15 @@ DEFINE_HOOK_FUNCTION(
                 if (hi_len != 20 || lo_len != 20)
                     return INVALID_ARGUMENT;
 
+                std::optional<Currency> cur;
                 if (cu_len == 20)
                 {
-                    // pass
+                    // normal 20 byte currency
+                    cur = Currency::fromVoid(memory + cu_ptr);
                 } 
                 else if (cu_len == 3)
                 {
+                    // 3 byte ascii currency
                     // need to check what data is in these three bytes, to ensure ISO4217 compliance
                     auto const validateChar = [](uint8_t c) -> bool
                     {
@@ -2649,15 +2652,7 @@ DEFINE_HOOK_FUNCTION(
                         !validateChar(*((uint8_t*)(cu_ptr + memory + 1U))) ||
                         !validateChar(*((uint8_t*)(cu_ptr + memory + 2U))))
                         return INVALID_ARGUMENT;
-                }
-                else
-                    return INVALID_ARGUMENT;
-
-                std::optional<Currency> cur;
-                
-                // special case, 3 byte ascii
-                if (cu_len == 3)
-                {
+                    
                     uint8_t cur_buf[20] =
                     {
                         0,0,0,0,
@@ -2671,8 +2666,7 @@ DEFINE_HOOK_FUNCTION(
                     cur = Currency::fromVoid(cur_buf); 
                 }
                 else
-                    cur = Currency::fromVoid(memory + cu_ptr);
-
+                    return INVALID_ARGUMENT;
 
                 auto kl = ripple::keylet::line(
                     AccountID::fromVoid(memory + hi_ptr), 
