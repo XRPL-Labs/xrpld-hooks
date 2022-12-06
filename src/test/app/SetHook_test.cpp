@@ -4122,6 +4122,83 @@ public:
     void
     test_otxn_slot()
     {
+        testcase("Test otxn_slot");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t slot (uint32_t write_ptr, uint32_t write_len, uint32_t slot_no);
+            extern int64_t otxn_id (uint32_t write_ptr, uint32_t write_len, uint32_t flags);
+            extern int64_t util_sha512h(uint32_t write_ptr, uint32_t write_len,
+                                    uint32_t read_ptr,  uint32_t read_len );
+            extern int64_t otxn_slot (
+              uint32_t slot_no
+            );
+            #define INVALID_ARGUMENT -7
+            #define NO_FREE_SLOTS -6
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                ASSERT(otxn_slot(256) == INVALID_ARGUMENT);
+
+                ASSERT(otxn_slot(1) == 1);
+
+                uint8_t id[32];
+                ASSERT(otxn_id(SBUF(id), 0) == 32);
+ 
+                // slot the otxn then generate a canonical hash over it 
+                ASSERT(otxn_slot(1) == 1);
+
+                uint8_t buf[1024];
+                int64_t size = slot(buf + 4, sizeof(buf) - 4, 1);
+                
+                ASSERT(size > 0);
+
+                buf[0] = 'T';
+                buf[1] = 'X';
+                buf[2] = 'N';
+                buf[3] = 0;
+
+                uint8_t hash[32];
+                ASSERT(util_sha512h(SBUF(hash), buf, size+4) == 32);
+
+                for (int i = 0; GUARD(32), i < 32; ++i)
+                    ASSERT(hash[i] == id[i]);
+                
+                // slot exhaustion
+                for (int i = 0; GUARD(255), i < 254; ++i)
+                    ASSERT(otxn_slot(0) > 0);
+    
+                ASSERT(otxn_slot(0) == NO_FREE_SLOTS);
+
+                // done!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set otxn_slot"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test otxn_slot"), fee(XRP(1)));
     }
 
     void
@@ -7494,7 +7571,7 @@ public:
         test_otxn_burden();
         test_otxn_field();
         test_otxn_generation();
-        test_otxn_id();
+        test_otxn_id();         //
         test_otxn_slot();
         test_otxn_type();
 
