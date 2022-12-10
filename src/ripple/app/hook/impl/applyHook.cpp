@@ -1248,9 +1248,6 @@ DEFINE_HOOK_FUNCTION(
 
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (NOT_IN_BOUNDS(kread_ptr, 32, memory_length))
-        return OUT_OF_BOUNDS;
-
     if (read_ptr == 0 && read_len == 0)
     {
         // valid, this is a delete operation
@@ -1263,6 +1260,15 @@ DEFINE_HOOK_FUNCTION(
 
     if (kread_len < 1)
         return TOO_SMALL;
+    
+    if (nread_len != 0 && nread_len != 32)
+        return INVALID_ARGUMENT;
+
+    if (aread_len != 0 && aread_len != 20)
+        return INVALID_ARGUMENT;
+    
+    if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+        return OUT_OF_BOUNDS;
 
     // ns can be null if and only if this is a local set
     if (nread_ptr == 0 && nread_len == 0 && !(aread_ptr == 0 && aread_len == 0))
@@ -1634,22 +1640,28 @@ DEFINE_HOOK_FUNCTION(
     if (aread_ptr == 0)
     {
         // valid arguments, local state
-    } else if (aread_ptr > 0)
+        if (aread_len != 0)
+            return INVALID_ARGUMENT;
+    }
+    else if (aread_ptr > 0)
     {
         // valid arguments, foreign state
         is_foreign = true;
-    } else return INVALID_ARGUMENT;
-
-    if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
-        NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length) ||
-        NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
-        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
+        if (aread_len != 20)
+            return INVALID_ARGUMENT;
+    }
+    else
+        return INVALID_ARGUMENT;
 
     if (kread_len > 32)
         return TOO_BIG;
 
+    if (kread_len < 1)
+        return TOO_SMALL;
 
+    if (write_len < 1)
+        return TOO_SMALL;
+    
     if (!is_foreign && nread_len == 0)
     {
        // local account will be populated with local hook namespace unless otherwise specified
@@ -1657,8 +1669,12 @@ DEFINE_HOOK_FUNCTION(
     else if (nread_len != 32)
         return INVALID_ARGUMENT;
 
-    if (is_foreign && aread_len != 20)
-        return INVALID_ACCOUNT;
+    if (NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
+        NOT_IN_BOUNDS(nread_ptr, nread_len, memory_length) ||
+        NOT_IN_BOUNDS(aread_ptr, aread_len, memory_length) ||
+        NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
 
     uint256 ns =
         nread_len == 0

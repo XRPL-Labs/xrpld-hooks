@@ -5156,6 +5156,55 @@ public:
     void
     test_state()
     {
+        testcase("Test state");
+        using namespace jtx;
+
+
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        // set up a trustline which we can retrieve later
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len  
+            );
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define TOO_SMALL (-4)
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                ASSERT(state(0,0,0,0) == TOO_SMALL);
+
+                // RH TODO: finish!
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set state"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test state"), fee(XRP(1)));
     }
 
     void
@@ -5171,6 +5220,430 @@ public:
     void
     test_state_set()
     {
+        testcase("Test state_set");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        auto const aliceid = Account("alice").id();
+
+        auto const nsdirkl = keylet::hookStateDir(aliceid, beast::zero);
+
+        // ensure there's no way the state or directory exist before we start
+        {
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, beast::zero, beast::zero));
+            BEAST_REQUIRE(!state1);
+        }
+
+        // first hook will set two state objects with different keys and data on alice
+        {
+            TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state_set (
+                uint32_t read_ptr,
+                uint32_t read_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len  
+            );
+            
+            uint8_t data2[128] = 
+            {
+                0x23U,0x13U,0x96U,0x68U,0x78U,0xDCU,0xABU,0xC4U,0x40U,0x26U,
+                0x07U,0x2BU,0xA3U,0xD2U,0x0CU,0x69U,0x40U,0xDDU,0xCDU,0xE7U,
+                0x38U,0x9BU,0x0BU,0xA9U,0x6CU,0x3CU,0xB3U,0x87U,0x37U,0x02U,
+                0x81U,0xE8U,0x2BU,0xDDU,0x5DU,0xBBU,0x40U,0xD9U,0x66U,0x96U,
+                0x6FU,0xC1U,0x6BU,0xE8U,0xD4U,0x7CU,0x7BU,0x62U,0x14U,0x4CU,
+                0xD1U,0x4BU,0xAAU,0x99U,0x36U,0x75U,0xE9U,0x22U,0xADU,0x0FU,
+                0x5FU,0x94U,0x1DU,0x86U,0xEBU,0xA8U,0x13U,0x99U,0xF9U,0x98U,
+                0xFFU,0xCAU,0x5BU,0x86U,0x2FU,0xDFU,0x67U,0x8FU,0xE2U,0xE3U,
+                0xC3U,0x37U,0xCCU,0x47U,0x0FU,0x33U,0x88U,0xB0U,0x33U,0x3BU,
+                0x02U,0x55U,0x67U,0x16U,0xA4U,0xFBU,0x8EU,0x85U,0x6FU,0xD8U,
+                0x84U,0x16U,0xA3U,0x54U,0x18U,0x34U,0x06U,0x0EU,0xF6U,0x65U,
+                0x34U,0x05U,0x26U,0x7EU,0x05U,0x74U,0xDAU,0x09U,0xBFU,0x55U,
+                0x8CU,0x75U,0x92U,0xACU,0x33U,0xFBU,0x01U,0x8DU
+            };
+
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define TOO_SMALL (-4)
+            #define TOO_BIG (-3)
+            #define OUT_OF_BOUNDS (-1)
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+
+                // bounds and buffer size checks
+                {
+                    // RH NOTE: readptr/len 0/0 = delete entry
+
+                    ASSERT(state_set(0,0,0,0) == TOO_SMALL);
+                    ASSERT(state_set(0,0,0,33) == TOO_BIG);
+                    ASSERT(state_set(0,0,0,1000000) == TOO_BIG);
+                    ASSERT(state_set(0,0,1000000,1) == OUT_OF_BOUNDS);
+
+                    ASSERT(state_set(0,1000000, 0, 32) == OUT_OF_BOUNDS); 
+                    ASSERT(state_set(1000000, 0, 0, 32) == OUT_OF_BOUNDS); 
+     
+                    ASSERT(state_set(0, 129, 0, 32) == TOO_BIG);
+                }
+
+
+                // create state 1
+                {
+                    uint8_t key[32] =
+                    {
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,0,0,0
+                    };
+
+                    uint8_t data[4] = 
+                    {
+                        0xCAU,0xFEU,0xBAU,0xBEU
+                    };
+
+
+                    ASSERT(state_set(SBUF(data), SBUF(key)) == sizeof(data));
+                }
+
+                // create state 2                
+                {
+                    uint8_t key[3] =
+                    {
+                        1,2,3
+                    };
+
+
+                    ASSERT(state_set(SBUF(data2), SBUF(key)) == sizeof(data2));
+                }
+
+
+                accept(0,0,0);
+
+            }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set state_set 1"),
+                HSFEE);
+            env.close();
+           
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)), M("test state_set 1"), fee(XRP(1)));
+            env.close();
+        }
+
+        // check that the state object and namespace exists
+        {
+    
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!!nsdir);
+
+            BEAST_EXPECT(nsdir->getFieldV256(sfIndexes).size() == 2);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, beast::zero, beast::zero));
+            BEAST_REQUIRE(!!state1);
+
+            BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == beast::zero);
+        
+            auto const data1 = state1->getFieldVL(sfHookStateData);
+            BEAST_EXPECT(data1.size() == 4);
+            BEAST_EXPECT(data1[0] == 0xCAU && data1[1] == 0xFEU && data1[2] == 0xBAU && data1[3] == 0xBEU);
+            
+            uint8_t key2[32] = 
+            {
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,1,2,3
+            };
+
+            auto const state2 = env.le(ripple::keylet::hookState(aliceid, uint256::fromVoid(key2), beast::zero));
+
+            BEAST_REQUIRE(!!state2);
+        
+            auto const lekey2 = state2->getFieldH256(sfHookStateKey);
+            
+            BEAST_EXPECT(lekey2 == uint256::fromVoid(key2));
+            
+            uint8_t data2[128] = 
+            {
+                0x23U,0x13U,0x96U,0x68U,0x78U,0xDCU,0xABU,0xC4U,0x40U,0x26U,
+                0x07U,0x2BU,0xA3U,0xD2U,0x0CU,0x69U,0x40U,0xDDU,0xCDU,0xE7U,
+                0x38U,0x9BU,0x0BU,0xA9U,0x6CU,0x3CU,0xB3U,0x87U,0x37U,0x02U,
+                0x81U,0xE8U,0x2BU,0xDDU,0x5DU,0xBBU,0x40U,0xD9U,0x66U,0x96U,
+                0x6FU,0xC1U,0x6BU,0xE8U,0xD4U,0x7CU,0x7BU,0x62U,0x14U,0x4CU,
+                0xD1U,0x4BU,0xAAU,0x99U,0x36U,0x75U,0xE9U,0x22U,0xADU,0x0FU,
+                0x5FU,0x94U,0x1DU,0x86U,0xEBU,0xA8U,0x13U,0x99U,0xF9U,0x98U,
+                0xFFU,0xCAU,0x5BU,0x86U,0x2FU,0xDFU,0x67U,0x8FU,0xE2U,0xE3U,
+                0xC3U,0x37U,0xCCU,0x47U,0x0FU,0x33U,0x88U,0xB0U,0x33U,0x3BU,
+                0x02U,0x55U,0x67U,0x16U,0xA4U,0xFBU,0x8EU,0x85U,0x6FU,0xD8U,
+                0x84U,0x16U,0xA3U,0x54U,0x18U,0x34U,0x06U,0x0EU,0xF6U,0x65U,
+                0x34U,0x05U,0x26U,0x7EU,0x05U,0x74U,0xDAU,0x09U,0xBFU,0x55U,
+                0x8CU,0x75U,0x92U,0xACU,0x33U,0xFBU,0x01U,0x8DU
+            };
+
+            auto const ledata2 = state2->getFieldVL(sfHookStateData);
+            BEAST_REQUIRE(ledata2.size() == sizeof(data2));
+
+            for(uint32_t i = 0; i < sizeof(data2); ++i)
+                BEAST_EXPECT(data2[i] == ledata2[i]);
+
+        }
+
+        // make amother hook to override an existing state and delete an existing state
+        {
+            TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state_set (
+                uint32_t read_ptr,
+                uint32_t read_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len  
+            );
+            
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+
+                // override state 1
+                {
+
+                    uint8_t data[16] = 
+                    {
+                        1,1,1,1,1,1,1,1,
+                        1,1,1,1,1,1,1,2
+                    };
+
+
+                    uint8_t zero = 0;
+
+                    ASSERT(state_set(SBUF(data), &zero, 1) == sizeof(data));
+                }
+
+                // delete state 2
+                {
+                    uint8_t key2[32] = 
+                    {
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,0,0,0,
+                        0,0,0,0,0,1,2,3
+                    };
+                    uint8_t zero[1] = {0};
+                    ASSERT(state_set(0,0, key2, 32) == 0);
+                }
+
+                accept(0,0,0);
+
+            }
+            )[test.hook]"];
+
+            TestHook hook2 = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len  
+            );
+            
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                // verify updated state
+                {
+
+                    uint8_t data[16] = 
+                    {
+                        1,1,1,1,1,1,1,1,
+                        1,1,1,1,1,1,1,2
+                    };
+
+                    uint8_t data_read[16];
+                    uint8_t zero = 0;
+
+                    ASSERT(state(SBUF(data_read), &zero, 1) == sizeof(data));
+
+                    for (uint32_t i = 0; GUARD(16), i < 16; ++i)
+                        ASSERT(data[i] == data_read[i]);
+                }
+
+                accept(0,0,0);
+
+            }
+            )[test.hook]"];
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{{hso(hook, overrideFlag)}, {}, {}, {hso(hook2, 0)}}}, 0),
+                M("set state_set 2"),
+                HSFEE);
+            env.close();
+
+           
+            // this hook will be installed on bob, and it will verify the newly updated state
+            // is also available on his side. caution must be taken because bob's hooks will execute
+            // first if bob's is the otxn. therefore we will flip to a payment from alice to bob here
+            TestHook hook3 = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_again(void);
+            extern int64_t state_foreign (
+                uint32_t write_ptr,
+                uint32_t write_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len,
+                uint32_t nread_ptr,
+                uint32_t nread_len,
+                uint32_t aread_ptr,
+                uint32_t aread_len
+            );
+            extern int64_t otxn_field(uint32_t, uint32_t, uint32_t);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define sfAccount ((8U << 16U) + 1U) 
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                hook_again();   // we're going to check in weak execution too
+
+                uint8_t alice[20];
+                ASSERT(otxn_field(SBUF(alice), sfAccount) == 20);
+
+                // verify updated state
+                {
+
+                    uint8_t data[16] = 
+                    {
+                        1,1,1,1,1,1,1,1,
+                        1,1,1,1,1,1,1,2
+                    };
+
+                    uint8_t data_read[16];
+                    uint8_t zero[32] =
+                    {
+                        0,0,0,0, 0,0,0,0,
+                        0,0,0,0, 0,0,0,0,
+                        0,0,0,0, 0,0,0,0,
+                        0,0,0,0, 0,0,0,0
+                    };
+
+                    ASSERT(state_foreign(SBUF(data_read), SBUF(zero), SBUF(zero), SBUF(alice)) == sizeof(data));
+
+                    for (uint32_t i = 0; GUARD(16), i < 16; ++i)
+                        ASSERT(data[i] == data_read[i]);
+                }
+
+                accept(0,0,0);
+
+            }
+            )[test.hook]"];
+            
+            // install the hook on bob
+            env(ripple::test::jtx::hook(bob, {{hso(hook3, overrideFlag)}}, 0),
+                M("set state_set 3"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(alice, bob, XRP(1)), M("test state_set 3"), fee(XRP(1)));
+            env.close();
+
+        }
+        
+        // check that the updates have been made
+        {
+    
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!!nsdir);
+
+            BEAST_EXPECT(nsdir->getFieldV256(sfIndexes).size() == 1);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, beast::zero, beast::zero));
+            BEAST_REQUIRE(!!state1);
+
+            BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == beast::zero);
+        
+            auto const ledata1 = state1->getFieldVL(sfHookStateData);
+            BEAST_EXPECT(ledata1.size() == 16);
+            uint8_t data1[16] = 
+            {
+                1,1,1,1,1,1,1,1,
+                1,1,1,1,1,1,1,2
+            };
+
+            for (uint32_t i = 0; i < sizeof(data1); ++i)
+                BEAST_EXPECT(data1[i] == ledata1[i]);
+
+            
+            uint8_t key2[32] = 
+            {
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,1,2,3
+            };
+
+            auto const state2 = env.le(ripple::keylet::hookState(aliceid, uint256::fromVoid(key2), beast::zero));
+
+            BEAST_REQUIRE(!state2);
+        }
+
+        
+
+                // todo:
+                // check state not set after unsuccessful chain execution
+                // check state can be set on emit callback
+                // check state can be set on weak execution
+                // check state can be set on weak execution after strong execution
+                // check namespacing provides for non-collision of same key
+                // check state persistance between hook install and uninstall
+                // check reserve - cant make new state object if reserve insufficient
+                // try creating many new state objects
+
     }
 
     void
@@ -7639,7 +8112,7 @@ public:
         test_otxn_generation();
         test_otxn_id();         //
         test_otxn_slot();       //
-        test_otxn_type();
+        test_otxn_type();       //
 
         test_slot();            //
         test_slot_clear();      //
