@@ -262,6 +262,9 @@ namespace hook
 
     uint32_t maxHookChainLength(void);
 
+    uint32_t computeHookStateOwnerCount(uint32_t hookStateCount);
+
+
     int64_t computeExecutionFee(uint64_t instructionCount);
     int64_t computeCreationFee(uint64_t byteCount);
 

@@ -300,11 +300,11 @@ public:
             params[0U][jss::HookParameter][jss::HookParameterName] =
                 strHex(std::string(32, 'a'));
             params[0U][jss::HookParameter][jss::HookParameterValue] =
-                strHex(std::string(129, 'a'));
+                strHex(std::string(257, 'a'));
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][0U][jss::Hook] = iv;
             env(jv,
-                M("HSO must must not contain parameter values longer than 128 "
+                M("HSO must must not contain parameter values longer than 256 "
                   "bytes"),
                 HSFEE,
                 ter(temMALFORMED));
@@ -5227,8 +5227,18 @@ public:
 
         auto const bob = Account{"bob"};
         auto const alice = Account{"alice"};
+        auto const cho = Account{"cho"};
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
+        env.fund(XRP(10000), cho);
+
+        
+
+        // install a rollback hook on cho
+        env(ripple::test::jtx::hook(cho, {{hso(rollback_wasm, overrideFlag)}}, 0),
+            M("set state_set rollback"),
+            HSFEE);
+        env.close();
 
         auto const aliceid = Account("alice").id();
 
@@ -5241,6 +5251,8 @@ public:
 
             auto const state1 = env.le(ripple::keylet::hookState(aliceid, beast::zero, beast::zero));
             BEAST_REQUIRE(!state1);
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 0);
         }
 
         // first hook will set two state objects with different keys and data on alice
@@ -5300,7 +5312,7 @@ public:
                     ASSERT(state_set(0,1000000, 0, 32) == OUT_OF_BOUNDS); 
                     ASSERT(state_set(1000000, 0, 0, 32) == OUT_OF_BOUNDS); 
      
-                    ASSERT(state_set(0, 129, 0, 32) == TOO_BIG);
+                    ASSERT(state_set(0, 257, 0, 32) == TOO_BIG);
                 }
 
 
@@ -5345,8 +5357,21 @@ public:
                 M("set state_set 1"),
                 HSFEE);
             env.close();
+            
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
+
+            // invoke the hook with cho (rollback after alice's hooks have executed)
+            env(pay(alice, cho, XRP(1)), M("test state_set 1 rollback"), fee(XRP(1)), ter(tecHOOK_REJECTED));
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
            
-            // invoke the hook
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_EXPECT(!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, beast::zero, beast::zero));
+            BEAST_EXPECT(!state1);
+
+            // invoke the hook from bob to alice, this will work
             env(pay(bob, alice, XRP(1)), M("test state_set 1"), fee(XRP(1)));
             env.close();
         }
@@ -5354,6 +5379,9 @@ public:
         // check that the state object and namespace exists
         {
     
+            // owner count should be 1 hook +  2 state objects == 3
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
+
             auto const nsdir = env.le(nsdirkl);
             BEAST_REQUIRE(!!nsdir);
 
@@ -5517,6 +5545,8 @@ public:
                 HSFEE);
             env.close();
 
+            // two hooks + two state objects = 4
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 4);
            
             // this hook will be installed on bob, and it will verify the newly updated state
             // is also available on his side. caution must be taken because bob's hooks will execute
@@ -5587,6 +5617,11 @@ public:
                 M("set state_set 3"),
                 HSFEE);
             env.close();
+            
+            // invoke the hook with cho (rollback after alice's hooks have executed)
+            env(pay(alice, cho, XRP(1)), M("test state_set 3 rollback"), fee(XRP(1)), ter(tecHOOK_REJECTED));
+            
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 4);
 
             // invoke the hook
             env(pay(alice, bob, XRP(1)), M("test state_set 3"), fee(XRP(1)));
@@ -5597,6 +5632,10 @@ public:
         // check that the updates have been made
         {
     
+            // two hooks + one state == 3
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
+            BEAST_EXPECT((*env.le("bob"))[sfOwnerCount] == 1);
+
             auto const nsdir = env.le(nsdirkl);
             BEAST_REQUIRE(!!nsdir);
 
@@ -5633,16 +5672,92 @@ public:
         }
 
         
+        // create a hook state inside the weak side of an execution, while the strong side is rolled back
+        {
+            TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state_set (
+                uint32_t read_ptr,
+                uint32_t read_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len  
+            );
+            extern int64_t hook_again(void);
+ 
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+           
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
 
+                hook_again();
+
+                // create state 
+                {
+
+                    uint8_t data[16] = 
+                    {
+                        0xFFU,1,1,1,1,1,1,1,
+                        1,1,1,1,1,1,1,2
+                    };
+
+
+                    uint8_t ff = 0xFFU;
+
+                    ASSERT(state_set(SBUF(data), &ff, 1) == sizeof(data));
+                }
+
+                accept(0,0,0);
+
+            }
+            )[test.hook]"];
+
+
+            // install the hook on alice, deleting the other hook
+            env(ripple::test::jtx::hook(alice, {{
+                {hso(hook, overrideFlag)},
+                {},
+                {}, 
+                {hso_delete()}}}, 0),
+                M("set state_set 4"),
+                HSFEE);
+            env.close();
+
+            // invoke from alice to cho, this will cause a rollback, however the hook state should still be updated
+            // because the hook specified hook_again, and in the second weak execution the hook is allowed to
+            // set state
+            env(pay(alice, cho, XRP(1)), M("test state_set 4 rollback"), fee(XRP(1)), ter(tecHOOK_REJECTED));
+
+
+            uint8_t key[32] = 
+            {
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0,
+                0,0,0,0,0,0,0,0xFFU
+            };
+
+            auto const state = env.le(ripple::keylet::hookState(aliceid, uint256::fromVoid(key), beast::zero));
+
+            BEAST_EXPECT(state);
+
+            // one hook + two state objects == 3
+//            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
+           
+        }
                 // todo:
-                // check state not set after unsuccessful chain execution
                 // check state can be set on emit callback
-                // check state can be set on weak execution
-                // check state can be set on weak execution after strong execution
-                // check namespacing provides for non-collision of same key
                 // check state persistance between hook install and uninstall
                 // check reserve - cant make new state object if reserve insufficient
                 // try creating many new state objects
+                // check namespacing provides for non-collision of same key
 
     }
 

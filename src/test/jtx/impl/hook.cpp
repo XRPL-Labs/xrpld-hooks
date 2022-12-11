@@ -21,6 +21,7 @@
 #include <ripple/protocol/jss.h>
 #include <stdexcept>
 #include <test/jtx/hook.h>
+#include <ripple/app/hook/Enum.h>
 
 namespace ripple {
 namespace test {
@@ -66,8 +67,22 @@ std::string uint64_hex(uint64_t x)
 }
 
 Json::Value
+hso_delete(void (*f)(Json::Value& jv))
+{
+     Json::Value jv;
+     jv[jss::CreateCode] = "";
+     jv[jss::Flags] = hsfOVERRIDE;
+
+    if (f) 
+        f(jv);
+
+    return jv;
+}
+
+Json::Value
 hso(std::vector<uint8_t> const& wasmBytes, void (*f)(Json::Value& jv))
 {
+
     if (wasmBytes.size() == 0)
         throw std::runtime_error("empty hook wasm passed to hso()");
 
@@ -78,12 +93,12 @@ hso(std::vector<uint8_t> const& wasmBytes, void (*f)(Json::Value& jv))
         jv[jss::HookNamespace] = to_string(uint256{beast::zero});
         jv[jss::HookApiVersion] = Json::Value{0};
     }
-    
 
-    if (f) 
+    if (f)
         f(jv);
 
     return jv;
+
 }
 
 }  // namespace jtx

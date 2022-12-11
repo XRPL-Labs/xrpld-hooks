@@ -136,12 +136,6 @@
     WasmEdge_String hook_api::WasmFunctionName##F = WasmEdge_StringCreateByCString(#F);\
     R hook_api::F(hook::HookContext& hookCtx, WasmEdge_MemoryInstanceContext& memoryCtx)
 
-
-
-
-#define COMPUTE_HOOK_DATA_OWNER_COUNT(state_count)\
-    (std::ceil( (double)state_count/(double)5.0 ))
-
 #define HOOK_SETUP()\
     [[maybe_unused]] ApplyContext& applyCtx = hookCtx.applyCtx;\
     [[maybe_unused]] auto& view = applyCtx.view();\

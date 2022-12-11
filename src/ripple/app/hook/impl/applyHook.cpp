@@ -556,6 +556,13 @@ get_free_slot(hook::HookContext& hookCtx)
     return slot_into;
 }
 
+uint32_t
+hook::
+computeHookStateOwnerCount(uint32_t hookStateCount)
+{
+    return hookStateCount;
+}
+
 inline int64_t
 serialize_keylet(
         ripple::Keylet& kl,
@@ -590,7 +597,7 @@ unserialize_keylet(uint8_t* ptr, uint32_t len)
 // RH TODO: this is used by sethook to determine the value stored in ltHOOK
 // replace this with votable value
 uint32_t hook::maxHookStateDataSize(void) {
-    return 128;
+    return 256U;
 }
 
 uint32_t hook::maxHookWasmSize(void)
@@ -604,7 +611,7 @@ uint32_t hook::maxHookParameterKeySize(void)
 }
 uint32_t hook::maxHookParameterValueSize(void)
 {
-    return 128;
+    return 256;
 }
 
 bool hook::isEmittedTxn(ripple::STTx const& tx)
@@ -775,7 +782,7 @@ hook::setHookState(
     auto hookStateDirKeylet = ripple::keylet::hookStateDir(acc, ns);
 
     uint32_t stateCount = sleAccount->getFieldU32(sfHookStateCount);
-    uint32_t oldStateReserve = COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount);
+    uint32_t oldStateReserve = computeHookStateOwnerCount(stateCount);
 
     auto hookState = view.peek(hookStateKeylet);
 
@@ -806,7 +813,7 @@ hook::setHookState(
             --stateCount; // guard this because in the "impossible" event it is already 0 we'll wrap back to int_max
 
         // if removing this state entry would destroy the allotment then reduce the owner count
-        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) < oldStateReserve)
+        if (computeHookStateOwnerCount(stateCount) < oldStateReserve)
             adjustOwnerCount(view, sleAccount, -1, j);
 
         sleAccount->setFieldU32(sfHookStateCount, stateCount);
@@ -838,7 +845,7 @@ hook::setHookState(
 
         ++stateCount;
 
-        if (COMPUTE_HOOK_DATA_OWNER_COUNT(stateCount) > oldStateReserve)
+        if (computeHookStateOwnerCount(stateCount) > oldStateReserve)
         {
             // the hook used its allocated allotment of state entries for its previous ownercount
             // increment ownercount and give it another allotment
