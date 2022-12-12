@@ -5749,12 +5749,48 @@ public:
             BEAST_EXPECT(state);
 
             // one hook + two state objects == 3
-//            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
            
+
+            // delete alice's hook
+            env(ripple::test::jtx::hook(alice, {{
+                {hso_delete()},
+                {},
+                {},
+                {}}}, 0), 
+                M("set state_set 5 delete"),
+                HSFEE);
+            env.close();
+
+            // check the state is still present
+            {
+                auto const state = env.le(ripple::keylet::hookState(aliceid, uint256::fromVoid(key), beast::zero));
+                BEAST_EXPECT(state);
+            }
+
+            // zero hooks + two state objects == 2
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
+
+            // put on a different hook
+
+            env(ripple::test::jtx::hook(alice, {{hso(rollback_wasm, overrideFlag)}}, 0),
+                M("set state_set rollback2"),
+                HSFEE);
+            env.close();
+            
+            // check the state is still present
+            {
+                auto const state = env.le(ripple::keylet::hookState(aliceid, uint256::fromVoid(key), beast::zero));
+                BEAST_EXPECT(state);
+            }
+
+            // one hooks + two state objects == 3
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
+
         }
+
                 // todo:
                 // check state can be set on emit callback
-                // check state persistance between hook install and uninstall
                 // check reserve - cant make new state object if reserve insufficient
                 // try creating many new state objects
                 // check namespacing provides for non-collision of same key
