@@ -368,9 +368,6 @@ check_guard(
                 ADVANCE(1);
                 uint64_t call_func_idx = LEB();     // the function being called *must* be the _g function
 
-                //printf("iteration_bound: %d, call_func_idx: %ld, guard_func_idx: %d\n",
-                //        iteration_bound, call_func_idx, guard_func_idx);
-
                 if (iteration_bound == 0)
                     GUARD_ERROR("Guard call cannot specify 0 maxiter.");
 
@@ -378,7 +375,6 @@ check_guard(
                     GUARD_ERROR("Call after first and second i32.const at loop start was not _g");
             }
 
-            fprintf(stderr, "bound: %u, current:%llx\n", iteration_bound, current);
             current = current->add_child(iteration_bound, i);
             block_depth++;
             continue;
