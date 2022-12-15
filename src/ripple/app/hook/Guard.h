@@ -7,11 +7,12 @@
 #include <stack>
 #include <string>
 #include <functional>
+#include <memory>
 #include "Enum.h"
 
 using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
-#define DEBUG_GUARD 0
+#define DEBUG_GUARD 1
 #define DEBUG_GUARD_VERBOSE 0
 #define DEBUG_GUARD_VERY_VERBOSE 0
 
@@ -143,36 +144,92 @@ parseSignedLeb128(
 
 struct WasmBlkInf
 {
+    uint32_t sanity_check;
     uint32_t iteration_bound;
     uint32_t instruction_count;
     WasmBlkInf* parent;
-    std::vector<WasmBlkInf> children;
+    std::vector<WasmBlkInf*> children;
+    uint32_t start_byte;
+    bool is_root;
+
+    WasmBlkInf(
+            uint32_t iteration_bound_,
+            uint32_t instruction_count_,
+            WasmBlkInf* parent_,
+            uint32_t start_byte_,
+            bool is_root_ = false)
+        : 
+            sanity_check(0x1234ABCDU),
+            iteration_bound(iteration_bound_),
+            instruction_count(instruction_count_),
+            children({}),
+            parent(parent_),
+            start_byte(start_byte_),
+            is_root(is_root_)
+    {
+        // all done by the above
+    }
+
+    WasmBlkInf* add_child(uint32_t iteration_bound, uint32_t start_byte)
+    {
+        WasmBlkInf* child = new WasmBlkInf(iteration_bound, 0, this, start_byte, false);
+        children.push_back(child);
+        return child;
+    }
+
+    void free_children(WasmBlkInf* blk)
+    {
+        for (WasmBlkInf* child : blk->children)
+            free_children(child);
+        delete blk;
+    }
+
+    
+    ~WasmBlkInf()
+    {
+        // only the root is responsible for freeing
+        if (is_root)
+            for (WasmBlkInf* child : children)
+                free_children(child);
+    }
+
 };
 
 #define PRINT_WCE(x)\
 {\
     if (DEBUG_GUARD)\
-        printf("[%u]%.*swce=%ld | g=%u, pg=%u, m=%g\n",\
+        printf("%llx:: [%u]%.*swce=%ld | start=%x instcount=%u guard=%u, parent_guard=%d, multiplier=%g parentptr=%llx\n",\
+            &blk,\
             x,\
             level, "                                                                                  ",\
             worst_case_execution,\
+            blk->start_byte,\
+            blk->instruction_count,\
             blk->iteration_bound,\
-            (blk->parent ? blk->parent->iteration_bound : -1),\
-            multiplier);\
+            (blk->parent != 0 ? blk->parent->iteration_bound : -1),\
+            multiplier, &(blk->parent));\
 }
 // compute worst case execution time    
 inline
-uint64_t compute_wce (const WasmBlkInf* blk, int level = 0)
+uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
 {
+        if (blk->sanity_check != 0x1234ABCDU)
+            printf("!!! sanity check failed\n");
+
+        WasmBlkInf const* parent = blk->parent;
+
+        if (parent && parent->sanity_check != 0x1234ABCDU)
+            printf("!!! parent sanity check failed\n");
+
         uint64_t worst_case_execution = blk->instruction_count;
         double multiplier = 1.0;
 
         if (blk->children.size() > 0)
             for (auto const& child : blk->children)
-                worst_case_execution += compute_wce(&child, level + 1);
+                worst_case_execution += compute_wce(child, level + 1);
 
-        if (blk->parent == 0 || 
-            blk->parent->iteration_bound == 0)  // this condtion should never occur [defensively programmed]
+        if (parent == 0 || 
+            parent->iteration_bound == 0)  // this condtion should never occur [defensively programmed]
         {
             PRINT_WCE(1);
             return worst_case_execution;
@@ -182,7 +239,7 @@ uint64_t compute_wce (const WasmBlkInf* blk, int level = 0)
         // gives us the loop iterations and thus the multiplier for the instruction count
         multiplier = 
             ((double)(blk->iteration_bound)) /
-            ((double)(blk->parent->iteration_bound)); 
+            ((double)(parent->iteration_bound)); 
 
         worst_case_execution *= multiplier;
         if (worst_case_execution < 1.0)
@@ -191,7 +248,6 @@ uint64_t compute_wce (const WasmBlkInf* blk, int level = 0)
         PRINT_WCE(3);
         return worst_case_execution;
     };
-
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
@@ -218,9 +274,13 @@ check_guard(
     if (end_offset <= 0) end_offset = hook.size();
     int block_depth = 0;
 
-    WasmBlkInf root { .iteration_bound = 1, .instruction_count = 0, .parent = 0, .children = {} };
-
-    WasmBlkInf* current = &root;
+    // the root node is constructed in a unique ptr, which will cause its destructor to be called
+    // when the function exits. The destructor of the root node will recursively free all heap allocated children.
+    //WasmBlkInf(uint32_t iteration_bound_, uint32_t instruction_count_,
+    //        WasmBlkInf* parent_, uint32_t start_byte_, bool is_root_ = false) : 
+    std::unique_ptr<WasmBlkInf> root = std::make_unique<WasmBlkInf>(1, 0, (WasmBlkInf*)0, start_offset, true); 
+     
+    WasmBlkInf* current = &(*root);
 
     if (DEBUG_GUARD)
         printf("\n\n\nstart of guard analysis for codesec %d\n", codesec);
@@ -272,7 +332,7 @@ check_guard(
                 SIGNED_LEB();
             }
 
-            uint32_t iteration_bound = (current->parent == 0 ? 1 : current->parent->iteration_bound);
+            uint32_t iteration_bound = (current->parent == 0 ? 1 : current->iteration_bound);
             if (instr == 0x03U)
             {
                 // now look for the guard call
@@ -312,16 +372,9 @@ check_guard(
                     GUARD_ERROR("Call after first and second i32.const at loop start was not _g");
             }
 
-            current->children.push_back(
-            {
-                .iteration_bound = iteration_bound,
-                .instruction_count = 0, 
-                .parent = current,
-                .children = {}
-            });
-
+            fprintf(stderr, "bound: %u, current:%llx\n", iteration_bound, current);
+            current = current->add_child(iteration_bound, i);
             block_depth++;
-            current = &(current->children[current->children.size()-1]);
             continue;
         }
 
@@ -334,8 +387,20 @@ check_guard(
             current = current->parent;
             if (current == 0 && block_depth == -1 && (i >= end_offset))
                 break;          // codesec end
-            else if (current == 0 || block_depth < 0)
-                GUARD_ERROR("Illegal block end");
+            else if (current == 0)
+            {
+                GUARD_ERROR("Illegal block end (current==0)");
+            }
+            else if (block_depth < 0)
+            {
+                GUARD_ERROR("Illegal block end (block_depth<0)");
+            }
+
+
+            if (current->sanity_check != 0x1234ABCDU)
+            {
+                GUARD_ERROR("Sanity check failed (bad pointer)");
+            }
             continue;
         }
 
@@ -644,7 +709,8 @@ check_guard(
         }
     }
 
-    uint64_t wce = compute_wce(&root);
+    uint64_t wce = compute_wce(&(*root));
+
 
     GUARDLOG(hook::log::INSTRUCTION_COUNT) << "GuardCheck "
         << "Total worse-case execution count: " << wce << "\n";
