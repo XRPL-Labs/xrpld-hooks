@@ -12,7 +12,7 @@
 
 using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
-#define DEBUG_GUARD 1
+#define DEBUG_GUARD 0
 #define DEBUG_GUARD_VERBOSE 0
 #define DEBUG_GUARD_VERY_VERBOSE 0
 
@@ -214,12 +214,18 @@ inline
 uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
 {
         if (blk->sanity_check != 0x1234ABCDU)
+        {
             printf("!!! sanity check failed\n");
+            return (uint64_t)-1;
+        }
 
         WasmBlkInf const* parent = blk->parent;
 
         if (parent && parent->sanity_check != 0x1234ABCDU)
+        {
             printf("!!! parent sanity check failed\n");
+            return (uint64_t)-1;
+        }
 
         uint64_t worst_case_execution = blk->instruction_count;
         double multiplier = 1.0;
