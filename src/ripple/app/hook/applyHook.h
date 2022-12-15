@@ -394,7 +394,7 @@ namespace hook
                 hook_api::WasmFunctionType##F,\
                 hook_api::WasmFunction##F,\
                 (void*)(&ctx), 0);\
-        WasmEdge_ImportObjectAddFunction(importObj, hook_api::WasmFunctionName##F, hf);\
+        WasmEdge_ModuleInstanceAddFunction (importObj, hook_api::WasmFunctionName##F, hf);\
     }
 
     #define HR_ACC() hookResult.account << "-" << hookResult.otxnAccount
@@ -404,8 +404,8 @@ namespace hook
     static WasmEdge_String exportName = WasmEdge_StringCreateByCString("env");
     static WasmEdge_String tableName = WasmEdge_StringCreateByCString("table");
     static auto* tableType =
-        WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Min = 10, .Max = 20});
-    static auto* memType = WasmEdge_MemoryTypeCreate({.HasMax = true, .Min = 1, .Max = 1});
+        WasmEdge_TableTypeCreate(WasmEdge_RefType_FuncRef, {.HasMax = true, .Shared = false, .Min = 10, .Max = 20});
+    static auto* memType = WasmEdge_MemoryTypeCreate({.HasMax = true, .Shared = false, .Min = 1, .Max = 1});
     static WasmEdge_String memName = WasmEdge_StringCreateByCString("memory");
     static WasmEdge_String cbakFunctionName = WasmEdge_StringCreateByCString("cbak");
     static WasmEdge_String hookFunctionName = WasmEdge_StringCreateByCString("hook");
@@ -430,7 +430,7 @@ namespace hook
 
         public:
             HookContext hookCtx;
-            WasmEdge_ImportObjectContext* importObj;
+            WasmEdge_ModuleInstanceContext* importObj;
 
         /**
          * Validate that a web assembly blob can be loaded by wasmedge
@@ -529,7 +529,7 @@ namespace hook
 
         HookExecutor(HookContext& ctx)
             : hookCtx(ctx)
-            , importObj(WasmEdge_ImportObjectCreate(exportName))
+            , importObj(WasmEdge_ModuleInstanceCreate(exportName))
         {
             ctx.module = this;
 
@@ -624,14 +624,14 @@ namespace hook
             ADD_HOOK_FUNCTION(str_concat, ctx);
 
             WasmEdge_TableInstanceContext* hostTable = WasmEdge_TableInstanceCreate(tableType);
-            WasmEdge_ImportObjectAddTable(importObj, tableName, hostTable);
+            WasmEdge_ModuleInstanceAddTable(importObj, tableName, hostTable);
             WasmEdge_MemoryInstanceContext* hostMem  = WasmEdge_MemoryInstanceCreate(memType);
-            WasmEdge_ImportObjectAddMemory(importObj, memName, hostMem);
+            WasmEdge_ModuleInstanceAddMemory(importObj, memName, hostMem);
         }
 
         ~HookExecutor()
         {
-            WasmEdge_ImportObjectDelete(importObj);
+            WasmEdge_ModuleInstanceDelete(importObj);
         };
     };
 

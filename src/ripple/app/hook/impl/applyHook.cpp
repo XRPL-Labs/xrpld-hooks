@@ -1228,7 +1228,7 @@ DEFINE_HOOK_FUNCTION(
 {
     return
         state_foreign_set(
-                hookCtx, memoryCtx,
+                hookCtx, frameCtx,
                 read_ptr,   read_len,
                 kread_ptr,  kread_len,
                 0, 0,
@@ -1622,7 +1622,7 @@ DEFINE_HOOK_FUNCTION(
 {
     return
         state_foreign(
-            hookCtx, memoryCtx,
+            hookCtx, frameCtx,
             write_ptr, write_len,
             kread_ptr, kread_len,
             0, 0,
@@ -1907,7 +1907,7 @@ DEFINE_HOOK_FUNCNARG(
         int64_t,
         etxn_generation)
 {
-    return otxn_generation(hookCtx, memoryCtx) + 1;
+    return otxn_generation(hookCtx, frameCtx) + 1;
 }
 
 
@@ -2880,7 +2880,7 @@ DEFINE_HOOK_FUNCTION(
 
     auto const& hash = emitDetails.getFieldH256(sfEmitHookHash);
 
-    uint32_t gen_proper = etxn_generation(hookCtx, memoryCtx);
+    uint32_t gen_proper = etxn_generation(hookCtx, frameCtx);
 
     if (gen != gen_proper)
     {
@@ -2891,7 +2891,7 @@ DEFINE_HOOK_FUNCTION(
         return EMISSION_FAILURE;
     }
 
-    uint64_t bur_proper = etxn_burden(hookCtx, memoryCtx);
+    uint64_t bur_proper = etxn_burden(hookCtx, frameCtx);
     if (bur != bur_proper)
     {
         JLOG(j.trace())
@@ -2969,7 +2969,7 @@ DEFINE_HOOK_FUNCTION(
     }
 
     // rule 7 check the emitted txn pays the appropriate fee
-    int64_t minfee = etxn_fee_base(hookCtx, memoryCtx, read_ptr, read_len);
+    int64_t minfee = etxn_fee_base(hookCtx, frameCtx, read_ptr, read_len);
 
     if (minfee < 0)
     {
@@ -3242,7 +3242,7 @@ DEFINE_HOOK_FUNCNARG(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint64_t last_burden = (uint64_t)otxn_burden(hookCtx, memoryCtx); // always non-negative so cast is safe
+    uint64_t last_burden = (uint64_t)otxn_burden(hookCtx, frameCtx); // always non-negative so cast is safe
 
     uint64_t burden = last_burden * hookCtx.expected_etxn_count;
     if (burden < last_burden) // this overflow will never happen but handle it anyway
@@ -3803,7 +3803,7 @@ DEFINE_HOOK_FUNCTION(
 {
     int64_t ret =
         sto_emplace(
-                hookCtx, memoryCtx,
+                hookCtx, frameCtx,
                 write_ptr, write_len,
                 read_ptr,   read_len,
                 0, 0, field_id);
@@ -3954,9 +3954,9 @@ DEFINE_HOOK_FUNCTION(
     if (hookCtx.expected_etxn_count <= -1)
         return PREREQUISITE_NOT_MET;
 
-    uint32_t generation = (uint32_t)(etxn_generation(hookCtx, memoryCtx)); // always non-negative so cast is safe
+    uint32_t generation = (uint32_t)(etxn_generation(hookCtx, frameCtx)); // always non-negative so cast is safe
 
-    int64_t burden = etxn_burden(hookCtx, memoryCtx);
+    int64_t burden = etxn_burden(hookCtx, frameCtx);
     if (burden < 1)
         return FEE_TOO_LARGE;
 
@@ -3979,11 +3979,11 @@ DEFINE_HOOK_FUNCTION(
     *out++ = ( burden >>  8U ) & 0xFFU;
     *out++ = ( burden >>  0U ) & 0xFFU;
     *out++ = 0x5BU; // sfEmitParentTxnID preamble                      /* upto =  16 | size = 33 */
-    if (otxn_id(hookCtx, memoryCtx, out - memory, 32, 1) != 32)
+    if (otxn_id(hookCtx, frameCtx, out - memory, 32, 1) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++ = 0x5CU; // sfEmitNonce                                     /* upto =  49 | size = 33 */
-    if (etxn_nonce(hookCtx, memoryCtx, out - memory, 32) != 32)
+    if (etxn_nonce(hookCtx, frameCtx, out - memory, 32) != 32)
         return INTERNAL_ERROR;
     out += 32;
     *out++= 0x5DU; // sfEmitHookHash preamble                          /* upto =  82 | size = 33 */
@@ -3994,7 +3994,7 @@ DEFINE_HOOK_FUNCTION(
     {
         *out++ = 0x8AU; // sfEmitCallback preamble                         /* upto = 115 | size = 22 */
         *out++ = 0x14U; // preamble cont
-        if (hook_account(hookCtx, memoryCtx, out - memory, 20) != 20)
+        if (hook_account(hookCtx, frameCtx, out - memory, 20) != 20)
             return INTERNAL_ERROR;
         out += 20;
     }
