@@ -440,6 +440,7 @@ target_sources (rippled PRIVATE
   src/ripple/app/tx/impl/SetAccount.cpp
   src/ripple/app/tx/impl/SetRegularKey.cpp
   src/ripple/app/tx/impl/SetHook.cpp
+  src/ripple/app/tx/impl/Invoke.cpp
   src/ripple/app/tx/impl/SetSignerList.cpp
   src/ripple/app/tx/impl/SetTrust.cpp
   src/ripple/app/tx/impl/SignerEntries.cpp

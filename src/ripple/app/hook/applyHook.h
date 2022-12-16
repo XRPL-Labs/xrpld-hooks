@@ -65,7 +65,8 @@ namespace hook
         {ttNFTOKEN_BURN,            tshCOLLECT  }, 
         {ttNFTOKEN_CREATE_OFFER,    tshROLLBACK },
         {ttNFTOKEN_CANCEL_OFFER,    tshCOLLECT  },
-        {ttNFTOKEN_ACCEPT_OFFER,    tshROLLBACK }
+        {ttNFTOKEN_ACCEPT_OFFER,    tshROLLBACK },
+        {ttINVOKE,                  tshROLLBACK }
     };
 
 

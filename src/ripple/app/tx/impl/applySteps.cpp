@@ -41,6 +41,7 @@
 #include <ripple/app/tx/impl/SetSignerList.h>
 #include <ripple/app/tx/impl/SetTrust.h>
 #include <ripple/app/tx/impl/SetHook.h>
+#include <ripple/app/tx/impl/Invoke.h>
 
 namespace ripple {
 
@@ -151,6 +152,8 @@ invoke_preflight(PreflightContext const& ctx)
             return invoke_preflight_helper<NFTokenCancelOffer>(ctx);
         case ttNFTOKEN_ACCEPT_OFFER:
             return invoke_preflight_helper<NFTokenAcceptOffer>(ctx);
+        case ttINVOKE:
+            return invoke_preflight_helper<Invoke>(ctx);
         default:
             assert(false);
             return {temUNKNOWN, TxConsequences{temUNKNOWN}};
@@ -256,6 +259,8 @@ invoke_preclaim(PreclaimContext const& ctx)
             return invoke_preclaim<NFTokenCancelOffer>(ctx);
         case ttNFTOKEN_ACCEPT_OFFER:
             return invoke_preclaim<NFTokenAcceptOffer>(ctx);
+        case ttINVOKE:
+            return invoke_preclaim<Invoke>(ctx);
         default:
             assert(false);
             return temUNKNOWN;
@@ -322,6 +327,8 @@ invoke_calculateBaseFee(ReadView const& view, STTx const& tx)
             return NFTokenCancelOffer::calculateBaseFee(view, tx);
         case ttNFTOKEN_ACCEPT_OFFER:
             return NFTokenAcceptOffer::calculateBaseFee(view, tx);
+        case ttINVOKE:
+            return Invoke::calculateBaseFee(view, tx);
         default:
             assert(false);
             return FeeUnit64{0};
@@ -478,6 +485,10 @@ invoke_apply(ApplyContext& ctx)
         }
         case ttNFTOKEN_ACCEPT_OFFER: {
             NFTokenAcceptOffer p(ctx);
+            return p();
+        }
+        case ttINVOKE: {
+            Invoke p(ctx);
             return p();
         }
         default:

@@ -343,6 +343,15 @@ TxFormats::TxFormats()
             {sfTicketSequence, soeOPTIONAL},
         },
         commonFields);
+
+    add(jss::Invoke,
+        ttINVOKE,
+        {
+            {sfBlob, soeOPTIONAL},
+            {sfHookParameters, soeOPTIONAL},
+            {sfDestination, soeREQUIRED}
+        },
+        commonFields);
 }
 
 TxFormats const&
