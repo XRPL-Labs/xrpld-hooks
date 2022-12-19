@@ -42,6 +42,7 @@ TxFormats::TxFormats()
         {sfSigners, soeOPTIONAL},  // submit_multisigned
         {sfEmitDetails, soeOPTIONAL},
         {sfFirstLedgerSequence, soeOPTIONAL},
+        {sfNetworkID, soeOPTIONAL}
     };
 
     add(jss::AccountSet,
@@ -286,7 +287,7 @@ TxFormats::TxFormats()
             {sfTicketSequence, soeOPTIONAL},
         },
         commonFields);
-    
+
     add(jss::SetHook,
         ttHOOK_SET,
         {
