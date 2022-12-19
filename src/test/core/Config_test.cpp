@@ -473,7 +473,7 @@ main
         }
 
         BEAST_EXPECT(error == "");
-        BEAST_EXPECT(c.NETWORK_ID == 255);
+        BEAST_EXPECT(c.NETWORK_ID == 10000);
     }
 
     void
