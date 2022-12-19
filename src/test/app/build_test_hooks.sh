@@ -11,10 +11,10 @@ namespace ripple {
 namespace test {
 std::map<std::string, std::vector<uint8_t>> wasm = {' > SetHook_wasm.h
 COUNTER="0"
-cat SetHook_test.cpp | tr '\n' '\f' | 
-        grep -Po 'R"\[test\.hook\](.*?)\[test\.hook\]"' | 
-        sed -E 's/R"\[test\.hook\]\(//g' | 
-        sed -E 's/\)\[test\.hook\]"[\f \t]*/\/*end*\//g' | 
+cat SetHook_test.cpp | tr '\n' '\f' |
+        grep -Po 'R"\[test\.hook\](.*?)\[test\.hook\]"' |
+        sed -E 's/R"\[test\.hook\]\(//g' |
+        sed -E 's/\)\[test\.hook\]"[\f \t]*/\/*end*\//g' |
         while read -r line
         do
             echo "/* ==== WASM: $COUNTER ==== */" >> SetHook_wasm.h
@@ -25,15 +25,15 @@ cat SetHook_test.cpp | tr '\n' '\f' |
             WAT=`grep -Eo '\(module' <<< $line | wc -l`
             if [ "$WAT" -eq "0" ]
             then
-                echo '#include "api.h"' > /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER.c
-                tr '\f' '\n' <<< $line >> /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER.c
-                wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` | 
+                echo '#include "api.h"' > /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER-gen.c
+                tr '\f' '\n' <<< $line >> /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER-gen.c
+                wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` |
                     hook-cleaner - - 2>/dev/null |
-                    xxd -p -u -c 19 | 
+                    xxd -p -u -c 19 |
                     sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
             else
                 wat2wasm - -o /dev/stdout <<< `tr '\f' '\n' <<< $(sed -E 's/.{7}$//g' <<< $line)` |
-                    xxd -p -u -c 19 | 
+                    xxd -p -u -c 19 |
                     sed -E 's/../0x\0U,/g' | sed -E 's/^/    /g' >> SetHook_wasm.h
             fi
             if [ "$?" -gt "0" ]
