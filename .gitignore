@@ -111,3 +111,19 @@ compile_commands.json
 .clangd
 packages
 pkg_out
+
+# HOOKS
+hook/*
+hook/**/
+build*/**
+src/test/app/SetHook_wasm.h
+.gitignore
+*.sh
+*.wat
+tmp.*
+src/ripple/app/hook/guard_checker
+TODO
+src/test/app/h
+src/test/app/mtmp
+src/test/app/t
+*.js
