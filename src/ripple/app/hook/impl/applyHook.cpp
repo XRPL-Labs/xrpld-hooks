@@ -2397,6 +2397,7 @@ DEFINE_HOOK_FUNCTION(
             }
 
             // keylets that take a 32 byte uint
+            case keylet_code::HOOK_DEFINITION:
             case keylet_code::CHILD:
             case keylet_code::EMITTED_TXN:
             case keylet_code::UNCHECKED:
@@ -2419,7 +2420,8 @@ DEFINE_HOOK_FUNCTION(
 
                 ripple::Keylet kl =
                     keylet_type == keylet_code::CHILD        ? ripple::keylet::child(id)            :
-                    keylet_type == keylet_code::EMITTED_TXN  ? ripple::keylet::emittedTxn(id)          :
+                    keylet_type == keylet_code::EMITTED_TXN  ? ripple::keylet::emittedTxn(id)       :
+                    keylet_type == keylet_code::HOOK_DEFINITION ? ripple::keylet::hookDefinition(id) :
                     ripple::keylet::unchecked(id);
 
                 return serialize_keylet(kl, memory, write_ptr, write_len);

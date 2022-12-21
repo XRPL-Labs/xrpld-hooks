@@ -164,7 +164,8 @@ namespace hook_api
             PAYCHAN = 21,
             EMITTED_TXN = 22,
             NFT_OFFER = 23,
-            LAST_KLTYPE = NFT_OFFER
+            HOOK_DEFINITION = 24,
+            LAST_KLTYPE = HOOK_DEFINITION
         };
     }
 
