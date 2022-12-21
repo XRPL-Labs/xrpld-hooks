@@ -1667,7 +1667,7 @@ DEFINE_HOOK_FUNCTION(
     if (kread_len < 1)
         return TOO_SMALL;
 
-    if (write_len < 1)
+    if (write_len < 1 && write_ptr != 0)
         return TOO_SMALL;
     
     if (!is_foreign && nread_len == 0)
