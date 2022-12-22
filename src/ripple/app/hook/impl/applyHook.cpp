@@ -203,7 +203,8 @@ namespace hook
             case ttPAYCHAN_CREATE:
             case ttINVOKE:
             {
-                ADD_TSH(*destAcc, canRollback);
+                if (destAcc)
+                    ADD_TSH(*destAcc, canRollback);
                 break;
             }
 
