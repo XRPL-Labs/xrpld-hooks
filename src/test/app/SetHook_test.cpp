@@ -5046,8 +5046,7 @@ public:
                 uint32_t write_len,
                 uint32_t field_id
             );
-            extern
-            int64_t util_keylet (
+            extern int64_t util_keylet (
                 uint32_t write_ptr,
                 uint32_t write_len,
                 uint32_t keylet_type,
@@ -5220,6 +5219,9 @@ public:
                     
                     for (int i = 32; GUARD(32), i < bytes2; ++i)
                         ASSERT(buf2[i] == *((uint8_t*)"content2" + i));
+
+                    // RH TODO:
+                    // - read small state back as int64
                     
                     return accept(0,0,0);
                 }
@@ -5293,6 +5295,156 @@ public:
     void
     test_state_foreign()
     {
+        testcase("Test state_foreign");
+        using namespace jtx;
+
+
+        Env env{*this, supported_amendments()};
+
+        auto const bob = Account{"bob"};
+        auto const alice = Account{"alice"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t state (
+                    uint32_t write_ptr,
+                    uint32_t write_len,
+                    uint32_t kread_ptr,
+                    uint32_t kread_len  
+                );
+                extern int64_t state_foreign_set(
+                    uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+                extern int64_t hook_account(uint32_t, uint32_t);
+                extern int64_t state_set(uint32_t,uint32_t,uint32_t, uint32_t);
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+                #define SBUF(x) (uint32_t)(x), sizeof(x)
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // set a state object
+                    ASSERT(state_set(SBUF("content"), SBUF("key")) == sizeof("content"));
+
+                    // put the second state object on a different ns
+
+                    uint8_t ns[32];
+                    ns[9] = 0xABU;
+
+                    uint8_t acc[20];
+                    ASSERT(hook_account(SBUF(acc)) == 20);
+                    ASSERT(state_foreign_set(SBUF("content2"), SBUF("key2"), SBUF(ns), SBUF(acc)) == sizeof("content2"));
+
+                    return accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set state_foreign"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)), M("test state_foreign"), fee(XRP(1)));
+        }
+
+        // set a second hook on bob that will read the state objects from alice
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t state (
+                    uint32_t write_ptr,
+                    uint32_t write_len,
+                    uint32_t kread_ptr,
+                    uint32_t kread_len  
+                );
+                extern int64_t state_foreign (
+                    uint32_t, uint32_t, uint32_t, uint32_t,
+                    uint32_t, uint32_t, uint32_t, uint32_t
+                );
+                extern int64_t hook_account(uint32_t write_ptr, uint32_t write_len);
+                extern int64_t state_set(uint32_t,uint32_t,uint32_t, uint32_t);
+                extern int64_t otxn_field(uint32_t, uint32_t, uint32_t);
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+                #define TOO_BIG (-3)
+                #define TOO_SMALL (-4)
+                #define OUT_OF_BOUNDS (-1)
+                #define DOESNT_EXIST (-5)
+                #define SBUF(x) (uint32_t)(x), sizeof(x)
+                #define sfAccount ((8U << 16U) + 1U)
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+
+                    // Test out of bounds check
+                    ASSERT(state_foreign(1000000, 32, 0, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 1000000, 0, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 32, 1000000, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 32, 0, 1000000, 0, 32, 0, 20) == TOO_BIG);
+                    ASSERT(state_foreign(0, 32, 0, 32, 1000000, 32, 0, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 32, 0, 32, 0, 1000000, 0, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 32, 0, 32, 0, 32, 1000000, 20) == OUT_OF_BOUNDS);
+                    ASSERT(state_foreign(0, 32, 0, 32, 0, 32, 0, 1000000) == OUT_OF_BOUNDS);
+
+                    // alice's address is the sender
+                    uint8_t acc[20];
+                    ASSERT(otxn_field(SBUF(acc), sfAccount) == 20);
+
+                    // read state back
+                    uint8_t buf1[32];
+                    uint8_t buf2[32];
+
+                    // the namespace of the first obj is all zeros
+                    uint8_t ns[32];                    
+                    int64_t bytes1 = state_foreign(SBUF(buf1), SBUF("key"), SBUF(ns), SBUF(acc));
+                    ASSERT(bytes1 == sizeof("content"));
+
+                    // the namespace of the second obj is all zeros except position 9 which is 0xAB
+                    // ensure the namespacing is working by requesting against the wrong namespace first
+                    int64_t bytes2 = state_foreign(SBUF(buf2), SBUF("key2"), SBUF(ns), SBUF(acc));
+                    ASSERT(bytes2 == DOESNT_EXIST);
+                    ns[9] = 0xABU;
+                    bytes2 = state_foreign(SBUF(buf2), SBUF("key2"), SBUF(ns), SBUF(acc));
+                    ASSERT(bytes2 == sizeof("content2"));
+                    
+                    for (int i = 32; GUARD(32), i < bytes1; ++i)
+                        ASSERT(buf1[i] == *((uint8_t*)"content" + i));
+                    
+                    for (int i = 32; GUARD(32), i < bytes2; ++i)
+                        ASSERT(buf2[i] == *((uint8_t*)"content2" + i));
+                    
+                    return accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            // install the hook on bob 
+            env(ripple::test::jtx::hook(bob, {{hso(hook, overrideFlag)}}, 0),
+                M("set state_foreign 2"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            
+            env(pay(alice, bob, XRP(1)), M("test state_foreign 2"), fee(XRP(1)));
+        }
     }
 
     void
@@ -5872,11 +6024,11 @@ public:
 
         }
 
-                // todo:
-                // check state can be set on emit callback
-                // check reserve - cant make new state object if reserve insufficient
-                // try creating many new state objects
-                // check namespacing provides for non-collision of same key
+        // RH TODO:
+        // check state can be set on emit callback
+        // check reserve - cant make new state object if reserve insufficient
+        // try creating many new state objects
+        // check namespacing provides for non-collision of same key
 
     }
 
@@ -6780,8 +6932,7 @@ public:
             #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            extern
-            int64_t util_keylet (
+            extern int64_t util_keylet (
                 uint32_t write_ptr,
                 uint32_t write_len,
                 uint32_t keylet_type,
@@ -8358,7 +8509,7 @@ public:
         test_slot_subfield();   //
         test_slot_type();       //
 
-        test_state();
+        test_state();           //
         test_state_foreign();
         test_state_foreign_set();
         test_state_set();

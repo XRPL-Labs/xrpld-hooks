@@ -27,6 +27,17 @@ cat SetHook_test.cpp | tr '\n' '\f' |
             then
                 echo '#include "api.h"' > /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER-gen.c
                 tr '\f' '\n' <<< $line >> /root/xrpld-hooks/hook/tests/hookapi/wasm/test-$COUNTER-gen.c
+                DECLARED="`tr '\f' '\n' <<< $line | grep  -E '(extern|define) ' | grep -Eo '[a-z\-\_]+ *\(' | grep -v 'sizeof' | sed -E 's/[^a-z\-\_]//g' | sort | uniq`"
+                USED="`tr '\f' '\n' <<< $line | grep -vE '(extern|define) ' | grep -Eo '[a-z\-\_]+\(' | grep -v 'sizeof' | sed -E 's/[^a-z\-\_]//g' | grep -vE '^(hook|cbak)' | sort | uniq`"
+                ONCE="`echo $DECLARED $USED | tr ' ' '\n' | sort | uniq -c | grep '1 ' | sed -E 's/^ *1 //g'`"
+                FILTER="`echo $DECLARED | tr ' ' '|' | sed -E 's/|$//g'`"
+                UNDECL=`echo "$ONCE" | grep -v -E "$FILTER"`
+                if [ ! -z "$UNDECL" ]
+                then
+                    echo "Undeclared in $COUNTER: $UNDECL"
+                    echo "$line"
+                    exit 1
+                fi
                 wasmcc -x c /dev/stdin -o /dev/stdout -O2 -Wl,--allow-undefined <<< `tr '\f' '\n' <<< $line` |
                     hook-cleaner - - 2>/dev/null |
                     xxd -p -u -c 19 |
