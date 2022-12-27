@@ -5167,44 +5167,127 @@ public:
         env.fund(XRP(10000), alice);
         env.fund(XRP(10000), bob);
 
-        // set up a trustline which we can retrieve later
-        TestHook hook = wasm[R"[test.hook](
-            #include <stdint.h>
-            extern int32_t _g       (uint32_t id, uint32_t maxiter);
-            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
-            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
-            extern int64_t state (
-                uint32_t write_ptr,
-                uint32_t write_len,
-                uint32_t kread_ptr,
-                uint32_t kread_len  
-            );
-            #define ASSERT(x)\
-                if (!(x))\
-                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
-           
-            #define TOO_SMALL (-4)
-            #define SBUF(x) (uint32_t)(x), sizeof(x)
-            int64_t hook(uint32_t reserved )
-            {
-                _g(1,1);
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t state (
+                    uint32_t write_ptr,
+                    uint32_t write_len,
+                    uint32_t kread_ptr,
+                    uint32_t kread_len  
+                );
+                extern int64_t state_set(uint32_t,uint32_t,uint32_t, uint32_t);
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
 
-                ASSERT(state(0,0,0,0) == TOO_SMALL);
+                #define TOO_BIG (-3)
+                #define TOO_SMALL (-4)
+                #define OUT_OF_BOUNDS (-1)
+                #define SBUF(x) (uint32_t)(x), sizeof(x)
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
 
-                // RH TODO: finish!
-                accept(0,0,0);
-            }
-        )[test.hook]"];
+                    // set a state object
+                    ASSERT(state_set(SBUF("content"), SBUF("key")) == sizeof("content"));
+                    ASSERT(state_set(SBUF("content2"), SBUF("key2")) == sizeof("content2"));
 
-        // install the hook on alice
-        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
-            M("set state"),
-            HSFEE);
-        env.close();
+                    // Test out of bounds check
+                    ASSERT(state(1000000, 32, 0, 32) == OUT_OF_BOUNDS);
+                    ASSERT(state(0, 1000000, 0, 32) == OUT_OF_BOUNDS);
+                    ASSERT(state(0, 32, 1000000, 32) == OUT_OF_BOUNDS);
+                    ASSERT(state(0, 32, 0, 1000000) == TOO_BIG);
+                    ASSERT(state(0,0,0,0) == TOO_SMALL);
+                    ASSERT(state(0,0,0,33) == TOO_BIG);
 
-        // invoke the hook
-        env(pay(bob, alice, XRP(1)), M("test state"), fee(XRP(1)));
+                    // read state back
+                    uint8_t buf1[32];
+                    uint8_t buf2[32];
+
+                    int64_t bytes1 = state(SBUF(buf1), SBUF("key"));
+                    ASSERT(bytes1 == sizeof("content"));
+
+                    int64_t bytes2 = state(SBUF(buf2), SBUF("key2"));
+                    ASSERT(bytes2 == sizeof("content2"));
+                    
+                    for (int i = 32; GUARD(32), i < bytes1; ++i)
+                        ASSERT(buf1[i] == *((uint8_t*)"content" + i));
+                    
+                    for (int i = 32; GUARD(32), i < bytes2; ++i)
+                        ASSERT(buf2[i] == *((uint8_t*)"content2" + i));
+                    
+                    return accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set state"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)), M("test state"), fee(XRP(1)));
+        }
+
+        // override hook with a second version that just reads those state objects
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t state (
+                    uint32_t write_ptr,
+                    uint32_t write_len,
+                    uint32_t kread_ptr,
+                    uint32_t kread_len  
+                );
+                extern int64_t state_set(uint32_t,uint32_t,uint32_t, uint32_t);
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+                #define SBUF(x) (uint32_t)(x), sizeof(x)
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+
+                    // read state back
+                    uint8_t buf1[32];
+                    uint8_t buf2[32];
+
+                    int64_t bytes1 = state(SBUF(buf1), SBUF("key"));
+                    ASSERT(bytes1 == sizeof("content"));
+
+                    int64_t bytes2 = state(SBUF(buf2), SBUF("key2"));
+                    ASSERT(bytes2 == sizeof("content2"));
+                    
+                    for (int i = 32; GUARD(32), i < bytes1; ++i)
+                        ASSERT(buf1[i] == *((uint8_t*)"content" + i));
+                    
+                    for (int i = 32; GUARD(32), i < bytes2; ++i)
+                        ASSERT(buf2[i] == *((uint8_t*)"content2" + i));
+                    
+                    return accept(0,0,0);
+                }
+            )[test.hook]"];
+
+            // install the hook on alice
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set state 2"),
+                HSFEE);
+            env.close();
+
+            // invoke the hook
+            env(pay(bob, alice, XRP(1)), M("test state 2"), fee(XRP(1)));
+        }
     }
 
     void
