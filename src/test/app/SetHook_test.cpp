@@ -5387,6 +5387,7 @@ public:
                 #define TOO_SMALL (-4)
                 #define OUT_OF_BOUNDS (-1)
                 #define DOESNT_EXIST (-5)
+                #define INVALID_ARGUMENT (-7)
                 #define SBUF(x) (uint32_t)(x), sizeof(x)
                 #define sfAccount ((8U << 16U) + 1U)
                 int64_t hook(uint32_t reserved )
@@ -5395,14 +5396,16 @@ public:
 
 
                     // Test out of bounds check
-                    ASSERT(state_foreign(1000000, 32, 0, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 1000000, 0, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 32, 1000000, 32, 0, 32, 0, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 32, 0, 1000000, 0, 32, 0, 20) == TOO_BIG);
-                    ASSERT(state_foreign(0, 32, 0, 32, 1000000, 32, 0, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 32, 0, 32, 0, 1000000, 0, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 32, 0, 32, 0, 32, 1000000, 20) == OUT_OF_BOUNDS);
-                    ASSERT(state_foreign(0, 32, 0, 32, 0, 32, 0, 1000000) == OUT_OF_BOUNDS);
+                    int64_t y;
+                    ASSERT((y=state_foreign(1111111, 32, 1, 32, 1, 32, 1, 20)) == OUT_OF_BOUNDS);
+                    ASSERT((y=state_foreign(1, 1111111, 1, 32, 1, 32, 1,  20)) == OUT_OF_BOUNDS);
+                    ASSERT((y=state_foreign(1, 32, 1111111, 32, 1, 32, 1, 20)) == OUT_OF_BOUNDS);
+                    ASSERT((y=state_foreign(1, 32, 1, 1111111, 1, 32, 1,  20)) == TOO_BIG);
+                    ASSERT((y=state_foreign(1, 32, 1, 32, 1111111, 32, 1, 20)) == OUT_OF_BOUNDS);
+                    ASSERT((y=state_foreign(1, 32, 1, 32, 1, 1111111, 1,  20)) == INVALID_ARGUMENT);
+                    ASSERT((y=state_foreign(1, 32, 1, 32, 1, 32, 1111111, 20)) == OUT_OF_BOUNDS);
+                    ASSERT((y=state_foreign(1, 32, 1, 32, 1, 32, 1, 1111111)) == INVALID_ARGUMENT);
+
 
                     // alice's address is the sender
                     uint8_t acc[20];
