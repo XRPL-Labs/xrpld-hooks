@@ -4005,6 +4005,69 @@ public:
     void
     test_ledger_last_time()
     {
+        testcase("Test ledger_last_time");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t ledger_last_time (void);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                accept(0,0,ledger_last_time());
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set ledger_last_time"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook a few times
+        for (uint32_t i = 0; i < 3; ++i)
+        {
+            int64_t llc = 
+            std::chrono::duration_cast<std::chrono::seconds>
+            (
+                env.app().getLedgerMaster()
+                    .getValidatedLedger()->info()
+                        .parentCloseTime
+                            .time_since_epoch()
+            ).count();
+
+            env(pay(bob, alice, XRP(1)), M("test ledger_last_time"), fee(XRP(1)));
+            env.close();
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there was only one hook execution
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 1);
+
+                // get the data in the return code of the execution
+                auto const rc =
+                    hookExecutions[0].getFieldU64(sfHookReturnCode);
+
+                // check that it matches the last ledger seq number
+                BEAST_EXPECT(llc == rc);
+            }
+        }
+
     }
 
     void
@@ -8544,7 +8607,7 @@ public:
 
         test_ledger_keylet();
         test_ledger_last_hash();
-        test_ledger_last_time();
+        test_ledger_last_time();    //
         test_ledger_nonce();
         test_ledger_seq();          //
 
