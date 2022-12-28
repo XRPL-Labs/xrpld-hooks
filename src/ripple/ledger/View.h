@@ -492,10 +492,10 @@ trustAdjustLockedBalance(
     static_assert(!(std::is_same<V, ReadView const>::value && !dryRun));
 
     if (!view.rules().enabled(featurePaychanAndEscrowForTokens))
-        return tefINTERNAL;
+        return temDISABLED;
 
     if (!sleLine)
-        return tecINTERNAL;
+        return tecNO_LINE;
 
     auto const currency = deltaAmt.getCurrency();
     auto const issuer   = deltaAmt.getIssuer();
@@ -583,7 +583,7 @@ trustAdjustLockedBalance(
     if ((deltaLockCount > 0 && priorLockCount > finalLockCount) ||
         (deltaLockCount < 0 && priorLockCount < finalLockCount) ||
         (deltaLockCount == 0 && priorLockCount != finalLockCount))
-        return tecINTERNAL;
+        return tecOVERSIZE;
 
     // we won't update any SLEs if it is a dry run
     if (dryRun)
@@ -894,7 +894,7 @@ trustTransferLockedBalance(
         if ((deltaLockCount > 0 && priorLockCount > finalLockCount) ||
             (deltaLockCount < 0 && priorLockCount < finalLockCount) ||
             (deltaLockCount == 0 && priorLockCount != finalLockCount))
-            return tecINTERNAL;
+            return tecOVERSIZE;
         
         // this should never happen but defensively check it here before updating sle
         if (finalBalance < beast::zero || finalLockedBalance < beast::zero)

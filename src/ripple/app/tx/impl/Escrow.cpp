@@ -124,7 +124,7 @@ EscrowCreate::preflight(PreflightContext const& ctx)
         {
             JLOG(ctx.j.trace())
                 << "Malformed transaction: Cannot escrow own tokens to self.";
-            return temDST_IS_SRC;
+            return temBAD_SRC_ACCOUNT;
         }
     }
 
@@ -217,7 +217,7 @@ EscrowCreate::doApply()
     auto const account = ctx_.tx[sfAccount];
     auto const sle = ctx_.view().peek(keylet::account(account));
     if (!sle)
-        return tefINTERNAL;
+        return temDISABLED;
 
     STAmount const amount {ctx_.tx[sfAmount]};
 
@@ -242,7 +242,7 @@ EscrowCreate::doApply()
         // preflight will prevent this ever firing, included
         // defensively for completeness
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
+            return temDISABLED;
 
         // check if the escrow is capable of being
         // finished before we allow it to be created
@@ -353,7 +353,7 @@ EscrowCreate::doApply()
     else 
     {
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens) || !sleLine)
-            return tefINTERNAL;
+            return temDISABLED;
 
         // do the lock-up for real now
         TER result =
@@ -590,7 +590,7 @@ EscrowFinish::doApply()
     if (!isXRP(amount))
     {
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
+            return temDISABLED;
         
         // perform a dry run of the transfer before we 
         // change anything on-ledger
@@ -743,7 +743,7 @@ EscrowCancel::doApply()
     if (!isXRP(amount))
     {
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
+            return temDISABLED;
 
         sleLine =
             ctx_.view().peek(
@@ -793,7 +793,7 @@ EscrowCancel::doApply()
     else
     {
         if (!ctx_.view().rules().enabled(featurePaychanAndEscrowForTokens))
-            return tefINTERNAL;
+            return temDISABLED;
 
         // unlock previously locked tokens from source line
         TER result =
