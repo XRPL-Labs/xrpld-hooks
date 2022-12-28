@@ -17,6 +17,7 @@
 */
 //==============================================================================
 #include <ripple/app/tx/impl/SetHook.h>
+#include <ripple/app/ledger/LedgerMaster.h>
 #include <ripple/protocol/TxFlags.h>
 #include <ripple/protocol/jss.h>
 #include <test/app/SetHook_wasm.h>
@@ -4014,6 +4015,60 @@ public:
     void
     test_ledger_seq()
     {
+        testcase("Test ledger_seq");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t ledger_seq (void);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                accept(0,0,ledger_seq());
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set ledger_seq"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook a few times
+        for (uint32_t i = 0; i < 3; ++i)
+        {
+            env(pay(bob, alice, XRP(1)), M("test ledger_seq"), fee(XRP(1)));
+            env.close();
+            {
+                auto meta = env.meta();
+
+                // ensure hook execution occured
+                BEAST_REQUIRE(meta);
+                BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+                // ensure there was only one hook execution
+                auto const hookExecutions =
+                    meta->getFieldArray(sfHookExecutions);
+                BEAST_REQUIRE(hookExecutions.size() == 1);
+
+                // get the data in the return code of the execution
+                auto const rc =
+                    hookExecutions[0].getFieldU64(sfHookReturnCode);
+
+                // check that it matches the last ledger seq number
+                BEAST_EXPECT(env.app().getLedgerMaster().getClosedLedger()->info().seq == rc);
+            }
+        }
+
     }
 
     void
@@ -8462,26 +8517,26 @@ public:
         test_etxn_reserve();
         test_fee_base();
 
-        test_float_compare();   //
-        test_float_divide();    //
-        test_float_int();       //
-        test_float_invert();    //
-        test_float_log();       //
-        test_float_mantissa();  //
-        test_float_mulratio();  //
-        test_float_multiply();  //
-        test_float_negate();    //
-        test_float_one();       //
-        test_float_root();      //
-        test_float_set();       //
-        test_float_sign();      //
+        test_float_compare();       //
+        test_float_divide();        //
+        test_float_int();           //
+        test_float_invert();        //
+        test_float_log();           //
+        test_float_mantissa();      //
+        test_float_mulratio();      //
+        test_float_multiply();      //
+        test_float_negate();        //
+        test_float_one();           //
+        test_float_root();          //
+        test_float_set();           //
+        test_float_sign();          //
         test_float_sto();
         test_float_sto_set();
-        test_float_sum();       //
+        test_float_sum();           //
 
-        test_hook_account();    //
+        test_hook_account();        //
         test_hook_again();
-        test_hook_hash();       //
+        test_hook_hash();           //
         test_hook_param();
         test_hook_param_set();
         test_hook_pos();
@@ -8491,37 +8546,37 @@ public:
         test_ledger_last_hash();
         test_ledger_last_time();
         test_ledger_nonce();
-        test_ledger_seq();
+        test_ledger_seq();          //
 
         test_meta_slot();
 
         test_otxn_burden();
         test_otxn_field();
         test_otxn_generation();
-        test_otxn_id();         //
-        test_otxn_slot();       //
-        test_otxn_type();       //
+        test_otxn_id();             //
+        test_otxn_slot();           //
+        test_otxn_type();           //
 
-        test_slot();            //
-        test_slot_clear();      //
-        test_slot_count();      //
-        test_slot_float();      //
-        test_slot_set();        //
-        test_slot_size();       //
-        test_slot_subarray();   //
-        test_slot_subfield();   //
-        test_slot_type();       //
+        test_slot();                //
+        test_slot_clear();          //
+        test_slot_count();          //
+        test_slot_float();          //
+        test_slot_set();            //
+        test_slot_size();           //
+        test_slot_subarray();       //
+        test_slot_subfield();       //
+        test_slot_type();           //
 
-        test_state();           //
-        test_state_foreign();
-        test_state_foreign_set();
-        test_state_set();
+        test_state();               //
+        test_state_foreign();       //
+        test_state_foreign_set();   
+        test_state_set();           //
 
-        test_sto_emplace();     //
-        test_sto_erase();       //
-        test_sto_subarray();    //
-        test_sto_subfield();    //
-        test_sto_validate();    //
+        test_sto_emplace();         //
+        test_sto_erase();           //
+        test_sto_subarray();        //
+        test_sto_subfield();        //
+        test_sto_validate();        //
 
         test_str_compare();
         test_str_concat();
@@ -8532,11 +8587,11 @@ public:
         test_trace_float();
         test_trace_num();
 
-        test_util_accid();      //
-        test_util_keylet();     //
-        test_util_raddr();      //
-        test_util_sha512h();    //
-        test_util_verify();     //
+        test_util_accid();          //
+        test_util_keylet();         //
+        test_util_raddr();          //
+        test_util_sha512h();        //
+        test_util_verify();         //
     }
 
 private:
