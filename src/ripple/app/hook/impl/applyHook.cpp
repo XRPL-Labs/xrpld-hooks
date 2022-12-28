@@ -3160,12 +3160,24 @@ DEFINE_HOOK_FUNCTION(
     auto hash = ripple::sha512Half(
             ripple::HashPrefix::hookNonce,
             view.info().seq,
-            view.info().parentCloseTime,
+            view.info().parentCloseTime.time_since_epoch().count(),
             applyCtx.app.getLedgerMaster().getValidatedLedger()->info().hash,
             applyCtx.tx.getTransactionID(),
             hookCtx.ledger_nonce_counter++,
             hookCtx.result.account
     );
+    
+    /*
+    std::cout <<
+            "seq: " << view.info().seq <<
+            ", llc: " << view.info().parentCloseTime.time_since_epoch().count() <<
+            ", llh: " << applyCtx.app.getLedgerMaster().getValidatedLedger()->info().hash <<
+            ", txid: " << applyCtx.tx.getTransactionID() <<
+            ", count: " << hookCtx.ledger_nonce_counter << 
+            ", acc: " << hookCtx.result.account << 
+            ", nonce: " << hash << "\n";
+    */
+
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, 32,

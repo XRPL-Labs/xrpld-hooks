@@ -394,6 +394,12 @@ Env::tx() const
     return current()->txRead(txid_).first;
 }
 
+uint256
+Env::txid() const
+{
+    return txid_;
+}
+
 void
 Env::autofill_sig(JTx& jt)
 {

@@ -4073,6 +4073,107 @@ public:
     void
     test_ledger_nonce()
     {
+        testcase("Test ledger_nonce");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t ledger_nonce (uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t nonce[64];
+
+                // Test out of bounds check
+                ASSERT(ledger_nonce(1000000, 32) == OUT_OF_BOUNDS);
+                ASSERT(ledger_nonce((uint32_t)nonce, 31) == TOO_SMALL);
+                ASSERT(ledger_nonce((uint32_t)nonce, 32) == 32);
+                ASSERT(ledger_nonce((uint32_t)(nonce + 32), 32) == 32);
+
+                // return the two nonces as the return string
+                accept((uint32_t)nonce, 64, 0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set ledger_nonce"),
+            HSFEE);
+        env.close();
+
+
+
+        // invoke the hook
+        auto const seq = env.app().getLedgerMaster().getCurrentLedger()->info().seq;
+        auto const llc = env.app().getLedgerMaster().getCurrentLedger()->info().parentCloseTime.time_since_epoch().count();
+        auto const llh = env.app().getLedgerMaster().getCurrentLedger()->info().hash;
+
+        env(pay(bob, alice, XRP(1)), M("test ledger_nonce"), fee(XRP(1)));
+        auto const txid = env.txid();
+
+        auto meta = env.meta();
+
+        // ensure hook execution occured
+        BEAST_REQUIRE(meta);
+        BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+        // ensure there was only one hook execution
+        auto const hookExecutions =
+            meta->getFieldArray(sfHookExecutions);
+        BEAST_REQUIRE(hookExecutions.size() == 1);
+
+        // get the data in the return string of the extention
+        auto const retStr =
+            hookExecutions[0].getFieldVL(sfHookReturnString);
+
+        // check that it matches the expected size (two nonces = 64 bytes)
+        BEAST_EXPECT(retStr.size() == 64);
+
+        auto const computed_hash_1 = ripple::sha512Half(
+            ripple::HashPrefix::hookNonce,
+            seq, llc, llh,
+            txid,
+            (uint16_t)0UL,
+            alice.id()
+        );
+        auto const computed_hash_2 = ripple::sha512Half(
+            ripple::HashPrefix::hookNonce,
+            seq, llc, llh,
+            txid,
+            (uint16_t)1UL,              // second nonce
+            alice.id()
+        );
+
+        /*
+        std::cout << 
+            "seq: " << seq << 
+            ", llc: " << llc << 
+            ", llh: " << llh << 
+            ", txid: " << txid << 
+            ", count: 0" << 
+            ", acc: " << alice.human() <<
+            ", nonce: " << computed_hash_1 << ", " << computed_hash_2 << "\n";
+        */
+
+        BEAST_EXPECT(computed_hash_1 == uint256::fromVoid(retStr.data()));
+        BEAST_EXPECT(computed_hash_2 == uint256::fromVoid(retStr.data() + 32));
+
     }
 
     void
