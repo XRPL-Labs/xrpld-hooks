@@ -4000,6 +4000,74 @@ public:
     void
     test_ledger_last_hash()
     {
+        testcase("Test ledger_last_hash");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t ledger_last_hash (uint32_t, uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t hash[32];
+
+                // Test out of bounds check
+                ASSERT(ledger_last_hash(1000000, 32) == OUT_OF_BOUNDS);
+                ASSERT(ledger_last_hash((uint32_t)hash, 31) == TOO_SMALL);
+                ASSERT(ledger_last_hash((uint32_t)hash, 32) == 32);
+
+                // return the hash
+                accept((uint32_t)hash, 32, 0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set ledger_last_hash"),
+            HSFEE);
+        env.close();
+
+        for (uint32_t i = 0; i < 3; ++i)
+        {
+            auto const llh = env.app().getLedgerMaster().getClosedLedger()->info().hash;
+
+            env(pay(bob, alice, XRP(1)), M("test ledger_last_hash"), fee(XRP(1)));
+
+            auto meta = env.meta();
+
+            // ensure hook execution occured
+            BEAST_REQUIRE(meta);
+            BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+            // ensure there was only one hook execution
+            auto const hookExecutions =
+                meta->getFieldArray(sfHookExecutions);
+            BEAST_REQUIRE(hookExecutions.size() == 1);
+
+            // get the data in the return string of the extention
+            auto const retStr =
+                hookExecutions[0].getFieldVL(sfHookReturnString);
+
+            // check that it matches the expected size (two nonces = 64 bytes)
+            BEAST_EXPECT(retStr.size() == 32);
+
+            BEAST_EXPECT(llh == uint256::fromVoid(retStr.data()));
+        }
     }
 
     void
@@ -8709,7 +8777,7 @@ public:
         test_ledger_keylet();
         test_ledger_last_hash();
         test_ledger_last_time();    //
-        test_ledger_nonce();
+        test_ledger_nonce();        //
         test_ledger_seq();          //
 
         test_meta_slot();
