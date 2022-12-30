@@ -65,6 +65,12 @@ using JSSMap =
             return;          \
     }
 
+#define HASH_WASM(x)                                                           \
+    uint256 const x##_hash =                                                   \
+        ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size())); \
+    std::string const x##_hash_str = to_string(x##_hash);                      \
+    Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
+
 class SetHook_test : public beast::unit_test::suite
 {
 private:
@@ -4063,7 +4069,7 @@ public:
             auto const retStr =
                 hookExecutions[0].getFieldVL(sfHookReturnString);
 
-            // check that it matches the expected size (two nonces = 64 bytes)
+            // check that it matches the expected size (32 bytes)
             BEAST_EXPECT(retStr.size() == 32);
 
             BEAST_EXPECT(llh == uint256::fromVoid(retStr.data()));
@@ -5740,6 +5746,328 @@ public:
     void
     test_state_foreign_set()
     {
+        testcase("Test state_foreign_set");
+        using namespace jtx;
+
+
+        Env env{*this, supported_amendments()};
+
+        auto const david = Account("david"); // grantee generic
+        auto const cho = Account{"cho"};     // invoker
+        auto const bob = Account{"bob"};     // grantee specific
+        auto const alice = Account{"alice"}; // grantor
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        env.fund(XRP(10000), cho);
+        env.fund(XRP(10000), david);
+
+        TestHook grantee_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            #define sfInvoiceID ((5U << 16U) + 17U)
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t state_foreign (
+                uint32_t, uint32_t, uint32_t, uint32_t,
+                uint32_t, uint32_t, uint32_t, uint32_t
+            );
+            extern int64_t state_foreign_set (
+                uint32_t, uint32_t, uint32_t, uint32_t,
+                uint32_t, uint32_t, uint32_t, uint32_t
+            );
+            extern int64_t otxn_id(uint32_t, uint32_t, uint32_t);
+            extern int64_t otxn_field(uint32_t, uint32_t, uint32_t);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+            #define TOO_BIG (-3)
+            #define TOO_SMALL (-4)
+            #define OUT_OF_BOUNDS (-1)
+            #define DOESNT_EXIST (-5)
+            #define INVALID_ARGUMENT (-7)
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                // bounds tests
+                int64_t y;
+                ASSERT((y=state_foreign_set(1111111, 32, 1, 32, 1, 32, 1, 20)) == OUT_OF_BOUNDS);
+                ASSERT((y=state_foreign_set(1, 1111111, 1, 32, 1, 32, 1,  20)) == OUT_OF_BOUNDS);
+                ASSERT((y=state_foreign_set(1, 32, 1111111, 32, 1, 32, 1, 20)) == OUT_OF_BOUNDS);
+                ASSERT((y=state_foreign_set(1, 32, 1, 1111111, 1, 32, 1,  20)) == TOO_BIG);
+                ASSERT((y=state_foreign_set(1, 32, 1, 32, 1111111, 32, 1, 20)) == OUT_OF_BOUNDS);
+                ASSERT((y=state_foreign_set(1, 32, 1, 32, 1, 1111111, 1,  20)) == INVALID_ARGUMENT);
+                ASSERT((y=state_foreign_set(1, 32, 1, 32, 1, 32, 1111111, 20)) == OUT_OF_BOUNDS);
+                ASSERT((y=state_foreign_set(1, 32, 1, 32, 1, 32, 1, 1111111)) == INVALID_ARGUMENT);
+
+                // get this transaction id
+                uint8_t txn[32];
+                ASSERT(otxn_id(SBUF(txn), 0) == 32);
+
+                // get the invoice id, which contains the grantor account
+                uint8_t grantor[32];
+                ASSERT(otxn_field(SBUF(grantor), sfInvoiceID) == 32);
+
+                // set the current txn id on the grantor's state under key 1, namespace 0
+                uint8_t one[32]; one[31] = 1U;
+                uint8_t zero[32];
+                ASSERT(state_foreign_set(SBUF(txn), SBUF(one), SBUF(zero), grantor + 12, 20) == 32);
+               
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        HASH_WASM(grantee);
+
+        // this is the grantor 
+        TestHook grantor_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t otxn_field (uint32_t, uint32_t, uint32_t);
+            extern int64_t hook_account(uint32_t write_ptr, uint32_t write_len);
+            extern int64_t state_foreign_set (
+                uint32_t, uint32_t, uint32_t, uint32_t,
+                uint32_t, uint32_t, uint32_t, uint32_t
+            );
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+            #define BUFFER_EQUAL_20(buf1, buf2)\
+                (\
+                    *(((uint64_t*)(buf1)) + 0) == *(((uint64_t*)(buf2)) + 0) &&\
+                    *(((uint64_t*)(buf1)) + 1) == *(((uint64_t*)(buf2)) + 1) &&\
+                    *(((uint32_t*)(buf1)) + 4) == *(((uint32_t*)(buf2)) + 4))
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+
+            #define sfAccount ((8U << 16U) + 1U)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t otxnacc[20];
+                ASSERT(otxn_field(SBUF(otxnacc), sfAccount) == 20);
+
+                uint8_t hookacc[20];
+                ASSERT(hook_account(SBUF(hookacc)) == 20);
+
+                if (BUFFER_EQUAL_20(otxnacc, hookacc))
+                {
+                    // outgoin txn, delete the state
+                    uint8_t one[32]; one[31] = 1U;
+                    uint8_t zero[32];
+                    // we can use state_foreign_set to do the deletion, a concise way to test this functionality too
+                    ASSERT(state_foreign_set(0,0, SBUF(one), SBUF(zero), SBUF(hookacc) == 0));
+                }
+                
+
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+            
+        HASH_WASM(grantor);
+
+        // install the grantor hook on alice
+        {
+            Json::Value grants{Json::arrayValue};
+            grants[0U][jss::HookGrant] = Json::Value{};
+            grants[0U][jss::HookGrant][jss::HookHash] = grantee_hash_str;
+            grants[0U][jss::HookGrant][jss::Authorize] = bob.human(); 
+            
+            Json::Value json = ripple::test::jtx::hook(alice, {{hso(grantor_wasm, overrideFlag)}}, 0);
+            json[jss::Hooks][0U][jss::Hook][jss::HookGrants] = grants;
+
+
+            env(json,
+                M("set state_foreign_set"),
+                HSFEE);
+            env.close();
+        }
+
+        
+        // install the grantee hook on bob
+        {
+            
+            // invoice ID contains the grantor account
+            Json::Value json = ripple::test::jtx::hook(bob, {{hso(grantee_wasm, overrideFlag)}}, 0);
+            json[jss::InvoiceID] = std::string(24, '0') + strHex(alice.id());
+            env(json,
+                M("set state_foreign_set 2"),
+                HSFEE);
+            env.close();
+        }
+
+        auto const aliceid = Account("alice").id();
+        auto const nsdirkl = keylet::hookStateDir(aliceid, beast::zero);
+
+        std::string const invid = std::string(24, '0') + strHex(alice.id());
+
+        auto const one = 
+            ripple::uint256("0000000000000000000000000000000000000000000000000000000000000001");
+
+        // ensure there's no way the state or directory exist before we start
+        {
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
+            BEAST_REQUIRE(!state1);
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
+        }
+
+        // inovke the grantee hook but supply an account to foreign_set (through invoiceid)
+        // should definitely fail 
+        {
+            Json::Value json = pay(cho, bob, XRP(1));
+            json[jss::InvoiceID] = "0000000000000000000000000000000000000000000000000000000000000001";
+            env(json, fee(XRP(1)), M("test state_foreign_set 6a"), ter(tecHOOK_REJECTED));
+        }
+
+        // invoke the grantee hook but supply a valid account for which no grants exist
+        {
+            Json::Value json = pay(cho, bob, XRP(1));
+            json[jss::InvoiceID] = std::string(24, '0') + strHex(david.id());
+            env(json, fee(XRP(1)),
+                M("test state_foreign_set 6b"),
+                ter(tecHOOK_REJECTED));
+            {
+                auto const nsdir = env.le(nsdirkl);
+                BEAST_REQUIRE(!nsdir);
+
+                auto const state1 = env.le(ripple::keylet::hookState(david.id(), one, beast::zero));
+                BEAST_REQUIRE(!state1);
+
+                BEAST_EXPECT((*env.le("david"))[sfOwnerCount] == 0);
+            }
+        }
+
+        // invoke the grantee hook, this will create the state on the grantor 
+        {
+            Json::Value json = pay(cho, bob, XRP(1));
+            json[jss::InvoiceID] = invid;
+            env(json, fee(XRP(1)),
+                M("test state_foreign_set 6"),
+                ter(tesSUCCESS));
+        }
+       
+        // check state
+        {
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
+            BEAST_REQUIRE(!!state1);
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
+            
+            BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == one);
+        
+            auto const data1 = state1->getFieldVL(sfHookStateData);
+            BEAST_EXPECT(data1.size() == 32);
+            BEAST_EXPECT(uint256::fromVoid(data1.data()) == env.txid());
+        }
+        
+
+        // invoke the grantor hook, this will delete the state
+        env(pay(alice, cho, XRP(1)), M("test state_foreign_set 4"), fee(XRP(1)));
+
+        // check state was removed
+        {
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
+            BEAST_REQUIRE(!state1);
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
+        }
+
+        // install grantee hook on david
+        {
+            
+            // invoice ID contains the grantor account
+            Json::Value json = ripple::test::jtx::hook(david, {{hso(grantee_wasm, overrideFlag)}}, 0);
+            env(json,
+                M("set state_foreign_set 5"),
+                HSFEE);
+            env.close();
+        }
+
+        // invoke daivd, expect failure
+        {
+            Json::Value json = pay(cho, david, XRP(1));
+            json[jss::InvoiceID] = invid;
+            env(json, fee(XRP(1)),
+                M("test state_foreign_set 6"),
+                ter(tecHOOK_REJECTED));
+        }
+        
+        // remove sfAuthorize from alice grants
+        {
+            Json::Value grants{Json::arrayValue};
+            grants[0U][jss::HookGrant] = Json::Value{};
+            grants[0U][jss::HookGrant][jss::HookHash] = grantee_hash_str;
+            
+            Json::Value json = ripple::test::jtx::hook(alice, {{hso(grantor_wasm, overrideFlag)}}, 0);
+            json[jss::Hooks][0U][jss::Hook][jss::HookGrants] = grants;
+
+            env(json,
+                M("set state_foreign_set 7"),
+                HSFEE);
+            env.close();
+        }
+
+        // invoke david again, expect success
+        {
+            Json::Value json = pay(cho, david, XRP(1));
+            json[jss::InvoiceID] = invid;
+            env(json, fee(XRP(1)),
+                M("test state_foreign_set 8"),
+                 ter(tesSUCCESS));
+        }
+        
+        // check state
+        {
+            auto const nsdir = env.le(nsdirkl);
+            BEAST_REQUIRE(!!nsdir);
+
+            auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
+            BEAST_REQUIRE(!!state1);
+
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
+            
+            BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == one);
+        
+            auto const data1 = state1->getFieldVL(sfHookStateData);
+            BEAST_EXPECT(data1.size() == 32);
+            BEAST_EXPECT(uint256::fromVoid(data1.data()) == env.txid());
+        }
+
+        // change david's namespace
+        {
+            
+            // invoice ID contains the grantor account
+            Json::Value json = ripple::test::jtx::hook(david, {{hso(grantee_wasm, overrideFlag)}}, 0);
+            json[jss::InvoiceID] = std::string(24, '0') + strHex(alice.id());
+            json[jss::Hooks][0U][jss::Hook][jss::HookNamespace] =
+                    "7777777777777777777777777777777777777777777777777777777777777777";
+            env(json,
+                M("set state_foreign_set 9"),
+                HSFEE);
+            env.close();
+        }
+
+
+        // invoke david again, expect failure
+        env(pay(cho, david, XRP(1)), M("test state_foreign_set 10"), fee(XRP(1)), ter(tecHOOK_REJECTED));
+
+        // RH TODO: check reserve exhaustion
     }
 
     void
@@ -8775,7 +9103,7 @@ public:
         test_hook_skip();
 
         test_ledger_keylet();
-        test_ledger_last_hash();
+        test_ledger_last_hash();    //
         test_ledger_last_time();    //
         test_ledger_nonce();        //
         test_ledger_seq();          //
@@ -8827,11 +9155,6 @@ public:
     }
 
 private:
-#define HASH_WASM(x)                                                           \
-    uint256 const x##_hash =                                                   \
-        ripple::sha512Half_s(ripple::Slice(x##_wasm.data(), x##_wasm.size())); \
-    std::string const x##_hash_str = to_string(x##_hash);                      \
-    Keylet const x##_keylet = keylet::hookDefinition(x##_hash);
 
     TestHook accept_wasm =  // WASM: 0
         wasm[

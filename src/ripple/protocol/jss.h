@@ -83,6 +83,7 @@ JSS(HookParameter);          // field
 JSS(HookGrant);              // field
 JSS(Invalid);                //
 JSS(Invoke);                 // transaction type
+JSS(InvoiceID);              // field
 JSS(LastLedgerSequence);     // in: TransactionSign; field
 JSS(LedgerHashes);           // ledger type.
 JSS(LimitAmount);            // field.
