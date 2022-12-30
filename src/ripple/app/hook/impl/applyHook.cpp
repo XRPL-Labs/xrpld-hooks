@@ -1346,6 +1346,9 @@ DEFINE_HOOK_FUNCTION(
         STObject const* hookObj = dynamic_cast<STObject const*>(&hook);
 
         // skip blank entries
+        if (!hookObj->isFieldPresent(sfHookHash))
+            continue;
+
         if (!hookObj->isFieldPresent(sfHookGrants))
             continue;
 
@@ -1355,8 +1358,25 @@ DEFINE_HOOK_FUNCTION(
             continue;
 
         // the grant allows the hook to modify the granter's namespace only
-        if (hookObj->getFieldH256(sfHookNamespace) != ns)
-            continue;
+        if (hookObj->isFieldPresent(sfHookNamespace))
+        {
+            if (hookObj->getFieldH256(sfHookNamespace) != ns)
+                continue;
+        }
+        else
+        {
+            // fetch the hook definition
+            auto const def = view.read(ripple::keylet::hookDefinition(hookObj->getFieldH256(sfHookHash)));
+            if (!def)       // should never happen except in a rare race condition
+                continue;
+            if (def->getFieldH256(sfHookNamespace) != ns)
+                continue;
+        }
+
+                
+
+        //if (hookObj->isFieldPresent(sfHookNamespace) && hookObj->getFieldH256(sfHookNamespace) != ns)
+        //    continue;
 
         // this is expensive search so we'll disallow after one failed attempt
         for (auto const& hookGrant : hookGrants)
