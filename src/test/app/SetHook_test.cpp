@@ -3503,6 +3503,130 @@ public:
     void
     test_float_sto()
     {
+        testcase("Test float_sto");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_account (uint32_t, uint32_t);
+                extern int64_t float_sto (
+                    uint32_t write_ptr,
+                    uint32_t write_len,
+                    uint32_t cread_ptr,
+                    uint32_t cread_len,  
+                    uint32_t iread_ptr,
+                    uint32_t iread_len,  
+                    int64_t float1,
+                    uint32_t field_code
+                );
+                int64_t float_sto_set (
+                    uint32_t read_ptr,
+                    uint32_t read_len
+                );
+                #define OUT_OF_BOUNDS (-1)
+                #define INVALID_FLOAT (-10024)
+                #define INVALID_ARGUMENT (-7)
+                #define TOO_SMALL (-4)
+                #define XFL_OVERFLOW (-30)
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+                #define SBUF(x) x, sizeof(x)
+                #define sfAmount ((6U << 16U) + 1U)
+                uint8_t cur1[3] = {'U','S','D'};
+
+                #define BUFFER_EQUAL_20(buf1, buf2)\
+                    (\
+                        *(((uint64_t*)(buf1)) + 0) == *(((uint64_t*)(buf2)) + 0) &&\
+                        *(((uint64_t*)(buf1)) + 1) == *(((uint64_t*)(buf2)) + 1) &&\
+                        *(((uint32_t*)(buf1)) + 4) == *(((uint32_t*)(buf2)) + 4))           
+ 
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    uint8_t cur2[20];
+                    for (int i =0; GUARD(20), i < 20; ++i)
+                        cur2[i] = i;
+
+                    uint8_t iss[20];
+                    ASSERT(hook_account(SBUF(iss)) == 20);
+
+                    uint8_t buf[48];
+
+                    // the three buffers must be bounds checked
+                    ASSERT(float_sto(1000000, 50, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
+                    ASSERT(float_sto(0, 1000000, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
+                    ASSERT(float_sto(SBUF(buf), 1000000, 50, 0,0,0,0) == OUT_OF_BOUNDS);
+                    ASSERT(float_sto(SBUF(buf), 0, 1000000, 0,0,0,0) == OUT_OF_BOUNDS);
+                    ASSERT(float_sto(SBUF(buf), 0,0, 1000000, 50, 0,0) == OUT_OF_BOUNDS);
+                    ASSERT(float_sto(SBUF(buf), 0,0, 0, 1000000, 0,0) == OUT_OF_BOUNDS);
+
+                    // zero issuer/currency pointers must be accompanied by 0 length
+                    ASSERT(float_sto(SBUF(buf), 0, 1, 0,0, 0,0) == INVALID_ARGUMENT);
+                    ASSERT(float_sto(SBUF(buf), 0, 0, 0,1, 0,0) == INVALID_ARGUMENT);
+                    
+                    // zero issuer/currency lengths mus tbe accompanied by 0 pointers
+                    ASSERT(float_sto(SBUF(buf), 1, 0, 0,0, 0,0) == INVALID_ARGUMENT);
+                    ASSERT(float_sto(SBUF(buf), 0, 0, 1,0, 0,0) == INVALID_ARGUMENT);
+
+                    // issuer without currency is invalid
+                    ASSERT(float_sto(SBUF(buf), 0,0, SBUF(iss), 0, sfAmount) == INVALID_ARGUMENT);
+                    
+                    // currency without issuer is invalid
+                    ASSERT(float_sto(SBUF(buf), SBUF(cur1), 0,0, 0, sfAmount) == INVALID_ARGUMENT);
+
+                    // currency and issuer with field code 0 = XRP is invalid
+                    ASSERT(float_sto(SBUF(buf), SBUF(cur1), SBUF(iss), 0, 0) == INVALID_ARGUMENT);
+       
+                    // invalid XFL
+                    ASSERT(float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), -1, sfAmount) == INVALID_FLOAT);
+
+                    // valid XFL, currency and issuer
+                    { 
+                        // currency and issuer with field code not XRP is valid (XFL = 1234567.0)
+                        ASSERT(float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), 6198187654261802496ULL, sfAmount) == 48);
+                    
+                        // check the output contains the correct currency code
+                        ASSERT(BUFFER_EQUAL_20(buf + 28, cur2));
+                        
+                        // check the output contains the correct issuer
+                        ASSERT(BUFFER_EQUAL_20(buf + 8, iss));
+
+                        // check the field code is correct
+                        ASSERT(buf[0] == 0x61U); // sfAmount
+
+                        // reverse the operation and check the XFL amount is correct
+                        ASSERT(float_sto_set(SBUF(buf)) == 6198187654261802496ULL);
+                    }
+
+
+                    // RH TODO: xrp and short
+               
+                    return accept(0,0,0); 
+
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_sto"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)), M("test float_sto"), fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -9133,7 +9257,7 @@ public:
 
         test_state();               //
         test_state_foreign();       //
-        test_state_foreign_set();   
+        test_state_foreign_set();   // 
         test_state_set();           //
 
         test_sto_emplace();         //

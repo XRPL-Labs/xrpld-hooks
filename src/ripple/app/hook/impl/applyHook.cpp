@@ -558,6 +558,56 @@ get_free_slot(hook::HookContext& hookCtx)
     return slot_into;
 }
 
+// cu_ptr is a pointer into memory, bounds check is assumed to have already happened
+inline
+std::optional<Currency> parseCurrency(
+    uint8_t* cu_ptr, uint32_t cu_len)
+{
+    if (cu_len == 20)
+    {
+        // normal 20 byte currency
+        return Currency::fromVoid(cu_ptr);
+    } 
+    else if (cu_len == 3)
+    {
+        // 3 byte ascii currency
+        // need to check what data is in these three bytes, to ensure ISO4217 compliance
+        auto const validateChar = [](uint8_t c) -> bool
+        {
+            return 
+                (c >= 'a' && c <= 'z') ||
+                (c >= 'A' && c <= 'Z') ||
+                (c >= '0' && c <= '9') ||
+                c == '?' || c == '!' || c == '@' ||
+                c == '#' || c == '$' || c == '%' ||
+                c == '^' || c == '&' || c == '*' ||
+                c == '<' || c == '>' || c == '(' ||
+                c == ')' || c == '{' || c == '}' ||
+                c == '[' || c == ']' || c == '|';
+        };
+
+        if (!validateChar(*((uint8_t*)(cu_ptr + 0U))) ||
+            !validateChar(*((uint8_t*)(cu_ptr + 1U))) ||
+            !validateChar(*((uint8_t*)(cu_ptr + 2U))))
+            return {};
+        
+        uint8_t cur_buf[20] =
+        {
+            0,0,0,0,
+            0,0,0,0,
+            0,0,0,0,            
+            *((uint8_t*)(cu_ptr + 0U)),
+            *((uint8_t*)(cu_ptr + 1U)),
+            *((uint8_t*)(cu_ptr + 2U)),
+            0,0,0,0,0
+        };
+        return Currency::fromVoid(cur_buf); 
+    }
+    else
+        return {};
+}
+
+
 uint32_t
 hook::
 computeHookStateOwnerCount(uint32_t hookStateCount)
@@ -2635,48 +2685,9 @@ DEFINE_HOOK_FUNCTION(
                 if (hi_len != 20 || lo_len != 20)
                     return INVALID_ARGUMENT;
 
-                std::optional<Currency> cur;
-                if (cu_len == 20)
-                {
-                    // normal 20 byte currency
-                    cur = Currency::fromVoid(memory + cu_ptr);
-                } 
-                else if (cu_len == 3)
-                {
-                    // 3 byte ascii currency
-                    // need to check what data is in these three bytes, to ensure ISO4217 compliance
-                    auto const validateChar = [](uint8_t c) -> bool
-                    {
-                        return 
-                            (c >= 'a' && c <= 'z') ||
-                            (c >= 'A' && c <= 'Z') ||
-                            (c >= '0' && c <= '9') ||
-                            c == '?' || c == '!' || c == '@' ||
-                            c == '#' || c == '$' || c == '%' ||
-                            c == '^' || c == '&' || c == '*' ||
-                            c == '<' || c == '>' || c == '(' ||
-                            c == ')' || c == '{' || c == '}' ||
-                            c == '[' || c == ']' || c == '|';
-                    };
-
-                    if (!validateChar(*((uint8_t*)(cu_ptr + memory + 0U))) ||
-                        !validateChar(*((uint8_t*)(cu_ptr + memory + 1U))) ||
-                        !validateChar(*((uint8_t*)(cu_ptr + memory + 2U))))
-                        return INVALID_ARGUMENT;
-                    
-                    uint8_t cur_buf[20] =
-                    {
-                        0,0,0,0,
-                        0,0,0,0,
-                        0,0,0,0,            
-                        *((uint8_t*)(cu_ptr + memory + 0U)),
-                        *((uint8_t*)(cu_ptr + memory + 1U)),
-                        *((uint8_t*)(cu_ptr + memory + 2U)),
-                        0,0,0,0,0
-                    };
-                    cur = Currency::fromVoid(cur_buf); 
-                }
-                else
+                std::optional<Currency> cur =
+                    parseCurrency(memory + cu_ptr, cu_len);
+                if (!cur) 
                     return INVALID_ARGUMENT;
 
                 auto kl = ripple::keylet::line(
@@ -4368,6 +4379,51 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1,     uint32_t field_code)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+    
+    std::optional<Currency> currency;
+    std::optional<AccountID> issuer;
+
+    // bounds and argument checks
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (cread_len == 0)
+    {
+        if (cread_ptr != 0)
+            return INVALID_ARGUMENT;
+    }
+    else    
+    {
+        if (cread_len != 20 && cread_len != 3)
+            return INVALID_ARGUMENT;
+
+        if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length))
+            return OUT_OF_BOUNDS;
+
+        currency = parseCurrency(memory + cread_ptr, cread_len);
+
+        if (!currency)
+            return INVALID_ARGUMENT;
+    }
+
+    if (iread_len == 0)
+    {
+        if (iread_ptr != 0)
+            return INVALID_ARGUMENT;
+
+    }
+    else
+    {
+        if (iread_len != 20)
+            return INVALID_ARGUMENT;
+
+        if (NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
+            return OUT_OF_BOUNDS;
+
+        issuer = AccountID::fromVoid(memory + iread_ptr);
+    }
+
+
     RETURN_IF_INVALID_FLOAT(float1);
 
     uint16_t field = field_code & 0xFFFFU;
@@ -4385,24 +4441,23 @@ DEFINE_HOOK_FUNCTION(
 
     int64_t bytes_written = 0;
 
-    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
-        return OUT_OF_BOUNDS;
-
-    if (!is_xrp && !is_short && (cread_ptr == 0 && cread_len == 0 && iread_ptr == 0 && iread_len == 0))
+    if (issuer && !currency)
         return INVALID_ARGUMENT;
 
-    if (!is_xrp && !is_short)
+    if (!issuer && currency)
+        return INVALID_ARGUMENT;
+
+    if (issuer)
     {
-        if (NOT_IN_BOUNDS(cread_ptr, cread_len, memory_length) ||
-            NOT_IN_BOUNDS(iread_ptr, iread_len, memory_length))
-            return OUT_OF_BOUNDS;
-
-        if (cread_len != 20 || iread_len != 20)
+        if (is_xrp)
             return INVALID_ARGUMENT;
-
+        if (is_short)
+            return INVALID_ARGUMENT;
+        
         bytes_needed += 40;
-
     }
+    else if (!is_xrp && !is_short)
+        return INVALID_ARGUMENT;
 
     if (bytes_needed > write_len)
         return TOO_SMALL;
@@ -4442,18 +4497,18 @@ DEFINE_HOOK_FUNCTION(
     uint8_t out[8];
     if (is_xrp)
     {
-        // we need to normalize to exp -6
-        while (exp < -6)
-        {
-            man /= 10;
-            exp++;
-        }
+        int32_t shift = -(exp);
 
-        while (exp > -6)
-        {
-            man *= 10;
-            exp--;
-        }
+        if (shift > 15)
+            return 0;
+
+        if (shift < 0)
+            return XFL_OVERFLOW;
+        
+        if (shift > 0)
+            man /= power_of_ten[shift];
+
+        std::cout << "man: " << man << "\n";
 
         out[0] = (neg ? 0b00000000U : 0b01000000U);
         out[0] += (uint8_t)((man >> 56U) & 0b111111U);
@@ -4558,11 +4613,9 @@ DEFINE_HOOK_FUNCTION(
         }
     }
 
-
+    bool is_xrp = (((*upto) & 0b10000000U) == 0);
     bool is_negative = (((*upto) & 0b01000000U) == 0);
-    int32_t exponent = (((*upto++) & 0b00111111U)) << 2U;
-    exponent += ((*upto)>>6U);
-    exponent -= 97;
+
     uint64_t mantissa = (((uint64_t)(*upto++)) & 0b00111111U) << 48U;
     mantissa += ((uint64_t)*upto++) << 40U;
     mantissa += ((uint64_t)*upto++) << 32U;
@@ -4570,6 +4623,19 @@ DEFINE_HOOK_FUNCTION(
     mantissa += ((uint64_t)*upto++) << 16U;
     mantissa += ((uint64_t)*upto++) <<  8U;
     mantissa += ((uint64_t)*upto++);
+    
+    int32_t exponent = 0;
+
+    if (is_xrp)
+    {
+        // exponent remains 0
+    }
+    else
+    {
+        exponent = (((*upto++) & 0b00111111U)) << 2U;
+        exponent += ((*upto)>>6U);
+        exponent -= 97;
+    }
 
     if (mantissa == 0)
         return 0;
