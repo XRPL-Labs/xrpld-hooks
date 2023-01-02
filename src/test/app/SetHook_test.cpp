@@ -5835,6 +5835,7 @@ public:
                 uint32_t, uint32_t, uint32_t, uint32_t,
                 uint32_t, uint32_t, uint32_t, uint32_t
             );
+            #define DOESNT_EXIST (-5)
             #define ASSERT(x)\
                 if (!(x))\
                     rollback((uint32_t)#x, sizeof(#x), __LINE__);
@@ -5862,7 +5863,8 @@ public:
                     uint8_t one[32]; one[31] = 1U;
                     uint8_t zero[32];
                     // we can use state_foreign_set to do the deletion, a concise way to test this functionality too
-                    ASSERT(state_foreign_set(0,0, SBUF(one), SBUF(zero), SBUF(hookacc) == 0));
+                    int64_t y = state_foreign_set(0,0, SBUF(one), SBUF(zero), SBUF(hookacc));
+                    ASSERT(y == 0 || y == DOESNT_EXIST);
                 }
                 
 
@@ -5895,7 +5897,6 @@ public:
             
             // invoice ID contains the grantor account
             Json::Value json = ripple::test::jtx::hook(bob, {{hso(grantee_wasm, overrideFlag)}}, 0);
-            json[jss::InvoiceID] = std::string(24, '0') + strHex(alice.id());
             env(json,
                 M("set state_foreign_set 2"),
                 HSFEE);
@@ -5918,7 +5919,7 @@ public:
             auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
             BEAST_REQUIRE(!state1);
 
-            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
         }
 
         // inovke the grantee hook but supply an account to foreign_set (through invoiceid)
@@ -5964,7 +5965,7 @@ public:
             auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
             BEAST_REQUIRE(!!state1);
 
-            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
             
             BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == one);
         
@@ -5985,7 +5986,7 @@ public:
             auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
             BEAST_REQUIRE(!state1);
 
-            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 1);
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
         }
 
         // install grantee hook on david
@@ -6040,7 +6041,7 @@ public:
             auto const state1 = env.le(ripple::keylet::hookState(aliceid, one, beast::zero));
             BEAST_REQUIRE(!!state1);
 
-            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 2);
+            BEAST_EXPECT((*env.le("alice"))[sfOwnerCount] == 3);
             
             BEAST_EXPECT(state1->getFieldH256(sfHookStateKey) == one);
         
@@ -6049,13 +6050,11 @@ public:
             BEAST_EXPECT(uint256::fromVoid(data1.data()) == env.txid());
         }
 
-        // change david's namespace
+        // change alice's namespace
         {
             
-            // invoice ID contains the grantor account
-            Json::Value json = ripple::test::jtx::hook(david, {{hso(grantee_wasm, overrideFlag)}}, 0);
-            json[jss::InvoiceID] = std::string(24, '0') + strHex(alice.id());
-            json[jss::Hooks][0U][jss::Hook][jss::HookNamespace] =
+            Json::Value json = ripple::test::jtx::hook(alice, {{hso(grantor_wasm, overrideFlag)}}, 0);
+            json[jss::Hooks][0U][jss::Hook][jss::HookNamespace] = 
                     "7777777777777777777777777777777777777777777777777777777777777777";
             env(json,
                 M("set state_foreign_set 9"),
@@ -6065,8 +6064,13 @@ public:
 
 
         // invoke david again, expect failure
-        env(pay(cho, david, XRP(1)), M("test state_foreign_set 10"), fee(XRP(1)), ter(tecHOOK_REJECTED));
-
+        {
+            Json::Value json = pay(cho, david, XRP(1));
+            json[jss::InvoiceID] = invid;
+            env(json, fee(XRP(1)),
+                M("test state_foreign_set 10"),
+                 ter(tecHOOK_REJECTED));
+        }
         // RH TODO: check reserve exhaustion
     }
 
