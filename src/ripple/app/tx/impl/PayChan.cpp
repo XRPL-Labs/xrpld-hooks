@@ -214,7 +214,7 @@ closeChannel(
 
 TxConsequences
 PayChanCreate::makeTxConsequences(PreflightContext const& ctx)
-{
+{   
     return TxConsequences{ctx.tx,
         isXRP(ctx.tx[sfAmount]) ? ctx.tx[sfAmount].xrp() : beast::zero};
 }
@@ -229,7 +229,7 @@ PayChanCreate::preflight(PreflightContext const& ctx)
         return ret;
 
     STAmount const amount {ctx.tx[sfAmount]};
-    if (!isXRP(amount))
+    if (!amount.native())
     {
         if (!ctx.rules.enabled(featurePaychanAndEscrowForTokens))
             return temDISABLED;
@@ -280,11 +280,11 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
     auto const dst = ctx.tx[sfDestination];
 
     // Check reserve and funds availability
-    if (isXRP(amount) && balance < reserve + amount)
+    if (amount.native() && balance < reserve + amount)
     {
         return tecUNFUNDED;
     }
-    else if (!isXRP(amount)) {
+    else if (!amount.native()) {
         if (!ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
             return temDISABLED;
 
@@ -404,7 +404,7 @@ PayChanCreate::doApply()
     }
 
     // Deduct owner's balance, increment owner count
-    if (isXRP(amount))
+    if (amount.native())
         (*sle)[sfBalance] = (*sle)[sfBalance] - amount;
     else
     {
@@ -415,7 +415,7 @@ PayChanCreate::doApply()
             ctx_.view().peek(keylet::line(account, amount.getIssuer(), amount.getCurrency()));
 
         if (!sleLine)
-            return tecUNFUNDED_PAYMENT;
+            return tecNO_LINE;
 
         TER result = 
             trustAdjustLockedBalance(
