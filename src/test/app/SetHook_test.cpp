@@ -4328,6 +4328,62 @@ public:
     void
     test_hook_pos()
     {
+        testcase("Test hook_pos");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_pos (void);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                accept(0,0,hook_pos());
+            }
+        )[test.hook]"];
+
+        // install the hook on alice in all four spots
+        env(ripple::test::jtx::hook(
+                alice,
+                {{hso(hook),
+                  hso(hook),
+                  hso(hook),
+                  hso(hook)}},
+                0),
+            M("set hook_pos"),
+            HSFEE,
+            ter(tesSUCCESS));
+        env.close();
+
+        // invoke the hooks
+        env(pay(bob, alice, XRP(1)), M("test hook_pos"), fee(XRP(1)));
+        env.close();
+
+        auto meta = env.meta();
+
+        // ensure hook execution occured
+        BEAST_REQUIRE(meta);
+        BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+        // ensure there was four hook executions
+        auto const hookExecutions =
+            meta->getFieldArray(sfHookExecutions);
+        BEAST_REQUIRE(hookExecutions.size() == 4);
+
+        // get the data in the return code of the execution
+        BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 0);
+        BEAST_EXPECT(hookExecutions[1].getFieldU64(sfHookReturnCode) == 1);
+        BEAST_EXPECT(hookExecutions[2].getFieldU64(sfHookReturnCode) == 2);
+        BEAST_EXPECT(hookExecutions[3].getFieldU64(sfHookReturnCode) == 3);
+
     }
 
     void
@@ -9440,7 +9496,7 @@ public:
         test_hook_hash();           //
         test_hook_param();
         test_hook_param_set();
-        test_hook_pos();
+        test_hook_pos();            //
         test_hook_skip();
 
         test_ledger_keylet();
