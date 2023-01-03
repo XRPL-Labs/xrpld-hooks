@@ -3530,7 +3530,7 @@ public:
                     int64_t float1,
                     uint32_t field_code
                 );
-                int64_t float_sto_set (
+                extern int64_t float_sto_set (
                     uint32_t read_ptr,
                     uint32_t read_len
                 );
@@ -3708,6 +3708,143 @@ public:
     void
     test_float_sto_set()
     {
+        testcase("Test float_sto_set");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        {
+            TestHook hook = wasm[R"[test.hook](
+                #include <stdint.h>
+                extern int32_t _g       (uint32_t id, uint32_t maxiter);
+                #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+                extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+                extern int64_t hook_account (uint32_t, uint32_t);
+                extern int64_t float_sto_set (
+                    uint32_t read_ptr,
+                    uint32_t read_len
+                );
+                #define NOT_AN_OBJECT (-23)
+                #define OUT_OF_BOUNDS (-1)
+                #define ASSERT(x)\
+                    if (!(x))\
+                        rollback((uint32_t)#x, sizeof(#x), __LINE__);
+
+                #define SBUF(x) x, sizeof(x)
+
+                #define BUFFER_EQUAL_20(buf1, buf2)\
+                    (\
+                        *(((uint64_t*)(buf1)) + 0)) == *(((uint64_t*)(buf2)) + 0) &&\
+                        *(((uint64_t*)(buf1)) + 1) == *(((uint64_t*)(buf2)) + 1) &&\
+                        *(((uint32_t*)(buf1)) + 4) == *(((uint32_t*)(buf2)) + 4)           
+
+
+                // 1234567000000000 * 10**-9, currency USD, issuer 7C4C8D5B2FDA1D16E9A4F5BB579AC2926C146235 (alice)
+                uint8_t iou[] = //6198187654261802496 
+                {
+                    0x61U,0xD6U,0x04U,0x62U,0xD5U,0x07U,0x7CU,0x86U,0x00U,0x00U,
+                    0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                    0x00U,0x55U,0x53U,0x44U,0x00U,0x00U,0x00U,0x00U,0x00U,0x7CU,
+                    0x4CU,0x8DU,0x5BU,0x2FU,0xDAU,0x1DU,0x16U,0xE9U,0xA4U,0xF5U,
+                    0xBBU,0x57U,0x9AU,0xC2U,0x92U,0x6CU,0x14U,0x62U,0x35U
+                };
+
+                // as above but value is negative
+                uint8_t iou_neg[] = //1586501635834414592
+                {
+                    0x61U,0x96U,0x04U,0x62U,0xD5U,0x07U,0x7CU,0x86U,0x00U,0x00U,
+                    0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                    0x00U,0x55U,0x53U,0x44U,0x00U,0x00U,0x00U,0x00U,0x00U,0x7CU,
+                    0x4CU,0x8DU,0x5BU,0x2FU,0xDAU,0x1DU,0x16U,0xE9U,0xA4U,0xF5U,
+                    0xBBU,0x57U,0x9AU,0xC2U,0x92U,0x6CU,0x14U,0x62U,0x35U
+                };
+        
+                // as above but value is 0
+                uint8_t iou_zero[] = // 0
+                {
+                    0x61U,0x80U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                    0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,
+                    0x00U,0x55U,0x53U,0x44U,0x00U,0x00U,0x00U,0x00U,0x00U,0x7CU,
+                    0x4CU,0x8DU,0x5BU,0x2FU,0xDAU,0x1DU,0x16U,0xE9U,0xA4U,0xF5U,
+                    0xBBU,0x57U,0x9AU,0xC2U,0x92U,0x6CU,0x14U,0x62U,0x35U
+                };
+
+                // XRP short code 1234567 drops
+                uint8_t xrp_short[] = //6198187654261802496
+                {
+                    0x61U,0x40U,0x00U,0x00U,0x00U,0x00U,0x12U,0xD6U,0x87U
+                };
+
+                // XRP long code 755898701447 drops
+                uint8_t xrp_long[] = //6294584066823682416
+                {
+                    0x60U,0x11U,0x40U,0x00U,0x00U,0xAFU,0xFFU,0x12U,0xD6U,0x87U
+                };
+
+                // XRP negative 1234567 drops
+                uint8_t xrp_neg[] = //1586501635834414592
+                {
+                    0x61U,0x00U,0x00U,0x00U,0x00U,0x00U,0x12U,0xD6U,0x87U
+                };
+
+                // XRP negative zero
+                uint8_t xrp_neg_zero[] = // 0
+                {
+                    0x61U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U
+                };
+
+                // XRP positive zero
+                uint8_t xrp_pos_zero[] = // 0
+                {
+                    0x61U,0x40U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U,0x00U
+                };
+
+ 
+                int64_t hook(uint32_t reserved )
+                {
+                    _g(1,1);
+                    int64_t y;
+                    
+                    // bounds check
+                    ASSERT((y=float_sto_set(1000000, 50)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto_set(0, 1000000)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto_set(1000000, 1000000)) == OUT_OF_BOUNDS);
+
+                    // too small check
+                    ASSERT((y=float_sto_set(0, 7)) == NOT_AN_OBJECT);
+
+                    // garbage check
+                    ASSERT((y=float_sto_set(0, 9)) == NOT_AN_OBJECT);
+                    ASSERT((y=float_sto_set(0, 8)) == 0);
+                
+
+                    ASSERT((y=float_sto_set(SBUF(iou))) == 6198187654261802496ULL);
+                    ASSERT((y=float_sto_set(SBUF(xrp_short))) == 6198187654261802496ULL);
+                    ASSERT((y=float_sto_set(SBUF(iou_neg))) == 1586501635834414592ULL);
+                    ASSERT((y=float_sto_set(SBUF(xrp_neg))) == 1586501635834414592ULL);
+                    ASSERT((y=float_sto_set(SBUF(xrp_pos_zero))) == 0);
+                    ASSERT((y=float_sto_set(SBUF(xrp_neg_zero))) == 0);
+                    ASSERT((y=float_sto_set(SBUF(iou_zero))) == 0);
+                    ASSERT((y=float_sto_set(SBUF(xrp_long))) == 6294584066823682416ULL);
+
+                    return accept(0,0,0); 
+
+                }
+            )[test.hook]"];
+
+            env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+                M("set float_sto_set"),
+                HSFEE);
+            env.close();
+
+            env(pay(bob, alice, XRP(1)), M("test float_sto_set"), fee(XRP(1)));
+            env.close();
+        }
     }
 
     void
@@ -9295,7 +9432,7 @@ public:
         test_float_set();           //
         test_float_sign();          //
         test_float_sto();           //
-        test_float_sto_set();
+        test_float_sto_set();       //
         test_float_sum();           //
 
         test_hook_account();        //

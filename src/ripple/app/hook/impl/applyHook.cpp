@@ -4596,6 +4596,7 @@ DEFINE_HOOK_FUNCTION(
             if (read_len < 11)
                 return NOT_AN_OBJECT;
             upto += 3;
+            read_len -= 3;
         }
         else if (hi == 0 || lo == 0)
         {
@@ -4603,13 +4604,18 @@ DEFINE_HOOK_FUNCTION(
             if (read_len < 10)
                 return NOT_AN_OBJECT;
             upto += 2;
+            read_len -= 2;
         }
         else
         {
             // typecode < 16 && fieldcode < 16
             upto++;
+            read_len--;
         }
     }
+
+    if (read_len < 8)
+        return NOT_AN_OBJECT;
 
     bool is_xrp = (((*upto) & 0b10000000U) == 0);
     bool is_negative = (((*upto) & 0b01000000U) == 0);
