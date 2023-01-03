@@ -4986,6 +4986,9 @@ DEFINE_HOOK_FUNCTION(
     if (read_len != 32)
         return INVALID_ARGUMENT;
 
+    if (flags != 0 && flags != 1)
+        return INVALID_ARGUMENT;
+
     auto& skips = hookCtx.result.hookSkips;
     ripple::uint256 hash = ripple::uint256::fromVoid(memory + read_ptr);
 

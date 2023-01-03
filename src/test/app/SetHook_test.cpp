@@ -4453,6 +4453,129 @@ public:
     void
     test_hook_skip()
     {
+        testcase("Test hook_skip");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook skip_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_skip (uint32_t, uint32_t, uint32_t);
+            extern int64_t otxn_field (uint32_t, uint32_t, uint32_t);
+            extern int64_t hook_hash (uint32_t, uint32_t, int32_t);
+            extern int64_t hook_pos(void);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback(#x, sizeof(#x), __LINE__ << 8U);
+            #define sfInvoiceID ((5U << 16U) + 17U)
+            #define SBUF(x) x,sizeof(x)
+            #define OUT_OF_BOUNDS (-1)
+            #define DOESNT_EXIST (-5)
+            #define INVALID_ARGUMENT (-7)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                // bounds checks
+                ASSERT(hook_skip(0, 1000000, 0) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(1000000, 32, 0) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(1000000, 100000, 0) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(0, 33, 0) == INVALID_ARGUMENT);
+                ASSERT(hook_skip(0, 1000000, 1) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(1000000, 32, 1) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(1000000, 100000, 1) == OUT_OF_BOUNDS);
+                ASSERT(hook_skip(0, 33, 1) == INVALID_ARGUMENT);
+
+                // garbage check
+                ASSERT(hook_skip(0, 32, 0) == DOESNT_EXIST);
+                ASSERT(hook_skip(0, 32, 1) == DOESNT_EXIST);
+                ASSERT(hook_skip(0, 32, 2) == INVALID_ARGUMENT);
+
+                // the hook to skip is passed in by invoice id
+                uint8_t skip[32];
+                ASSERT(otxn_field(SBUF(skip), sfInvoiceID) == 32);
+
+                // get this hook's hash
+                uint8_t hash[32];
+                ASSERT(hook_hash(SBUF(hash), (uint32_t)hook_pos()) == 32);
+
+                // to test if the "remove" function works in the api we will add this hook hash itself and then
+                // remove it again. Therefore if the hook is placed at positions 0 and 3, the one at 3 should still
+                // run
+                ASSERT(hook_skip(SBUF(hash), 1) == DOESNT_EXIST);
+                ASSERT(hook_skip(SBUF(hash), 0) == 1);
+                ASSERT(hook_skip(SBUF(hash), 1) == 1);
+
+                // finally skip the hook hash indicated by invoice id
+                ASSERT(hook_skip(SBUF(skip), 0));
+
+                accept(0,0,hook_pos());
+            }
+
+        )[test.hook]"];
+
+
+        TestHook pos_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_pos (void);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                accept(0,0,255);
+            }
+        )[test.hook]"];
+        
+        HASH_WASM(pos);
+
+        // install the hook on alice in one places
+        env(ripple::test::jtx::hook(
+                alice,
+                {{hso(skip_wasm),
+                  hso(pos_wasm),
+                  hso(pos_wasm),
+                  hso(skip_wasm)}},
+                0),
+            M("set hook_skip"),
+            HSFEE,
+            ter(tesSUCCESS));
+        env.close();
+
+
+        // invoke the hooks
+        {
+            Json::Value json = pay(bob, alice, XRP(1));
+            json[jss::InvoiceID] = pos_hash_str;
+            env(json, fee(XRP(1)), M("test hook_skip"), ter(tesSUCCESS));
+            env.close();
+        }
+
+        auto meta = env.meta();
+
+        // ensure hook execution occured
+        BEAST_REQUIRE(meta);
+        BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+        // ensure there was four hook executions
+        auto const hookExecutions =
+            meta->getFieldArray(sfHookExecutions);
+        BEAST_REQUIRE(hookExecutions.size() == 2);
+
+        // get the data in the return code of the execution
+        for (int i = 0; i < hookExecutions.size(); ++i)
+            std::cout << "hook i: " << hookExecutions[i].getFieldU64(sfHookReturnCode) << "\n";
+
+        BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 0);
+        BEAST_EXPECT(hookExecutions[1].getFieldU64(sfHookReturnCode) == 3);
     }
 
     void
@@ -9561,7 +9684,7 @@ public:
         test_hook_param();
         test_hook_param_set();
         test_hook_pos();            //
-        test_hook_skip();
+        test_hook_skip();           //
 
         test_ledger_keylet();
         test_ledger_last_hash();    //
