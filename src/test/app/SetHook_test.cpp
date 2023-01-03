@@ -3545,17 +3545,24 @@ public:
 
                 #define SBUF(x) x, sizeof(x)
                 #define sfAmount ((6U << 16U) + 1U)
+                #define sfDeliveredAmount ((6U << 16U) + 18U)
                 uint8_t cur1[3] = {'U','S','D'};
+                uint8_t cur1full[20] = {
+                    0,0,0,0,0,0,0,0,0,0,0,0,
+                    'U', 'S', 'D',
+                    0,0,0,0,0
+                };
 
                 #define BUFFER_EQUAL_20(buf1, buf2)\
                     (\
-                        *(((uint64_t*)(buf1)) + 0) == *(((uint64_t*)(buf2)) + 0) &&\
+                        *(((uint64_t*)(buf1)) + 0)) == *(((uint64_t*)(buf2)) + 0) &&\
                         *(((uint64_t*)(buf1)) + 1) == *(((uint64_t*)(buf2)) + 1) &&\
-                        *(((uint32_t*)(buf1)) + 4) == *(((uint32_t*)(buf2)) + 4))           
+                        *(((uint32_t*)(buf1)) + 4) == *(((uint32_t*)(buf2)) + 4)           
  
                 int64_t hook(uint32_t reserved )
                 {
                     _g(1,1);
+                    int64_t y;
                     uint8_t cur2[20];
                     for (int i =0; GUARD(20), i < 20; ++i)
                         cur2[i] = i;
@@ -3563,56 +3570,125 @@ public:
                     uint8_t iss[20];
                     ASSERT(hook_account(SBUF(iss)) == 20);
 
-                    uint8_t buf[48];
+
+                    uint8_t buf[50];
 
                     // the three buffers must be bounds checked
-                    ASSERT(float_sto(1000000, 50, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
-                    ASSERT(float_sto(0, 1000000, 0,0,0,0,0,0) == OUT_OF_BOUNDS);
-                    ASSERT(float_sto(SBUF(buf), 1000000, 50, 0,0,0,0) == OUT_OF_BOUNDS);
-                    ASSERT(float_sto(SBUF(buf), 0, 1000000, 0,0,0,0) == OUT_OF_BOUNDS);
-                    ASSERT(float_sto(SBUF(buf), 0,0, 1000000, 50, 0,0) == OUT_OF_BOUNDS);
-                    ASSERT(float_sto(SBUF(buf), 0,0, 0, 1000000, 0,0) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto(1000000, 50, 0,0,0,0,0,0)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto(0, 1000000, 0,0,0,0,0,0)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto(SBUF(buf), 1000000, 20, 1,20,0,0)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto(SBUF(buf), 1, 1000000, 1,20,0,0)) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 1,20, 1000000, 20, 0,0)) == OUT_OF_BOUNDS);
+                    ASSERT((y=float_sto(SBUF(buf), 1,20, 1, 1000000, 0,0)) == INVALID_ARGUMENT);
 
                     // zero issuer/currency pointers must be accompanied by 0 length
-                    ASSERT(float_sto(SBUF(buf), 0, 1, 0,0, 0,0) == INVALID_ARGUMENT);
-                    ASSERT(float_sto(SBUF(buf), 0, 0, 0,1, 0,0) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 0, 1, 0,0, 0,0)) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 0, 0, 0,1, 0,0)) == INVALID_ARGUMENT);
                     
                     // zero issuer/currency lengths mus tbe accompanied by 0 pointers
-                    ASSERT(float_sto(SBUF(buf), 1, 0, 0,0, 0,0) == INVALID_ARGUMENT);
-                    ASSERT(float_sto(SBUF(buf), 0, 0, 1,0, 0,0) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 1, 0, 0,0, 0,0)) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 0, 0, 1,0, 0,0)) == INVALID_ARGUMENT);
 
                     // issuer without currency is invalid
-                    ASSERT(float_sto(SBUF(buf), 0,0, SBUF(iss), 0, sfAmount) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), 0,0, SBUF(iss), 0, sfAmount)) == INVALID_ARGUMENT);
                     
                     // currency without issuer is invalid
-                    ASSERT(float_sto(SBUF(buf), SBUF(cur1), 0,0, 0, sfAmount) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), SBUF(cur1), 0,0, 0, sfAmount)) == INVALID_ARGUMENT);
 
                     // currency and issuer with field code 0 = XRP is invalid
-                    ASSERT(float_sto(SBUF(buf), SBUF(cur1), SBUF(iss), 0, 0) == INVALID_ARGUMENT);
+                    ASSERT((y=float_sto(SBUF(buf), SBUF(cur1), SBUF(iss), 0, 0)) == INVALID_ARGUMENT);
        
                     // invalid XFL
-                    ASSERT(float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), -1, sfAmount) == INVALID_FLOAT);
+                    ASSERT((y=float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), -1, sfAmount)) == INVALID_FLOAT);
 
                     // valid XFL, currency and issuer
                     { 
                         // currency and issuer with field code not XRP is valid (XFL = 1234567.0)
-                        ASSERT(float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), 6198187654261802496ULL, sfAmount) == 48);
+                        // try with a three letter currency
+                        ASSERT((y=float_sto(SBUF(buf), SBUF(cur1), SBUF(iss), 6198187654261802496ULL, sfAmount)) == 49);
+                        
+                        // check the output contains the correct currency code
+                        ASSERT(BUFFER_EQUAL_20(buf + 9, cur1full));
+
+                        // again with a 20 byte currency
+                        ASSERT((y=float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), 6198187654261802496ULL, sfAmount)) == 49);
                     
                         // check the output contains the correct currency code
-                        ASSERT(BUFFER_EQUAL_20(buf + 28, cur2));
+                        ASSERT(BUFFER_EQUAL_20(buf + 9, cur2));
                         
                         // check the output contains the correct issuer
-                        ASSERT(BUFFER_EQUAL_20(buf + 8, iss));
+                        ASSERT(BUFFER_EQUAL_20(buf + 29, iss));
 
                         // check the field code is correct
                         ASSERT(buf[0] == 0x61U); // sfAmount
 
                         // reverse the operation and check the XFL amount is correct
-                        ASSERT(float_sto_set(SBUF(buf)) == 6198187654261802496ULL);
+                        ASSERT((y=float_sto_set(buf, 49)) == 6198187654261802496ULL);
+
+                        // test 0
+                        ASSERT((y=float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), 0, sfAmount)) == 49);
+                        ASSERT((y=float_sto_set(buf, 49)) == 0);
+
+                    }
+                        
+                    // the same again but with a field-uncommon fieldcode
+                    {
+                        ASSERT((y=float_sto(SBUF(buf), SBUF(cur2), SBUF(iss), 6198187654261802496ULL, sfDeliveredAmount)) == 50);
+                    
+                        // check the first 2 bytes
+                        ASSERT(buf[0] == 0x60U && buf[1] == 0x12U);
+
+                        // same checks as above moved along one
+                        
+                        // check the output contains the correct currency code
+                        ASSERT(BUFFER_EQUAL_20(buf + 10, cur2));
+                        
+                        // check the output contains the correct issuer
+                        ASSERT(BUFFER_EQUAL_20(buf + 30, iss));
+                        
+                        // reverse the operation and check the XFL amount is correct
+                        ASSERT((y=float_sto_set(SBUF(buf))) == 6198187654261802496ULL);
                     }
 
+                    // and the same again except use -1 as field code to supress field type bytes
+                    {
+                        // zero the serialized amount bytes
+                        *((uint64_t*)(buf + 2)) = 0;
 
-                    // RH TODO: xrp and short
+                        // request fieldcode -1 = only serialize the number
+                        ASSERT((y=float_sto(buf + 2, 8, 0,0,0,0, 6198187654261802496ULL, 0xFFFFFFFFUL)) == 8);
+                    
+                        // reverse the operation and check the XFL amount is correct
+                        ASSERT((y=float_sto_set(SBUF(buf))) == 6198187654261802496ULL);
+
+                        // try again with some different xfls
+                        ASSERT((y=float_sto(buf + 2, 8, 0,0,0,0, 1244912689067196128ULL, 0xFFFFFFFFUL)) == 8);
+                        ASSERT((y=float_sto_set(SBUF(buf))) == 1244912689067196128ULL);
+
+
+                        // test 0
+                        ASSERT((y=float_sto(buf + 2, 8, 0,0,0,0, 0, 0xFFFFFFFFUL)) == 8);
+                        ASSERT((y=float_sto_set(SBUF(buf))) == 0);
+                    }
+
+                    // finally test xrp
+                    {
+                        // zero the serialized amount bytes
+                        *((uint64_t*)(buf)) = 0;
+
+                        // request fieldcode 0 = xrp amount serialized
+                        ASSERT((y=float_sto(buf + 1, 8, 0,0,0,0, 6198187654261802496ULL, 0)) == 8);
+
+                        buf[0] = 0x61U;
+                
+                        ASSERT((y=float_sto_set(buf, 9)) == 6198187654261802496ULL);
+
+                        // test 0
+                        ASSERT((y=float_sto(buf + 1, 8, 0,0,0,0, 0, 0)) == 8);
+                        ASSERT((y=float_sto_set(buf, 9)) == 0);
+                        
+                        //6198187654373024496
+                    }
                
                     return accept(0,0,0); 
 
@@ -9218,7 +9294,7 @@ public:
         test_float_root();          //
         test_float_set();           //
         test_float_sign();          //
-        test_float_sto();
+        test_float_sto();           //
         test_float_sto_set();
         test_float_sum();           //
 

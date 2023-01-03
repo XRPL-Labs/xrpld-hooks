@@ -4508,8 +4508,6 @@ DEFINE_HOOK_FUNCTION(
         if (shift > 0)
             man /= power_of_ten[shift];
 
-        std::cout << "man: " << man << "\n";
-
         out[0] = (neg ? 0b00000000U : 0b01000000U);
         out[0] += (uint8_t)((man >> 56U) & 0b111111U);
         out[1]  = (uint8_t)((man >> 48U) & 0xFF);
@@ -4557,13 +4555,13 @@ DEFINE_HOOK_FUNCTION(
         WRITE_WASM_MEMORY(
             bytes_written,
             write_ptr + bytes_written, write_len - bytes_written,
-            memory + cread_ptr, 20,
+            (*currency).data(), 20,
             memory, memory_length);
 
         WRITE_WASM_MEMORY(
             bytes_written,
             write_ptr + bytes_written, write_len - bytes_written,
-            memory + iread_ptr, 20,
+            (*issuer).data(), 20,
             memory, memory_length);
     }
 
@@ -4616,19 +4614,12 @@ DEFINE_HOOK_FUNCTION(
     bool is_xrp = (((*upto) & 0b10000000U) == 0);
     bool is_negative = (((*upto) & 0b01000000U) == 0);
 
-    uint64_t mantissa = (((uint64_t)(*upto++)) & 0b00111111U) << 48U;
-    mantissa += ((uint64_t)*upto++) << 40U;
-    mantissa += ((uint64_t)*upto++) << 32U;
-    mantissa += ((uint64_t)*upto++) << 24U;
-    mantissa += ((uint64_t)*upto++) << 16U;
-    mantissa += ((uint64_t)*upto++) <<  8U;
-    mantissa += ((uint64_t)*upto++);
-    
     int32_t exponent = 0;
 
     if (is_xrp)
     {
         // exponent remains 0
+        upto++;
     }
     else
     {
@@ -4637,9 +4628,18 @@ DEFINE_HOOK_FUNCTION(
         exponent -= 97;
     }
 
+    uint64_t mantissa = (((uint64_t)(*upto++)) & 0b00111111U) << 48U;
+    mantissa += ((uint64_t)*upto++) << 40U;
+    mantissa += ((uint64_t)*upto++) << 32U;
+    mantissa += ((uint64_t)*upto++) << 24U;
+    mantissa += ((uint64_t)*upto++) << 16U;
+    mantissa += ((uint64_t)*upto++) <<  8U;
+    mantissa += ((uint64_t)*upto++);
+    
+
     if (mantissa == 0)
         return 0;
-
+    
     return hook_float::normalize_xfl(
         mantissa,
         exponent,
