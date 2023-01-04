@@ -4514,6 +4514,215 @@ public:
     void
     test_hook_param_set()
     {
+        testcase("Test hook_param_set");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+        
+        TestHook checker_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+
+            extern int64_t hook_param(uint32_t, uint32_t, uint32_t, uint32_t);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define OUT_OF_BOUNDS (-1)
+            #define TOO_BIG (-3)
+            #define TOO_SMALL (-4)
+            #define DOESNT_EXIST (-5)
+            #define INVALID_ARGUMENT (-7)
+            uint8_t* names[] =
+            {
+                "param0",
+                "param1",
+                "param2",
+                "param3",
+            };
+            #define SBUF(x) x,sizeof(x)
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                // this entry should be deleted by the setter
+                uint8_t checker_hash[32];
+                ASSERT(hook_param(SBUF(checker_hash), "checker", 7) == DOESNT_EXIST);
+
+                
+                uint8_t buf[32];
+
+                // this entry should havebeen added by the setter
+                ASSERT(hook_param(SBUF(buf), "hello", 5) == 5);
+                ASSERT(buf[0] == 'w' && buf[1] == 'o' && buf[2] == 'r' && buf[3] == 'l' && buf[4] == 'd');
+
+                // these pre-existing entries should be modified by the setter
+                for (int i = 0; GUARD(4), i < 4; ++i)
+                {
+                    ASSERT(hook_param(SBUF(buf), names[i], 6) == 6);
+
+                    ASSERT(buf[0] == 'v' && buf[1] == 'a' && buf[2] == 'l' &&
+                        buf[3] == 'u' && buf[4] == 'e' && buf[5] == '0' +  i);
+                
+                }
+                
+                accept(0,0,0);
+            }
+            
+        )[test.hook]"];
+
+        TestHook setter_wasm = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_param_set (
+                uint32_t read_ptr,
+                uint32_t read_len,
+                uint32_t kread_ptr,
+                uint32_t kread_len,
+                uint32_t hread_ptr,
+                uint32_t hread_len  
+            );
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define OUT_OF_BOUNDS (-1)
+            #define TOO_BIG (-3)
+            #define TOO_SMALL (-4)
+            #define DOESNT_EXIST (-5)
+            #define INVALID_ARGUMENT (-7)
+            uint8_t* names[] =
+            {
+                "param0",
+                "param1",
+                "param2",
+                "param3",
+            };
+            uint8_t* values[] =
+            {
+                "value0",
+                "value1",
+                "value2",
+                "value3",
+            };
+            #define SBUF(x) x,sizeof(x)
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+
+                ASSERT(hook_param_set(1000000, 32, 0, 32, 0, 32) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 1000000, 0, 32, 0, 32) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 32, 1000000, 32, 0, 32) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 32, 0, 1000000, 0, 32) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 32, 0, 32, 1000000, 32) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 32, 0, 32, 0, 1000000) == OUT_OF_BOUNDS);
+                ASSERT(hook_param_set(0, 32, 0, 0, 0, 32) == TOO_SMALL);
+                ASSERT(hook_param_set(0, 32, 0, 33, 0, 32) == TOO_BIG);
+                ASSERT(hook_param_set(0, 32, 0, 32, 0, 33) == INVALID_ARGUMENT);
+                ASSERT(hook_param_set(0, 32, 0, 32, 0, 31) == INVALID_ARGUMENT);
+                ASSERT(hook_param_set(0, 32, 0, 32, 0, 0) == INVALID_ARGUMENT);
+                ASSERT(hook_param_set(0, 256, 0, 32, 0, 32) == TOO_BIG);
+
+
+                uint8_t checker_hash[32];
+                ASSERT(hook_param(SBUF(checker_hash), "checker", 7) == 32);
+
+                for (int i = 0; GUARD(4), i < 4; ++i)
+                {
+                    ASSERT(hook_param_set(values[i], 6, names[i], 6, SBUF(checker_hash)) == 6);
+                }
+                
+                // "delete" the checker entry" for when the checker runs
+                ASSERT(hook_param_set(0,0,"checker", 7, SBUF(checker_hash)) == 0);
+
+                // add a parameter that did not previously exist
+                ASSERT(hook_param_set("world", 5,"hello", 5, SBUF(checker_hash)) == 0);
+
+                // ensure this hook's parameters did not change
+                uint8_t buf[32];
+                for (int i = 0; GUARD(4), i < 4; ++i)
+                {
+                    ASSERT(hook_param(SBUF(buf), names[i], 6) == 6);
+
+                    ASSERT(buf[0] == 'v' && buf[1] == 'a' && buf[2] == 'l' &&
+                        buf[3] == 'u' && buf[4] == 'e' && buf[5] == '0');
+                
+                }
+ 
+                accept(0,0,0);
+            }
+            
+        )[test.hook]"];
+
+        WASM_HEX(checker);
+
+        Json::Value jv;
+        jv[jss::Account] = alice.human();
+        jv[jss::TransactionType] = jss::SetHook;
+        jv[jss::Flags] = 0;
+        jv[jss::Hooks] = Json::Value{Json::arrayValue};
+
+        Json::Value iv;
+        iv[jss::CreateCode] = strHex(setter_wasm);
+        iv[jss::HookOn] = uint64_hex(0);
+        iv[jss::HookApiVersion] = 0U;
+        iv[jss::HookNamespace] =  to_string(uint256{beast::zero});
+
+        Json::Value checkerpv;
+        {
+            Json::Value piv;
+            piv[jss::HookParameterName] =
+                strHex("checker");
+            piv[jss::HookParameterValue] =
+                checker_hash_str;
+            checkerpv[jss::HookParameter] = piv;
+        }
+
+        Json::Value params{Json::arrayValue};
+        for (uint32_t i = 0; i < 4; ++i)
+        {
+            Json::Value pv;
+            Json::Value piv;
+            piv[jss::HookParameterName] =
+                strHex("param" + std::to_string(i));
+            piv[jss::HookParameterValue] =
+                strHex("value0");
+            pv[jss::HookParameter] = piv;
+            params[i] = pv;
+        }
+        params[4U] = checkerpv;        
+
+        iv[jss::HookParameters] = params;
+        jv[jss::Hooks][0U][jss::Hook] = iv;
+
+        {
+            iv[jss::CreateCode] = strHex(checker_wasm);
+            Json::Value params{Json::arrayValue};
+            params[0U] = checkerpv;
+            iv[jss::HookParameters] = params;
+            jv[jss::Hooks][3U][jss::Hook] = iv;
+        }
+    
+
+        env(jv,
+            M("set hook_param_set"),
+            HSFEE,
+            ter(tesSUCCESS));
+        env.close();
+
+        // invoke
+        env(pay(bob, alice, XRP(1)), M("test hook_param_set"), fee(XRP(1)));
+        env.close();
+
     }
 
     void
@@ -9951,7 +10160,7 @@ public:
         test_otxn_id();             //
         test_otxn_slot();           //
         test_otxn_type();           //
-        test_otxn_param();          
+        test_otxn_param();          // 
 
         test_slot();                //
         test_slot_clear();          //
