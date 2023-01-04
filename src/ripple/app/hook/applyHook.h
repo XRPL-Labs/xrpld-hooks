@@ -198,6 +198,8 @@ namespace hook_api
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_id,            uint32_t write_ptr, uint32_t write_len, uint32_t flags );
     DECLARE_HOOK_FUNCNARG(int64_t,	otxn_type           );
     DECLARE_HOOK_FUNCTION(int64_t,	otxn_slot,          uint32_t slot_no );
+    DECLARE_HOOK_FUNCTION(int64_t,  otxn_param,         uint32_t write_ptr, uint32_t write_len,
+                                                        uint32_t read_ptr,  uint32_t read_len);
 
     DECLARE_HOOK_FUNCTION(int64_t,  meta_slot,          uint32_t slot_no );
 
@@ -582,6 +584,8 @@ namespace hook
             ADD_HOOK_FUNCTION(otxn_id, ctx);
             ADD_HOOK_FUNCTION(otxn_type, ctx);
             ADD_HOOK_FUNCTION(otxn_slot, ctx);
+            ADD_HOOK_FUNCTION(otxn_param, ctx);
+
             ADD_HOOK_FUNCTION(hook_account, ctx);
             ADD_HOOK_FUNCTION(hook_hash, ctx);
             ADD_HOOK_FUNCTION(hook_again, ctx);

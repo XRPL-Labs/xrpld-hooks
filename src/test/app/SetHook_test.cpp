@@ -5146,6 +5146,11 @@ public:
     }
 
     void
+    test_otxn_param()
+    {
+    }
+    
+    void
     test_slot()
     {
         testcase("Test slot");
@@ -9702,6 +9707,7 @@ public:
         test_otxn_id();             //
         test_otxn_slot();           //
         test_otxn_type();           //
+        test_otxn_param();          
 
         test_slot();                //
         test_slot_clear();          //

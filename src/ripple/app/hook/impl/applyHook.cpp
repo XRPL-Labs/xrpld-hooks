@@ -4867,6 +4867,55 @@ DEFINE_HOOK_FUNCTION(
 
 DEFINE_HOOK_FUNCTION(
     int64_t,
+    otxn_param,
+    uint32_t write_ptr, uint32_t write_len,
+    uint32_t read_ptr,  uint32_t read_len )
+{
+    HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
+
+    if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+
+    if (read_len < 1)
+        return TOO_SMALL;
+
+    if (read_len > 32)
+        return TOO_BIG;
+
+    if (!applyCtx.tx.isFieldPresent(sfHookParameters))
+        return DOESNT_EXIST;
+
+    std::vector<uint8_t> paramName { read_ptr + memory, read_ptr + read_len + memory }; 
+
+    auto const& params = applyCtx.tx.getFieldArray(sfHookParameters);
+
+    for (auto const& param: params)
+    {
+        if (!param.isFieldPresent(sfHookParameterName) || 
+            param.getFieldVL(sfHookParameterName) != paramName)
+            continue;
+        
+        if (!param.isFieldPresent(sfHookParameterValue))
+            return DOESNT_EXIST;
+
+        auto const& val = param.getFieldVL(sfHookParameterValue);
+        if (val.empty())
+            return DOESNT_EXIST;
+
+        if (val.size() < write_len)
+            return TOO_SMALL;
+        
+        WRITE_WASM_MEMORY_AND_RETURN(
+            write_ptr, write_len,
+            val.data(), val.size(),
+            memory, memory_length);
+    } 
+
+    return DOESNT_EXIST;
+}
+
+DEFINE_HOOK_FUNCTION(
+    int64_t,
     hook_param,
     uint32_t write_ptr, uint32_t write_len,
     uint32_t read_ptr,  uint32_t read_len )
