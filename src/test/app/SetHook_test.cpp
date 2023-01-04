@@ -4454,6 +4454,7 @@ public:
                 ASSERT(hook_param(0, 32, 0, 1000000) == OUT_OF_BOUNDS);
                 ASSERT(hook_param(0, 32, 0, 33) == TOO_BIG);
                 ASSERT(hook_param(0, 32, 0, 0) == TOO_SMALL);
+                ASSERT(hook_param(0, 32, 0, 32) == DOESNT_EXIST);
 
                 uint8_t buf[32];
 
@@ -4697,9 +4698,6 @@ public:
         BEAST_REQUIRE(hookExecutions.size() == 2);
 
         // get the data in the return code of the execution
-        for (int i = 0; i < hookExecutions.size(); ++i)
-            std::cout << "hook i: " << hookExecutions[i].getFieldU64(sfHookReturnCode) << "\n";
-
         BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 0);
         BEAST_EXPECT(hookExecutions[1].getFieldU64(sfHookReturnCode) == 3);
     }
@@ -5274,6 +5272,126 @@ public:
     void
     test_otxn_param()
     {
+        testcase("Test otxn_param");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t otxn_param(uint32_t, uint32_t, uint32_t, uint32_t);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define OUT_OF_BOUNDS (-1)
+            #define TOO_BIG (-3)
+            #define TOO_SMALL (-4)
+            #define DOESNT_EXIST (-5)
+            uint8_t* names[] =
+            {
+                "param0",
+                "param1",
+                "param2",
+                "param3",
+                "param4",
+                "param5",
+                "param6",
+                "param7",
+                "param8",
+                "param9",
+                "param10",
+                "param11",
+                "param12",
+                "param13",
+                "param14",
+                "param15"
+            };
+            uint8_t* values[] =
+            {
+                "value0",
+                "value1",
+                "value2",
+                "value3",
+                "value4",
+                "value5",
+                "value6",
+                "value7",
+                "value8",
+                "value9",
+                "value10",
+                "value11",
+                "value12",
+                "value13",
+                "value14",
+                "value15"
+            };
+            #define SBUF(x) x,sizeof(x)
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+
+                ASSERT(otxn_param(0, 1000000, 0,32) == OUT_OF_BOUNDS);
+                ASSERT(otxn_param(1000000, 32, 0, 32) == OUT_OF_BOUNDS);
+                ASSERT(otxn_param(0, 32, 1000000, 32) == OUT_OF_BOUNDS);
+                ASSERT(otxn_param(0, 32, 0, 1000000) == OUT_OF_BOUNDS);
+                ASSERT(otxn_param(0, 32, 0, 33) == TOO_BIG);
+                ASSERT(otxn_param(0, 32, 0, 0) == TOO_SMALL);
+                ASSERT(otxn_param(0, 32, 0, 32) == DOESNT_EXIST);
+
+                uint8_t buf[32];
+
+                for (int i = 0; GUARD(16), i < 16; ++i)
+                {
+                    int s = 6 + (i < 10 ? 0 : 1);
+                    int64_t v = otxn_param(SBUF(buf), names[i], s);
+                    ASSERT(v == s);
+
+                    ASSERT(buf[0] == 'v' && buf[1] == 'a' && buf[2] == 'l' && buf[3] == 'u' && buf[4] == 'e');
+                    ASSERT(*(buf + v - 1) == *(values[i] + v - 1));
+                    ASSERT(*(buf + v - 2) == *(values[i] + v - 2));
+                }
+                
+                accept(0,0,0);
+            }
+            
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set otxn_param"),
+            HSFEE);
+        env.close();
+
+        // invoke
+        Json::Value invoke;
+        invoke[jss::TransactionType] = "Invoke";
+        invoke[jss::Account] = bob.human();
+        invoke[jss::Destination] = alice.human();
+
+        Json::Value params{Json::arrayValue};
+        for (uint32_t i = 0; i < 16; ++i)
+        {
+            Json::Value pv;
+            Json::Value piv;
+            piv[jss::HookParameterName] =
+                strHex("param" + std::to_string(i));
+            piv[jss::HookParameterValue] =
+                strHex("value" + std::to_string(i));
+            pv[jss::HookParameter] = piv;
+            params[i] = pv;
+        }
+        invoke[jss::HookParameters] = params;
+
+        env(invoke, M("test otxn_param"), fee(XRP(1)));
+        env.close();
     }
     
     void
@@ -9814,7 +9932,7 @@ public:
         test_hook_account();        //
         test_hook_again();          //
         test_hook_hash();           //
-        test_hook_param();
+        test_hook_param();          //
         test_hook_param_set();
         test_hook_pos();            //
         test_hook_skip();           //
