@@ -4876,6 +4876,9 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+        return OUT_OF_BOUNDS;
+
     if (read_len < 1)
         return TOO_SMALL;
 
@@ -4923,6 +4926,9 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
+        return OUT_OF_BOUNDS;
+    
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     if (read_len < 1)
@@ -4979,7 +4985,8 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length) ||
-        NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length))
+        NOT_IN_BOUNDS(kread_ptr, kread_len, memory_length) ||
+        NOT_IN_BOUNDS(hread_ptr, hread_len, memory_length))
         return OUT_OF_BOUNDS;
 
     if (kread_len < 1)
