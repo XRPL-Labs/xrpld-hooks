@@ -4905,7 +4905,7 @@ DEFINE_HOOK_FUNCTION(
         if (val.empty())
             return DOESNT_EXIST;
 
-        if (val.size() < write_len)
+        if (val.size() > write_len)
             return TOO_SMALL;
         
         WRITE_WASM_MEMORY_AND_RETURN(
