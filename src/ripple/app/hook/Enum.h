@@ -316,10 +316,12 @@ namespace hook_api
         "hook_skip",
         "hook_again",
         "meta_slot",
+/*        
         "str_find",
         "str_replace",
         "str_concat",
         "str_compare"
+*/
     };
 };
 #endif

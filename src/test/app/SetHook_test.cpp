@@ -7806,6 +7806,7 @@ public:
         env(pay(bob, alice, XRP(1)), M("test sto_validate"), fee(XRP(1)));
     }
 
+    /*
     void
     test_str_compare()
     {
@@ -7825,6 +7826,7 @@ public:
     test_str_replace()
     {
     }
+    */
 
     void
     test_trace()
@@ -9722,10 +9724,12 @@ public:
         test_sto_subfield();        //
         test_sto_validate();        //
 
+        /*
         test_str_compare();
         test_str_concat();
         test_str_find();
         test_str_replace();
+        */
 
         test_trace();
         test_trace_float();

@@ -5088,6 +5088,7 @@ DEFINE_HOOK_FUNCTION(
     return slot_into;
 }
 
+/*
     
 DEFINE_HOOK_FUNCTION(
     int64_t,
@@ -5265,28 +5266,26 @@ findNul(const void* vptr, size_t len)
     return found;
 }
 
-/*
-    Overloaded API:
-    If operand_type == 0:
-        Copy read_ptr/len to write_ptr/len, do nothing else.
-    If operand_type >  0:
-        Copy read_ptr/len to write_ptr/len up to nul terminator, then
-        If operand_type == 1:
-            Concatenate operand as an i32 to the end of the string in write_ptr
-        If operand_type == 2:
-            Concatenate operand as an u32 to the end of the string in write_ptr
-        If operand_type == 3/4:
-            As above with i/u64
-        If operand_type == 5:
-            As above with operand interpreted as an XFL. Top 4 bits of operand_type are
-            precision for this type.
-        If operand_type == 6:
-            Interpret the four most significant bytes of operand as a ptr, and the
-            four least significant bytes as a length.
-            Write the bytes at this location to the end of write_ptr.
-        Finally:
-            Add a nul terminator to the end of write_ptr.
-*/
+//    Overloaded API:
+//    If operand_type == 0:
+//        Copy read_ptr/len to write_ptr/len, do nothing else.
+//    If operand_type >  0:
+//        Copy read_ptr/len to write_ptr/len up to nul terminator, then
+//        If operand_type == 1:
+//            Concatenate operand as an i32 to the end of the string in write_ptr
+//        If operand_type == 2:
+//            Concatenate operand as an u32 to the end of the string in write_ptr
+//        If operand_type == 3/4:
+//            As above with i/u64
+//        If operand_type == 5:
+//            As above with operand interpreted as an XFL. Top 4 bits of operand_type are
+//            precision for this type.
+//        If operand_type == 6:
+//            Interpret the four most significant bytes of operand as a ptr, and the
+//            four least significant bytes as a length.
+//            Write the bytes at this location to the end of write_ptr.
+//        Finally:
+//            Add a nul terminator to the end of write_ptr.
 DEFINE_HOOK_FUNCTION(
     int64_t,
     str_concat,
@@ -5429,3 +5428,5 @@ DEFINE_HOOK_FUNCTION(
             return INVALID_ARGUMENT;
     }
 }
+*/
+
