@@ -966,6 +966,8 @@ executeHookChain(
 
     for (auto const& hook : hooks)
     {
+        hook_no++;
+
         ripple::STObject const* hookObj = dynamic_cast<ripple::STObject const*>(&hook);
 
         if (!hookObj->isFieldPresent(sfHookHash)) // skip blanks
@@ -1040,7 +1042,7 @@ executeHookChain(
                 false,
                 strong,
                 (strong ? 0 : 1UL),             // 0 = strong, 1 = weak
-                hook_no,
+                hook_no - 1,
                 provisionalMeta));
 
         executedHookCount_++;
@@ -1071,7 +1073,6 @@ executeHookChain(
                 overrides[k] = v;
         }
 
-        hook_no++;
     }
     return tesSUCCESS;
 }
