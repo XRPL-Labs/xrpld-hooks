@@ -4995,7 +4995,7 @@ DEFINE_HOOK_FUNCTION(
     if (kread_len > hook::maxHookParameterKeySize())
         return TOO_BIG;
 
-    if (hread_len != hook::maxHookParameterKeySize())
+    if (hread_len != 32)
         return INVALID_ARGUMENT;
 
     if (read_len > hook::maxHookParameterValueSize())

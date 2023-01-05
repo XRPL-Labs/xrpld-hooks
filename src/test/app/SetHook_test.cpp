@@ -4582,6 +4582,7 @@ public:
             extern int32_t _g       (uint32_t id, uint32_t maxiter);
             extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
             extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_param (uint32_t, uint32_t, uint32_t, uint32_t);
             extern int64_t hook_param_set (
                 uint32_t read_ptr,
                 uint32_t read_len,
@@ -4630,7 +4631,7 @@ public:
                 ASSERT(hook_param_set(0, 32, 0, 32, 0, 33) == INVALID_ARGUMENT);
                 ASSERT(hook_param_set(0, 32, 0, 32, 0, 31) == INVALID_ARGUMENT);
                 ASSERT(hook_param_set(0, 32, 0, 32, 0, 0) == INVALID_ARGUMENT);
-                ASSERT(hook_param_set(0, 256, 0, 32, 0, 32) == TOO_BIG);
+                ASSERT(hook_param_set(0, 257, 0, 32, 0, 32) == TOO_BIG);
 
 
                 uint8_t checker_hash[32];
@@ -4645,7 +4646,7 @@ public:
                 ASSERT(hook_param_set(0,0,"checker", 7, SBUF(checker_hash)) == 0);
 
                 // add a parameter that did not previously exist
-                ASSERT(hook_param_set("world", 5,"hello", 5, SBUF(checker_hash)) == 0);
+                ASSERT(hook_param_set("world", 5,"hello", 5, SBUF(checker_hash)) == 5);
 
                 // ensure this hook's parameters did not change
                 uint8_t buf[32];
@@ -4663,7 +4664,7 @@ public:
             
         )[test.hook]"];
 
-        WASM_HEX(checker);
+        HASH_WASM(checker);
 
         Json::Value jv;
         jv[jss::Account] = alice.human();
@@ -4680,8 +4681,8 @@ public:
         Json::Value checkerpv;
         {
             Json::Value piv;
-            piv[jss::HookParameterName] =
-                strHex("checker");
+            piv[jss::HookParameterName] = 
+                strHex(std::string("checker"));
             piv[jss::HookParameterValue] =
                 checker_hash_str;
             checkerpv[jss::HookParameter] = piv;
@@ -4695,7 +4696,7 @@ public:
             piv[jss::HookParameterName] =
                 strHex("param" + std::to_string(i));
             piv[jss::HookParameterValue] =
-                strHex("value0");
+                strHex(std::string("value0"));
             pv[jss::HookParameter] = piv;
             params[i] = pv;
         }
@@ -4710,9 +4711,10 @@ public:
             params[0U] = checkerpv;
             iv[jss::HookParameters] = params;
             jv[jss::Hooks][3U][jss::Hook] = iv;
+            jv[jss::Hooks][1U][jss::Hook] = Json::objectValue;
+            jv[jss::Hooks][2U][jss::Hook] = Json::objectValue;
         }
-    
-
+   
         env(jv,
             M("set hook_param_set"),
             HSFEE,
