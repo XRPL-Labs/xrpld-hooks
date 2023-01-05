@@ -5227,6 +5227,90 @@ public:
     void
     test_meta_slot()
     {
+        testcase("Test meta_slot");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t hook_again (void);
+            extern int64_t slot(uint32_t, uint32_t, uint32_t);
+            extern int64_t trace(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+            extern int64_t meta_slot(uint32_t);
+             extern int64_t slot_subfield (
+                uint32_t parent_slot,
+                uint32_t field_id,
+                uint32_t new_slot
+            );
+            #define PREREQUISITE_NOT_MET	(-9)
+            #define ALREADY_SET (-8)
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define sfHookExecutions ((15U << 16U) + 18U)
+            #define sfTransactionResult ((16U << 16U) + 3U)
+            #define sfAffectedNodes ((15U << 16U) + 8U)
+            #define sfTransactionIndex ((2U << 16U) + 28U)
+            int64_t hook(uint32_t r)
+            {
+                _g(1,1);
+
+                if (r > 0)
+                {
+                    ASSERT(meta_slot(1) == 1);
+
+                    uint8_t buf[1024];
+                    ASSERT(slot(buf, 1024, 1) > 200);
+
+                    ASSERT(slot_subfield(1, sfTransactionIndex, 2) == 2);
+                    ASSERT(slot_subfield(1, sfAffectedNodes, 3) == 3);
+                    ASSERT(slot_subfield(1, sfHookExecutions, 4) == 4);
+                    ASSERT(slot_subfield(1, sfTransactionResult, 5) == 5);
+                    
+                    return accept(0,0,1);
+                }
+                
+                if (hook_again() != 1)
+                    return rollback(0,0,254);
+                               
+                ASSERT(meta_slot(1) == PREREQUISITE_NOT_MET);
+
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set meta_slot"),
+            HSFEE);
+        env.close();
+
+        env(pay(bob, alice, XRP(1)), M("test meta_slot"), fee(XRP(1)));
+        env.close();
+
+        auto meta = env.meta();
+
+        // ensure hook execution occured
+        BEAST_REQUIRE(meta);
+        BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+        // ensure there were two executions
+        auto const hookExecutions =
+            meta->getFieldArray(sfHookExecutions);
+        BEAST_REQUIRE(hookExecutions.size() == 2);
+
+        // get the data in the return code of the execution
+        BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 0);
+        BEAST_EXPECT(hookExecutions[1].getFieldU64(sfHookReturnCode) == 1);
+        
     }
 
     void
@@ -10144,7 +10228,7 @@ public:
         test_hook_again();          //
         test_hook_hash();           //
         test_hook_param();          //
-        test_hook_param_set();
+        test_hook_param_set();      //
         test_hook_pos();            //
         test_hook_skip();           //
 
@@ -10154,7 +10238,7 @@ public:
         test_ledger_nonce();        //
         test_ledger_seq();          //
 
-        test_meta_slot();
+        test_meta_slot();           //
 
         test_otxn_burden();
         test_otxn_field();
