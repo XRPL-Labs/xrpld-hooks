@@ -2791,8 +2791,11 @@ DEFINE_HOOK_FUNCTION(
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (NOT_IN_BOUNDS(write_ptr, 32, memory_length))
+    if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
+
+    if (write_len < 32)
+        return TOO_SMALL;
 
     auto& app = hookCtx.applyCtx.app;
 
