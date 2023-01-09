@@ -497,7 +497,7 @@ trustAdjustLockedBalance(
     if (!sleLine)
         return tecNO_LINE;
 
-    auto const currency = deltaAmt.getCurrency();
+    // auto const currency = deltaAmt.getCurrency();
     auto const issuer   = deltaAmt.getIssuer();
 
     STAmount lowLimit  = sleLine->getFieldAmount(sfLowLimit);
