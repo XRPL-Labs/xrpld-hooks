@@ -1139,7 +1139,6 @@ lookup_state_cache(
         ripple::uint256 const& ns,
         ripple::uint256 const& key)
 {
-    std::cout << "Lookup_state_cache: acc: " << acc << " ns: " << ns << " key: " << key << "\n";
     auto& stateMap = hookCtx.result.stateMap;
     if (stateMap.find(acc) == stateMap.end())
         return std::nullopt;
@@ -1956,14 +1955,14 @@ DEFINE_HOOK_FUNCNARG(
 
     auto const& tx = applyCtx.tx;
     if (!tx.isFieldPresent(sfEmitDetails))
-        return 1; // generation is always 1 if the tx wasn't a emit
+        return 0; // generation is always 0 if the tx wasn't a emit
 
     auto const& pd = const_cast<ripple::STTx&>(tx).getField(sfEmitDetails).downcast<STObject>();
 
     if (!pd.isFieldPresent(sfEmitGeneration)) {
         JLOG(j.warn())
             << "HookError[" << HC_ACC() << "]: found sfEmitDetails but sfEmitGeneration was not present";
-        return 1;
+        return 0;
     }
 
     hookCtx.generation = pd.getFieldU32(sfEmitGeneration);
@@ -2806,11 +2805,6 @@ DEFINE_HOOK_FUNCTION(
         return TOO_MANY_EMITTED_TXN;
 
     ripple::Blob blob{memory + read_ptr, memory + read_ptr + read_len};
-
-    DBG_PRINTF("hook is emitting tx:-----\n");
-    for (unsigned char c: blob)
-        DBG_PRINTF("%02X", c);
-    DBG_PRINTF("\n--------\n");
 
     std::shared_ptr<STTx const> stpTrans;
     try

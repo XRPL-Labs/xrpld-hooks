@@ -1874,7 +1874,7 @@ public:
     {
         testcase("Test float_compare");
         using namespace jtx;
-        Env env{*this, supported_amendments()};
+        Env env{*this, envconfig(), supported_amendments(), nullptr, beast::severities::kTrace};
 
         auto const alice = Account{"alice"};
         auto const bob = Account{"bob"};
@@ -1890,6 +1890,11 @@ public:
         extern int64_t etxn_reserve(uint32_t);
         extern int64_t otxn_param(uint32_t, uint32_t, uint32_t, uint32_t);
         extern int64_t hook_account(uint32_t, uint32_t);
+        extern int64_t otxn_field (
+            uint32_t write_ptr,
+            uint32_t write_len,
+            uint32_t field_id
+        );
         #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
         #define OUT_OF_BOUNDS (-1)
         #define ttPAYMENT 0
@@ -2131,22 +2136,37 @@ public:
              if (!(x))\
                 rollback((uint32_t)#x,sizeof(#x),__LINE__)
 
+        #define sfDestination ((8U << 16U) + 3U)
+
+        extern int64_t trace(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
         int64_t cbak(uint32_t r)
         {
+            // on callback we emit 2 more txns
+            uint8_t bob[20];
+            ASSERT(otxn_field(SBUF(bob), sfDestination) == 20);
+
+            ASSERT(etxn_reserve(2) == 2);
+            uint8_t tx[PREPARE_PAYMENT_SIMPLE_SIZE];
+            PREPARE_PAYMENT_SIMPLE(tx, 1000, bob, 0, 0);
+
+            trace("cbaktx", 6, tx, sizeof(tx), 1);
+            uint8_t hash1[32];
+            ASSERT(emit(SBUF(hash1), SBUF(tx)) == 32);
+
+            ASSERT(etxn_details(tx + 132, 138) == 138);
+            uint8_t hash2[32];
+            ASSERT(emit(SBUF(hash2), SBUF(tx)) == 32);
+
+            ASSERT(!BUFFER_EQUAL_32(hash1, hash2)); 
+
+            return accept(0,0,0);
         }
 
         int64_t hook(uint32_t r)
         {
             _g(1,1);
 
-
-            // emit txns based on otxn_params
-            uint8_t emitcount[2];
-            ASSERT(otxn_param(SBUF(emitcount), "count", 5) == 2);
-
-            uint16_t ec = UINT16_FROM_BUF(emitcount);
-            ASSERT(ec > 0);
-            etxn_reserve(ec);
+            etxn_reserve(1);
             
             // bounds checks
             ASSERT(emit(1000000, 32, 0, 32) == OUT_OF_BOUNDS);
@@ -2161,23 +2181,8 @@ public:
             uint8_t tx[PREPARE_PAYMENT_SIMPLE_SIZE];
             PREPARE_PAYMENT_SIMPLE(tx, 1000, bob, 0, 0);
 
-            uint8_t tmp[32];
-            uint8_t incr = otxn_param(SBUF(tmp), "inc", 3) != DOESNT_EXIST;
-
-            uint8_t hashes[64];
-            
-            for (int i = 0; GUARD(64), i < ec; ++i)
-            {
-                if (incr)
-                {
-                    tx[6] = (uint8_t)(i >> 8U);
-                    tx[7] = (uint8_t)(i & 0xFFU);
-                }
-                ASSERT(emit(hashes + (i % 2) * 32, 32, SBUF(tx)) == 32);
-
-                // assert the hash isn't the same as the previous txn
-                ASSERT(!BUFFER_EQUAL_32(hashes, hashes + 32));
-            }
+            uint8_t hash[32];
+            ASSERT(emit(SBUF(hash), SBUF(tx)) == 32);
 
             return accept(0,0,0);
         }
@@ -2196,12 +2201,120 @@ public:
         params[0U][jss::HookParameter][jss::HookParameterName ] = strHex(std::string("bob"));
         params[0U][jss::HookParameter][jss::HookParameterValue] = strHex(bob.id());
 
-        params[1U][jss::HookParameter][jss::HookParameterName ] = strHex(std::string("count"));
-        params[1U][jss::HookParameter][jss::HookParameterValue] = "0001";
-
         invoke[jss::HookParameters] = params;
 
         env(invoke, M("test otxn_param"), fee(XRP(1)));
+        
+        std::optional<uint256> emithash;
+        {
+            auto meta = env.meta();
+
+            // ensure hook execution occured
+            BEAST_REQUIRE(meta);
+            BEAST_REQUIRE(meta->isFieldPresent(sfHookExecutions));
+
+            auto const hookExecutions =
+                meta->getFieldArray(sfHookExecutions);
+            BEAST_REQUIRE(hookExecutions.size() == 1);
+
+            // ensure there was one emitted txn
+            BEAST_EXPECT(hookExecutions[0].getFieldU16(sfHookEmitCount) == 1);
+
+            BEAST_REQUIRE(meta->isFieldPresent(sfAffectedNodes));
+
+            BEAST_REQUIRE(meta->getFieldArray(sfAffectedNodes).size() == 3);
+
+            for (auto const& node : meta->getFieldArray(sfAffectedNodes))
+            {
+                SField const& metaType = node.getFName();
+                uint16_t nodeType = node.getFieldU16(sfLedgerEntryType); 
+                if (metaType == sfCreatedNode && nodeType == ltEMITTED_TXN)
+                {
+                    BEAST_REQUIRE(node.isFieldPresent(sfNewFields));
+
+                    auto const& nf = 
+                        const_cast<ripple::STObject&>(node).getField(sfNewFields).downcast<STObject>();
+            
+                    auto const& et =
+                        const_cast<ripple::STObject&>(nf).getField(sfEmittedTxn).downcast<STObject>();
+
+                    auto const& em =
+                        const_cast<ripple::STObject&>(et).getField(sfEmitDetails).downcast<STObject>();
+                   
+                    BEAST_EXPECT(em.getFieldU32(sfEmitGeneration) == 1);
+                    BEAST_EXPECT(em.getFieldU64(sfEmitBurden) == 1);
+                    
+                    Blob txBlob = et.getSerializer().getData();
+                    auto const tx = std::make_unique<STTx>(Slice { txBlob.data(), txBlob.size() });
+                    emithash = tx->getTransactionID();
+                    
+                    break;
+                }
+            }
+
+            BEAST_REQUIRE(emithash);
+        }
+
+        {
+            auto balbefore = env.balance(bob).value().xrp().drops();
+        
+            env.close();
+
+            auto const ledger = env.closed();
+
+            int txcount = 0;
+            for (auto& i : ledger->txs)
+            {
+                auto const& hash = i.first->getTransactionID();
+                txcount++;
+                BEAST_EXPECT(hash == *emithash);
+                {
+                    std::cout << "tx :: " << hash << ":\n";
+                    Serializer sTxn = i.first->getSerializer();
+                    Serializer sMeta = i.second->getSerializer();
+                    Slice txn  { sTxn.data(), sTxn.getLength() };
+                    Slice meta { sMeta.data(), sMeta.getLength() };
+                    std::cout << strHex(txn) << "\n";
+                    std::cout << strHex(meta) << "\n";
+                }
+            }
+
+            BEAST_EXPECT(txcount == 1);
+
+            env.close();
+
+            auto balafter = env.balance(bob).value().xrp().drops();
+
+            BEAST_EXPECT(balafter - balbefore == 1000);
+        }
+        
+        //for (int i = 0; i < 10; ++i)
+        //    env.close();
+/*
+        {
+            auto const ledger = env.closed();
+            for (auto& i : ledger->txs)
+            {
+                auto const& hash = i.first->getTransactionID();
+                {
+                    std::cout << "tx :: " << hash << ":\n";
+                    Serializer sTxn = i.first->getSerializer();
+                    Serializer sMeta = i.second->getSerializer();
+                    Slice txn  { sTxn.data(), sTxn.getLength() };
+                    Slice meta { sMeta.data(), sMeta.getLength() };
+                    std::cout << strHex(txn) << "\n";
+                    std::cout << strHex(meta) << "\n";
+                }
+            }
+        }
+*/
+        // at this point there should now be two emitted txns, spawned by the first emitted txn's callback
+
+/*
+        }
+*/
+        // find emitted txn  
+
 
         // RH UPTO: check emit count = 1, check that the emitted txn is correct
         //          cbak
