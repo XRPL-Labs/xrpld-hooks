@@ -526,10 +526,10 @@ struct Escrow_test : public beast::unit_test::suite
 
         env.fund(XRP(5000), "carol");
 
-        // Using non-XRP:
-        env(escrow("alice", "carol", Account("alice")["USD"](500)),
-            finish_time(env.now() + 1s),
-            ter(temBAD_AMOUNT));
+        // // Using non-XRP:
+        // env(escrow("alice", "carol", Account("alice")["USD"](500)),
+        //     finish_time(env.now() + 1s),
+        //     ter(temBAD_AMOUNT));
 
         // Sending zero or no XRP:
         env(escrow("alice", "carol", XRP(0)),
@@ -1636,6 +1636,53 @@ struct Escrow_test : public beast::unit_test::suite
     }
 
     void
+    testICEnablement()
+    {
+        testcase("IC Enablement");
+
+        using namespace jtx;
+        using namespace std::chrono;
+
+        Env env(*this);
+        
+        // <- setup tests
+        auto const alice = Account("alice");
+        auto const bob = Account("bob");
+        auto const gw = Account{"gateway"};
+        auto const USD = gw["USD"];
+        env.fund(XRP(5000), alice, bob, gw);
+        env.trust(USD(5000), alice, bob);
+        env(pay(gw, alice, USD(5000)));
+        // -> run code
+        
+        env(escrow(alice, bob, USD(1000)), finish_time(env.now() + 1s));
+        
+        env.close();
+
+        auto const seq1 = env.seq(alice);
+
+        env(escrow(alice, bob, XRP(1000)),
+            condition(cb1),
+            finish_time(env.now() + 1s),
+            fee(1500));
+        env.close();
+        env(finish(bob, alice, seq1),
+            condition(cb1),
+            fulfillment(fb1),
+            fee(1500));
+
+        auto const seq2 = env.seq(alice);
+
+        env(escrow(alice, bob, XRP(1000)),
+            condition(cb2),
+            finish_time(env.now() + 1s),
+            cancel_time(env.now() + 2s),
+            fee(1500));
+        env.close();
+        env(cancel(bob, alice, seq2), fee(1500));
+    }
+
+    void
     run() override
     {
         testEnablement();
@@ -1649,6 +1696,8 @@ struct Escrow_test : public beast::unit_test::suite
         testMetaAndOwnership();
         testConsequences();
         testEscrowWithTickets();
+
+        // testICEnablement();
     }
 };
 
