@@ -229,7 +229,7 @@ PayChanCreate::preflight(PreflightContext const& ctx)
         return ret;
 
     STAmount const amount {ctx.tx[sfAmount]};
-    if (!amount.native())
+    if (!isXRP(amount))
     {
         if (!ctx.rules.enabled(featurePaychanAndEscrowForTokens))
             return temDISABLED;
@@ -280,11 +280,11 @@ PayChanCreate::preclaim(PreclaimContext const& ctx)
     auto const dst = ctx.tx[sfDestination];
 
     // Check reserve and funds availability
-    if (amount.native() && balance < reserve + amount)
+    if (isXRP(amount) && balance < reserve + amount)
     {
         return tecUNFUNDED;
     }
-    else if (!amount.native()) {
+    else if (!isXRP(amount)) {
         if (!ctx.view.rules().enabled(featurePaychanAndEscrowForTokens))
             return temDISABLED;
 
@@ -404,7 +404,7 @@ PayChanCreate::doApply()
     }
 
     // Deduct owner's balance, increment owner count
-    if (amount.native())
+    if (isXRP(amount))
         (*sle)[sfBalance] = (*sle)[sfBalance] - amount;
     else
     {
@@ -662,7 +662,7 @@ PayChanClaim::preflight(PreflightContext const& ctx)
         // present, check it
 
         auto const reqBalance = *bal;
-        auto const authAmt = *amt ? *amt : reqBalance;
+        auto const authAmt = amt ? *amt : reqBalance;
 
         if (reqBalance > authAmt)
             return temBAD_AMOUNT;
