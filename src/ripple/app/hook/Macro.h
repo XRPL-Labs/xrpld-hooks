@@ -177,31 +177,6 @@
     return bytes_written;\
 }
 
-#define RETURN_HOOK_TRACE(read_ptr, read_len, t)\
-{\
-    if (j.trace())\
-    {\
-        int rl = read_len;\
-        if (rl > 1024)\
-            rl = 1024;\
-        if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))\
-            return OUT_OF_BOUNDS;\
-        std::string out;\
-        out.reserve(rl);\
-        if (!(read_ptr == 0 && read_len == 0))\
-        {\
-            out = std::string((const char*)(memory + read_ptr), (size_t)rl);\
-            /* replace all nul chars with spaces */\
-            for (char* ptr = out.data(); ptr < out.data() + out.size(); ++ptr)\
-                if (*ptr == '\0') *ptr = ' ';\
-        }\
-        j.trace()\
-            << "HookTrace[" << HC_ACC() << "]: "\
-            << out << (out.empty() ? "" : " ")\
-            << t;\
-    }\
-    return 0;\
-}
 // ptr = pointer inside the wasm memory space
 #define NOT_IN_BOUNDS(ptr, len, memory_length)\
     ((static_cast<uint64_t>(ptr) > static_cast<uint64_t>(memory_length)) || \

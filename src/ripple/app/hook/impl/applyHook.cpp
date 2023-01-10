@@ -1048,8 +1048,26 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
+    
+    if (!j.trace())
+        return 0;
 
-    RETURN_HOOK_TRACE(read_ptr, read_len, number);
+    if (read_len > 128)
+        read_len = 128;
+
+    if (read_len > 0)
+    {
+        j.trace()
+            << "HookTrace[" << HC_ACC() << "]: "
+            << std::string_view((const char*)memory + read_ptr, read_len)
+            << " " << number;
+        return 0;
+    }
+    
+    j.trace()
+        << "HookTrace[" << HC_ACC() << "]: "
+        << number;
+    return 0;
 }
 
 
@@ -1116,8 +1134,14 @@ DEFINE_HOOK_FUNCTION(
         }
     }
 
-    RETURN_HOOK_TRACE(mread_ptr, mread_len,
-           std::string((const char*)output_storage, out_len));
+    if (out_len > 0)
+    {
+        j.trace()
+            << "HookTrace[" << HC_ACC() << "]: "
+            << std::string_view((const char*)output_storage, out_len);
+    }
+
+    return 0;
 }
 
 
@@ -1307,7 +1331,6 @@ DEFINE_HOOK_FUNCTION(
 // update or create a hook state object
 // read_ptr = data to set, kread_ptr = key
 // RH NOTE passing 0 size causes a delete operation which is as-intended
-// RH TODO: check reserve
 /*
     uint32_t write_ptr, uint32_t write_len,
     uint32_t kread_ptr, uint32_t kread_len,         // key
@@ -4129,22 +4152,41 @@ DEFINE_HOOK_FUNCTION(
     int64_t float1)
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx on current stack
-    if (!j.trace())
-        return 0;
-
     if (NOT_IN_BOUNDS(read_ptr, read_len, memory_length))
         return OUT_OF_BOUNDS;
 
-    if (float1 == 0)
-        RETURN_HOOK_TRACE(read_ptr, read_len, "Float 0*10^(0) <ZERO>");
+    if (!j.trace())
+        return 0;
 
+    if (read_len > 128)
+        read_len = 128;
+
+    if (float1 == 0)
+    {
+        j.trace()
+            << "HookTrace[" << HC_ACC() << "]:"
+            << (read_len == 0 ? "" : std::string_view((const char*)memory + read_ptr, read_len))
+            << " Float 0*10^(0) <ZERO>";
+        return 0;
+    }
+    
     uint64_t man = get_mantissa(float1);
     int32_t exp = get_exponent(float1);
     bool neg = is_negative(float1);
     if (man < minMantissa || man > maxMantissa || exp < minExponent || exp > maxExponent)
-        RETURN_HOOK_TRACE(read_ptr, read_len, "Float <INVALID>");
+    {
+        j.trace()
+            << "HookTrace[" << HC_ACC() << "]:"
+            << (read_len == 0 ? "" : std::string_view((const char*)memory + read_ptr, read_len))
+            << " Float <INVALID>";
+        return 0;
+    }
 
-    RETURN_HOOK_TRACE(read_ptr, read_len, "Float " << (neg ? "-" : "") << man << "*10^(" << exp << ")");
+    j.trace()
+        << "HookTrace[" << HC_ACC() << "]:"
+        << (read_len == 0 ? "" : std::string_view((const char*)memory + read_ptr, read_len))
+        << " Float " << (neg ? "-" : "") << man << "*10^(" << exp << ")";
+    return 0;
 }
 
 DEFINE_HOOK_FUNCTION(

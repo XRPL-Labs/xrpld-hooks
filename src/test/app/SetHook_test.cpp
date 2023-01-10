@@ -9052,28 +9052,6 @@ public:
         env(pay(bob, alice, XRP(1)), M("test sto_validate"), fee(XRP(1)));
     }
 
-    /*
-    void
-    test_str_compare()
-    {
-    }
-
-    void
-    test_str_concat()
-    {
-    }
-
-    void
-    test_str_find()
-    {
-    }
-
-    void
-    test_str_replace()
-    {
-    }
-    */
-
     void
     test_trace()
     {
@@ -9128,13 +9106,89 @@ public:
     void
     test_trace_float()
     {
-        // TODO
+        testcase("Test trace_float");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t trace_float (uint32_t, uint32_t, int64_t);
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reservmaed )
+            {
+                _g(1,1);
+                // Test out of bounds check
+                ASSERT(trace_float(1000000, 10, 0) == OUT_OF_BOUNDS);
+                ASSERT(trace_float(0, 1000000, 0) == OUT_OF_BOUNDS);
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set trace_float"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test trace_float"), fee(XRP(1)));
     }
 
     void
     test_trace_num()
     {
-        // TODO
+        testcase("Test trace_num");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t trace_num (uint32_t, uint32_t, int64_t);
+            #define OUT_OF_BOUNDS -1
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t r )
+            {
+                _g(1,1);
+                // Test out of bounds check
+                ASSERT(trace_num(1000000, 10, 0) == OUT_OF_BOUNDS);
+                ASSERT(trace_num(0, 1000000, 0) == OUT_OF_BOUNDS);
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set trace_num"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test trace_num"), fee(XRP(1)));
     }
 
     void
@@ -11019,8 +11073,8 @@ public:
         test_sto_validate();        //
 
         test_trace();               //
-        test_trace_float();
-        test_trace_num();
+        test_trace_float();         //
+        test_trace_num();           //
 
         test_util_accid();          //
         test_util_keylet();         //
