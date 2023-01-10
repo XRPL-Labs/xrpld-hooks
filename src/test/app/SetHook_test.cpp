@@ -1872,9 +1872,12 @@ public:
     void
     test_emit()
     {
-        testcase("Test float_compare");
+        testcase("Test float_emit");
         using namespace jtx;
-        Env env{*this, envconfig(), supported_amendments(), nullptr, beast::severities::kTrace};
+        Env env{*this, envconfig(), supported_amendments(), nullptr, 
+            beast::severities::kWarning
+//            beast::severities::kTrace
+        };
 
         auto const alice = Account{"alice"};
         auto const bob = Account{"bob"};
@@ -1906,6 +1909,7 @@ public:
         #define atDESTINATION 3U
         #define SBUF(x) (uint32_t)x,sizeof(x)
 
+        #define PREREQUISITE_NOT_MET -9
         #define ENCODE_DROPS_SIZE 9
         #define ENCODE_DROPS(buf_out, drops, amount_type ) \
             {\
@@ -2138,18 +2142,29 @@ public:
 
         #define sfDestination ((8U << 16U) + 3U)
 
-        extern int64_t trace(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+        extern int64_t etxn_generation(void);
+        extern int64_t otxn_generation(void);
+        extern int64_t otxn_burden(void);
+        extern int64_t etxn_burden(void);
+
         int64_t cbak(uint32_t r)
         {
             // on callback we emit 2 more txns
             uint8_t bob[20];
             ASSERT(otxn_field(SBUF(bob), sfDestination) == 20);
 
+            ASSERT(otxn_generation() + 1 == etxn_generation());
+
+            ASSERT(etxn_burden() == PREREQUISITE_NOT_MET);
+
             ASSERT(etxn_reserve(2) == 2);
+            
+            ASSERT(otxn_burden() > 0);
+            ASSERT(etxn_burden() == otxn_burden() * 2);
+
             uint8_t tx[PREPARE_PAYMENT_SIMPLE_SIZE];
             PREPARE_PAYMENT_SIMPLE(tx, 1000, bob, 0, 0);
 
-            trace("cbaktx", 6, tx, sizeof(tx), 1);
             uint8_t hash1[32];
             ASSERT(emit(SBUF(hash1), SBUF(tx)) == 32);
 
@@ -2174,6 +2189,8 @@ public:
             ASSERT(emit(0,32, 1000000, 32) == OUT_OF_BOUNDS);
             ASSERT(emit(0,32, 0, 1000000) == OUT_OF_BOUNDS);
 
+            ASSERT(otxn_generation() == 0);
+            ASSERT(otxn_burden == 1);
 
             uint8_t bob[20];
             ASSERT(otxn_param(SBUF(bob), "bob", 3) == 20);
@@ -2203,11 +2220,11 @@ public:
 
         invoke[jss::HookParameters] = params;
 
-        env(invoke, M("test otxn_param"), fee(XRP(1)));
+        env(invoke, M("test emit"), fee(XRP(1)));
         
         std::optional<uint256> emithash;
         {
-            auto meta = env.meta();
+            auto meta = env.meta(); // meta can close
 
             // ensure hook execution occured
             BEAST_REQUIRE(meta);
@@ -2268,95 +2285,339 @@ public:
                 auto const& hash = i.first->getTransactionID();
                 txcount++;
                 BEAST_EXPECT(hash == *emithash);
-                {
-                    std::cout << "tx :: " << hash << ":\n";
-                    Serializer sTxn = i.first->getSerializer();
-                    Serializer sMeta = i.second->getSerializer();
-                    Slice txn  { sTxn.data(), sTxn.getLength() };
-                    Slice meta { sMeta.data(), sMeta.getLength() };
-                    std::cout << strHex(txn) << "\n";
-                    std::cout << strHex(meta) << "\n";
-                }
             }
 
             BEAST_EXPECT(txcount == 1);
 
-            env.close();
-
             auto balafter = env.balance(bob).value().xrp().drops();
 
             BEAST_EXPECT(balafter - balbefore == 1000);
+
+            env.close();
         }
         
-        //for (int i = 0; i < 10; ++i)
-        //    env.close();
-/*
+        uint64_t burden_expected = 2;
+        for (int j = 0; j < 7; ++j)
         {
             auto const ledger = env.closed();
             for (auto& i : ledger->txs)
             {
-                auto const& hash = i.first->getTransactionID();
-                {
-                    std::cout << "tx :: " << hash << ":\n";
-                    Serializer sTxn = i.first->getSerializer();
-                    Serializer sMeta = i.second->getSerializer();
-                    Slice txn  { sTxn.data(), sTxn.getLength() };
-                    Slice meta { sMeta.data(), sMeta.getLength() };
-                    std::cout << strHex(txn) << "\n";
-                    std::cout << strHex(meta) << "\n";
-                }
+                auto const& em =
+                    const_cast<ripple::STTx&>(*(i.first)).getField(sfEmitDetails).downcast<STObject>();
+                BEAST_EXPECT(em.getFieldU64(sfEmitBurden) == burden_expected);
+                BEAST_EXPECT(em.getFieldU32(sfEmitGeneration) == j + 2);
+                BEAST_REQUIRE(i.second->isFieldPresent(sfHookExecutions));
+                auto const hookExecutions = i.second->getFieldArray(sfHookExecutions);
+                BEAST_EXPECT(hookExecutions.size() == 1);
+                BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 0); 
+                BEAST_EXPECT(hookExecutions[0].getFieldU8(sfHookResult) == 3);
+                BEAST_EXPECT(hookExecutions[0].getFieldU16(sfHookEmitCount) == 2);
             }
+            env.close();
+            burden_expected *= 2U;
         }
-*/
-        // at this point there should now be two emitted txns, spawned by the first emitted txn's callback
-
-/*
+        
+        {    
+            auto const ledger = env.closed();
+            int txcount = 0;
+            for (auto& i : ledger->txs)
+            {
+                txcount++;
+                auto const& em =
+                    const_cast<ripple::STTx&>(*(i.first)).getField(sfEmitDetails).downcast<STObject>();
+                BEAST_EXPECT(em.getFieldU64(sfEmitBurden) == 256);
+                BEAST_EXPECT(em.getFieldU32(sfEmitGeneration) == 9);
+                BEAST_REQUIRE(i.second->isFieldPresent(sfHookExecutions));
+                auto const hookExecutions = i.second->getFieldArray(sfHookExecutions);
+                BEAST_EXPECT(hookExecutions.size() == 1);
+                BEAST_EXPECT(hookExecutions[0].getFieldU64(sfHookReturnCode) == 283); // emission failure on first emit
+            }
+            BEAST_EXPECT(txcount == 256);
         }
-*/
-        // find emitted txn  
-
-
-        // RH UPTO: check emit count = 1, check that the emitted txn is correct
-        //          cbak
-        //          add to another account and make a fork bomb
-        //          test burden and generation logic
-        //          test emit failure 
+        
+        // next close will lead to zero transactions
         env.close();
-    }
-
-    void
-    test_etxn_burden()
-    {
+        {    
+            auto const ledger = env.closed();
+            int txcount = 0;
+            for (auto& i : ledger->txs)
+                txcount++;
+            BEAST_EXPECT(txcount == 0);
+        }
     }
 
     void
     test_etxn_details()
     {
+        // mainly tested in test_emit
+        testcase("Test etxn_details");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t etxn_details (uint32_t, uint32_t);
+            extern int64_t etxn_reserve(uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define PREREQUISITE_NOT_MET -9
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                uint8_t det[116];
+
+                // Test out of bounds check
+                ASSERT(etxn_details(1000000, 116) == OUT_OF_BOUNDS);
+                ASSERT(etxn_details(0, 1000000) == OUT_OF_BOUNDS);
+
+                ASSERT(etxn_details((uint32_t)det, 115) == TOO_SMALL);
+
+                ASSERT(etxn_details((uint32_t)det, 116) == PREREQUISITE_NOT_MET);
+
+                etxn_reserve(1);
+                ASSERT(etxn_details((uint32_t)det, 116) == 116);
+
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set etxn_details"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test etxn_details"), fee(XRP(1)));
+
     }
 
     void
     test_etxn_fee_base()
     {
-    }
+        // mainly tested in test_emit
+        testcase("Test etxn_fee_base");
+        using namespace jtx;
 
-    void
-    test_etxn_generation()
-    {
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t etxn_fee_base (uint32_t, uint32_t);
+            extern int64_t etxn_reserve(uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define PREREQUISITE_NOT_MET -9
+            #define INVALID_TXN -37
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reservmaed )
+            {
+                _g(1,1);
+                uint8_t det[116];
+
+                // Test out of bounds check
+                ASSERT(etxn_fee_base(1000000, 116) == OUT_OF_BOUNDS);
+                ASSERT(etxn_fee_base(0, 1000000) == OUT_OF_BOUNDS);
+
+                ASSERT(etxn_fee_base((uint32_t)det, 116) == PREREQUISITE_NOT_MET);
+
+                etxn_reserve(1);
+                ASSERT(etxn_fee_base((uint32_t)det, 116) == INVALID_TXN);
+
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set etxn_fee_base"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test etxn_fee_base"), fee(XRP(1)));
+
     }
 
     void
     test_etxn_nonce()
     {
+        // mainly tested in test_emit
+        testcase("Test etxn_nonce");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t etxn_nonce (uint32_t, uint32_t);
+            extern int64_t etxn_reserve(uint32_t);
+            #define TOO_SMALL -4
+            #define OUT_OF_BOUNDS -1
+            #define TOO_MANY_NONCES -12
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reservmaed )
+            {
+                _g(1,1);
+                uint8_t nonce[64];
+
+                // Test out of bounds check
+                ASSERT(etxn_nonce(1000000, 116) == OUT_OF_BOUNDS);
+                ASSERT(etxn_nonce(0, 1000000) == OUT_OF_BOUNDS);
+
+                ASSERT(etxn_nonce((uint32_t)nonce, 31) == TOO_SMALL);
+            
+                uint64_t* n1 = (uint64_t*)nonce;
+                uint64_t* n2 = (uint64_t*)(((uint8_t*)nonce) + 32);
+        
+                for (int i = 0; GUARD(256), i < 256; ++i)
+                {
+                    ASSERT(etxn_nonce((uint32_t)nonce + ((i % 2) * 32), 32) == 32);
+                    ASSERT(!(*(n1 + 0) == *(n2 + 0) && *(n1 + 1) == *(n2 + 1)));
+                }
+
+                ASSERT(etxn_nonce((uint32_t)nonce, 116) == TOO_MANY_NONCES);
+
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set etxn_nonce"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test etxn_nonce"), fee(XRP(1)));
+
     }
 
     void
     test_etxn_reserve()
     {
+        // mainly tested in test_emit
+        testcase("Test etxn_reserve");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t etxn_reserve(uint32_t);
+            #define TOO_BIG -3
+            #define TOO_SMALL -4
+            #define ALREADY_SET -8
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reservmaed )
+            {
+                _g(1,1);
+                ASSERT(etxn_reserve(0) == TOO_SMALL);
+                ASSERT(etxn_reserve(256) == TOO_BIG);
+                ASSERT(etxn_reserve(255) == 255);
+                ASSERT(etxn_reserve(255) == ALREADY_SET);
+                ASSERT(etxn_reserve(1) == ALREADY_SET);
+                
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set etxn_reserve"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test etxn_reserve"), fee(XRP(1)));
+
     }
 
     void
     test_fee_base()
     {
+        testcase("Test fee_base");
+        using namespace jtx;
+
+        Env env{*this, supported_amendments()};
+
+        auto const alice = Account{"alice"};
+        auto const bob = Account{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t fee_base(void);
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            int64_t hook(uint32_t reservmaed )
+            {
+                _g(1,1);
+                ASSERT(fee_base() == 10); 
+                return accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set fee_base"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(bob, alice, XRP(1)), M("test fee_base"), fee(XRP(1)));
     }
 
     void
@@ -4509,6 +4770,7 @@ public:
 
                     // Test out of bounds check
                     ASSERT(hook_account(1000000, 20) == OUT_OF_BOUNDS);
+                    ASSERT(hook_account(0, 1000000) == OUT_OF_BOUNDS);
                     ASSERT(hook_account((uint32_t)acc, 19) == TOO_SMALL);
                     ASSERT(hook_account((uint32_t)acc, 20) == 20);
 
@@ -5764,17 +6026,7 @@ public:
     }
 
     void
-    test_otxn_burden()
-    {
-    }
-
-    void
     test_otxn_field()
-    {
-    }
-
-    void
-    test_otxn_generation()
     {
     }
 
@@ -10648,14 +10900,20 @@ public:
 
         testGuards();
 
-        test_emit();
-        test_etxn_burden();
-        test_etxn_details();
-        test_etxn_fee_base();
-        test_etxn_generation();
-        test_etxn_nonce();
-        test_etxn_reserve();
-        test_fee_base();
+        test_emit();                //
+        //test_etxn_burden();       // tested above
+        //test_etxn_generation();   // tested above
+        //test_otxn_burden();       // tested above
+        //test_otxn_generation();   // tested above
+        test_etxn_details();        //
+        test_etxn_fee_base();       //
+        test_etxn_nonce();          //
+        test_etxn_reserve();        //
+        test_fee_base();            //
+
+        test_otxn_field();
+
+        test_ledger_keylet();
 
         test_float_compare();       //
         test_float_divide();        //
@@ -10682,7 +10940,6 @@ public:
         test_hook_pos();            //
         test_hook_skip();           //
 
-        test_ledger_keylet();
         test_ledger_last_hash();    //
         test_ledger_last_time();    //
         test_ledger_nonce();        //
@@ -10690,9 +10947,6 @@ public:
 
         test_meta_slot();           //
 
-        test_otxn_burden();
-        test_otxn_field();
-        test_otxn_generation();
         test_otxn_id();             //
         test_otxn_slot();           //
         test_otxn_type();           //
@@ -10718,13 +10972,6 @@ public:
         test_sto_subarray();        //
         test_sto_subfield();        //
         test_sto_validate();        //
-
-        /*
-        test_str_compare();
-        test_str_concat();
-        test_str_find();
-        test_str_replace();
-        */
 
         test_trace();
         test_trace_float();

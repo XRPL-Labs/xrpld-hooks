@@ -1966,10 +1966,6 @@ DEFINE_HOOK_FUNCNARG(
     }
 
     hookCtx.generation = pd.getFieldU32(sfEmitGeneration);
-    // this overflow will never happen in the life of the ledger but deal with it anyway
-    if (hookCtx.generation + 1 > hookCtx.generation)
-        hookCtx.generation++;
-
     return hookCtx.generation;
 }
 
@@ -3112,11 +3108,11 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     
+    if (NOT_IN_BOUNDS(write_ptr, ptr_len, memory_length))
+        return OUT_OF_BOUNDS;
+
     if (ptr_len < 20)
         return TOO_SMALL;
-
-    if (NOT_IN_BOUNDS(write_ptr, 20, memory_length))
-        return OUT_OF_BOUNDS;
 
     WRITE_WASM_MEMORY_AND_RETURN(
         write_ptr, 20,
@@ -3133,15 +3129,14 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx, view on current stack
 
-    if (write_len < 32)
-        return TOO_SMALL;
-
     if (NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
         return OUT_OF_BOUNDS;
 
     if (hookCtx.emit_nonce_counter > hook_api::max_nonce)
         return TOO_MANY_NONCES;
 
+    if (write_len < 32)
+        return TOO_SMALL;
 
     // in some cases the same hook might execute multiple times
     // on one txn, therefore we need to pass this information to the nonce
@@ -3267,6 +3262,9 @@ DEFINE_HOOK_FUNCTION(
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
     if (hookCtx.expected_etxn_count > -1)
         return ALREADY_SET;
+
+    if (count < 1)
+        return TOO_SMALL;
 
     if (count > hook_api::max_emit)
         return TOO_BIG;
