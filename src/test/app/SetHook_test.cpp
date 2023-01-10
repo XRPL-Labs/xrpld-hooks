@@ -6028,6 +6028,71 @@ public:
     void
     test_otxn_field()
     {
+        testcase("Test otxn_field");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            #define GUARD(maxiter) _g((1ULL << 31U) + __LINE__, (maxiter)+1)
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t otxn_field (uint32_t write_ptr, uint32_t write_len, uint32_t sfcode);
+            extern int64_t hook_account(uint32_t, uint32_t);
+            #define OUT_OF_BOUNDS -1
+            #define TOO_BIG -3
+            #define TOO_SMALL -4
+            #define INVALID_ARGUMENT -7
+            #define INVALID_FIELD -17
+            #define ASSERT(x)\
+                if (!(x))\
+                    rollback((uint32_t)#x, sizeof(#x), __LINE__);
+            #define SBUF(x) (uint32_t)(x), sizeof(x)
+            #define sfAccount ((8U << 16U) + 1U)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+                
+                // bounds check
+                ASSERT(otxn_field(1, 1000000, sfAccount) == OUT_OF_BOUNDS);
+                ASSERT(otxn_field(1000000, 20, sfAccount) == OUT_OF_BOUNDS);
+
+                // sanity check
+                ASSERT(otxn_field(0, 1, sfAccount) == INVALID_ARGUMENT);
+                
+                // size check
+                ASSERT(otxn_field(0, 0, sfAccount) == TOO_BIG);
+            
+                uint8_t acc[20];
+                ASSERT(otxn_field(acc, 19, sfAccount) == TOO_SMALL);
+
+                ASSERT(otxn_field(acc, 20, sfAccount) == 20);
+
+                ASSERT(otxn_field(acc, 20, 1) == INVALID_FIELD);
+                uint8_t acc2[20];
+                ASSERT(hook_account(acc2, 20) == 20);
+
+                for (int i = 0; GUARD(20), i < 20; ++i)
+                    ASSERT(acc[i] == acc2[i]);
+                
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set otxn_field"),
+            HSFEE);
+        env.close();
+
+        // invoke the hook
+        env(pay(alice, bob, XRP(1)), M("test otxn_field"), fee(XRP(1)));
     }
 
     void

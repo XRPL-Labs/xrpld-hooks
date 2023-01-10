@@ -2074,7 +2074,14 @@ DEFINE_HOOK_FUNCTION(
 {
     HOOK_SETUP(); // populates memory_ctx, memory, memory_length, applyCtx, hookCtx on current stack
 
-    if (write_ptr != 0 && NOT_IN_BOUNDS(write_ptr, write_len, memory_length))
+    if (write_ptr == 0)
+    {
+        if (write_len != 0)
+            return INVALID_ARGUMENT;
+        
+        // otherwise pass, we're trying to return the data as an int64_t
+    }
+    else if NOT_IN_BOUNDS(write_ptr, write_len, memory_length)
         return OUT_OF_BOUNDS;
 
 
@@ -2091,10 +2098,11 @@ DEFINE_HOOK_FUNCTION(
         ? hookCtx.emitFailure->getField(fieldType)
         : const_cast<ripple::STTx&>(applyCtx.tx).getField(fieldType);
 
-    bool is_account = field.getSType() == STI_ACCOUNT; //RH TODO improve this hack
+    bool is_account = field.getSType() == STI_ACCOUNT;
 
     Serializer s;
     field.add(s);
+
 
     if (write_ptr == 0)
         return data_as_int64(s.getDataPtr(), s.getDataLength());
