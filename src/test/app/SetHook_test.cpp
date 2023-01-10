@@ -5628,6 +5628,102 @@ public:
     void
     test_ledger_keylet()
     {
+        testcase("Test ledger_keylet");
+        using namespace jtx;
+        Env env{*this, supported_amendments()};
+
+        Account const alice{"alice"};
+        Account const bob{"bob"};
+        env.fund(XRP(10000), alice);
+        env.fund(XRP(10000), bob);
+
+        TestHook hook = wasm[R"[test.hook](
+            #include <stdint.h>
+            extern int32_t _g       (uint32_t id, uint32_t maxiter);
+            extern int64_t accept   (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t rollback (uint32_t read_ptr, uint32_t read_len, int64_t error_code);
+            extern int64_t ledger_keylet(uint32_t, uint32_t, uint32_t, uint32_t, uint32_t, uint32_t);
+            extern int64_t slot_set(uint32_t, uint32_t, uint32_t);
+            #define ASSERT(x)\
+            if (!(x))\
+            {\
+                rollback((uint32_t)#x, sizeof(#x), __LINE__);\
+            }
+            #define SBUF(x) x, sizeof(x)
+            #define OUT_OF_BOUNDS (-1)
+            #define TOO_SMALL (-4)
+            #define TOO_BIG (-3)
+            #define INVALID_ARGUMENT (-7)
+            #define DOESNT_EXIST (-5)
+            #define DOES_NOT_MATCH (-40)
+            int64_t hook(uint32_t reserved )
+            {
+                _g(1,1);
+    
+                ASSERT(ledger_keylet(1000000, 34, 0, 34, 0, 34) == OUT_OF_BOUNDS);
+                ASSERT(ledger_keylet(0, 1000000, 0, 34, 0, 34) == OUT_OF_BOUNDS);
+                ASSERT(ledger_keylet(0, 34, 1000000, 34, 0, 34) == OUT_OF_BOUNDS);
+                ASSERT(ledger_keylet(0, 34, 0, 1000000, 0, 34) == OUT_OF_BOUNDS);
+                ASSERT(ledger_keylet(0, 34, 0, 34, 1000000, 34) == OUT_OF_BOUNDS);
+                ASSERT(ledger_keylet(0, 34, 0, 34, 0, 1000000) == OUT_OF_BOUNDS);
+
+                ASSERT(ledger_keylet(0, 33, 0, 34, 0, 34) == TOO_SMALL);
+                ASSERT(ledger_keylet(0, 34, 0, 33, 0, 34) == TOO_SMALL);
+                ASSERT(ledger_keylet(0, 34, 0, 34, 0, 33) == TOO_SMALL);
+
+                ASSERT(ledger_keylet(0, 35, 0, 34, 0, 34) == TOO_BIG);
+                ASSERT(ledger_keylet(0, 34, 0, 35, 0, 34) == TOO_BIG);
+                ASSERT(ledger_keylet(0, 34, 0, 34, 0, 35) == TOO_BIG);
+            
+                uint8_t trash[34] = {
+                    1,2,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9
+                };
+                
+                uint8_t trash2[34] = {
+                    1,2,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 9,
+                    1, 2, 3, 4, 5, 6, 7, 8, 10
+                };
+                
+                
+                ASSERT(ledger_keylet(0, 34, SBUF(trash2), SBUF(trash)) == DOESNT_EXIST);
+                ASSERT(ledger_keylet(0, 34, SBUF(trash), SBUF(trash2)) == DOESNT_EXIST);
+
+
+                uint8_t first[34];
+                uint8_t last[34] = {
+                    0x00U, 0x01U,
+                    0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU,
+                    0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU,
+                    0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU,
+                    0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFFU, 0xFEU
+                };
+
+                uint8_t out[34];
+                ASSERT(ledger_keylet(SBUF(out), SBUF(first), SBUF(last)) == DOES_NOT_MATCH);
+                last[1] = 0;
+                ASSERT(ledger_keylet(SBUF(out), SBUF(first), SBUF(last)) == 34);
+
+                ASSERT(slot_set(SBUF(out), 1) == 1);
+
+                accept(0,0,0);
+            }
+        )[test.hook]"];
+
+        // install the hook on alice
+        env(ripple::test::jtx::hook(alice, {{hso(hook, overrideFlag)}}, 0),
+            M("set ledger_keylet"),
+            HSFEE);
+        env.close();
+
+        env(pay(bob, alice, XRP(1)), M("test ledger_keylet"), fee(XRP(1)));
+        env.close();
     }
 
     void
@@ -11075,9 +11171,9 @@ public:
         test_etxn_reserve();        //
         test_fee_base();            //
 
-        test_otxn_field();
+        test_otxn_field();          //
 
-        test_ledger_keylet();
+        test_ledger_keylet();       //
 
         test_float_compare();       //
         test_float_divide();        //
