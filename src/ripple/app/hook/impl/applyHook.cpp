@@ -1073,32 +1073,51 @@ DEFINE_HOOK_FUNCTION(
     if (dread_len > 1023)
         dread_len = 1023;
 
-    uint8_t output[2048];
+    uint8_t output_storage[2200];
     size_t out_len = 0;
-    if (as_hex)
+
+    uint8_t* output = output_storage;
+    
+    if (mread_len > 0)
     {
-        out_len = dread_len * 2;
-        for (int i = 0; i < dread_len && i < memory_length; ++i)
-        {
-            unsigned char high = (memory[dread_ptr + i] >> 4) & 0xF;
-            unsigned char low  = (memory[dread_ptr + i] & 0xF);
-            high += ( high < 10U ? '0' : 'A' - 10 );
-            low  += ( low  < 10U ? '0' : 'A' - 10 );
-            output[i*2 + 0] = high;
-            output[i*2 + 1] = low;
-        }
-//        output[out_len++] = '\0';
+        memcpy(output, memory + mread_ptr, mread_len);
+        out_len += mread_len;
+        output[out_len++] = ':';
+        output[out_len++] = ' ';
     }
-    else if (is_UTF16LE(memory + dread_ptr, dread_len))
+
+    output = output_storage + out_len;
+
+    if (dread_len > 0)
     {
-        out_len = dread_len / 2; //is_UTF16LE will only return true if read_len is even
-        for (int i = 0; i < out_len; ++i)
-            output[i] = memory[dread_ptr + i * 2];
-//        output[out_len++] = '\0';
+        if (as_hex)
+        {
+            out_len += dread_len * 2;
+            for (int i = 0; i < dread_len && i < memory_length; ++i)
+            {
+                uint8_t high = (memory[dread_ptr + i] >> 4) & 0xFU;
+                uint8_t low  = (memory[dread_ptr + i] & 0xFU);
+                high += ( high < 10U ? '0' : 'A' - 10 );
+                low  += ( low  < 10U ? '0' : 'A' - 10 );
+                output[i*2 + 0] = high;
+                output[i*2 + 1] = low;
+            }
+        }
+        else if (is_UTF16LE(memory + dread_ptr, dread_len))
+        {
+            out_len += dread_len / 2; //is_UTF16LE will only return true if read_len is even
+            for (int i = 0; i < (dread_len / 2); ++i)
+                output[i] = memory[dread_ptr + i * 2];
+        }
+        else
+        {
+            out_len += dread_len;
+            memcpy(output, memory + dread_ptr, dread_len);
+        }
     }
 
     RETURN_HOOK_TRACE(mread_ptr, mread_len,
-           std::string((const char*)output, out_len));
+           std::string((const char*)output_storage, out_len));
 }
 
 
