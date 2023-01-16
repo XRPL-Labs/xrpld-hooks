@@ -2883,6 +2883,13 @@ DEFINE_HOOK_FUNCTION(
      * 8. The generation cannot be higher than 10
      */
 
+    // rule 0: sfAccount must match hook account
+    if (!stpTrans->isFieldPresent(sfAccount) || stpTrans->getAccountID(sfAccount) != hookCtx.result.account)
+    {
+        JLOG(j.trace())
+            << "HookEmit[" << HC_ACC() << "]: sfAccount does not match hook account";
+        return EMISSION_FAILURE;
+    }
 
     // rule 1: sfSequence must be present and 0
     if (!stpTrans->isFieldPresent(sfSequence) || stpTrans->getFieldU32(sfSequence) != 0)
