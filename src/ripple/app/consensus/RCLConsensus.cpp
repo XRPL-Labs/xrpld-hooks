@@ -178,11 +178,6 @@ RCLConsensus::Adaptor::share(RCLCxPeerPos const& peerPos)
 void
 RCLConsensus::Adaptor::share(RCLCxTx const& tx)
 {
-    //RH TODO: never broadcast emitted transactions
-    //fix below:
-    //if (tx.isFieldPresent(sfEmitDetails))
-    //    return;
-
     // If we didn't relay this transaction recently, relay it to all peers
     if (app_.getHashRouter().shouldRelay(tx.id()))
     {

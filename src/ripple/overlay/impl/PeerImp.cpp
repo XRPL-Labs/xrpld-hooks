@@ -1552,7 +1552,7 @@ PeerImp::handleTransaction(
         {
             JLOG(p_journal_.warn()) << "Ignoring Network relayed Tx containing sfEmitDetails (handleTransaction).";
             //fee_ =  Resource::feeHighBurdenPeer; // RH TODO: enable when relay bug is fixed
-            //return;
+            return;
         }
 
         int flags;

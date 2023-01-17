@@ -19,6 +19,7 @@
 
 #include <ripple/app/hook/applyHook.h>
 #include <ripple/app/main/Application.h>
+#include <ripple/app/misc/HashRouter.h>
 #include <ripple/app/misc/LoadFeeTrack.h>
 #include <ripple/app/tx/apply.h>
 #include <ripple/app/tx/impl/SignerEntries.h>
@@ -113,9 +114,19 @@ preflight1(PreflightContext const& ctx)
     // if a hook emitted this transaction we bypass signature checks
     // there is a bar to circularing emitted transactions on the network
     // in their prevalidated form so this is safe
-    if (ctx.rules.enabled(featureHooks) &&
-        hook::isEmittedTxn(ctx.tx))
-        return tesSUCCESS;
+    if (ctx.rules.enabled(featureHooks) && hook::isEmittedTxn(ctx.tx))
+    {
+        if (ctx.app.getHashRouter().getFlags(ctx.tx.getTransactionID()) & SF_EMITTED)
+            return tesSUCCESS;
+        else
+        {
+            // If somehow we end up attempting to apply a transaction that wasn't placed via the emission directory
+            // then we will do a local failure. We don't want to broadcast this failure, rather we want to catch up
+            // to the network. We also don't want to fail this transaction because somehow it might end up being
+            // locally produced. It's assumed this can only happen due to some strange state in the local instance.
+            return telNON_LOCAL_EMITTED_TXN;
+        }
+    }
 
     auto const spk = ctx.tx.getSigningPubKey();
 

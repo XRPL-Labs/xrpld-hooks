@@ -1663,6 +1663,8 @@ finalizeHookResult(
             JLOG(j.trace())
                 << "HookEmit[" << HR_ACC() << "]: " << id;
 
+            applyCtx.app.getHashRouter().setFlags(id, SF_EMITTED); 
+
             std::shared_ptr<const ripple::STTx> ptr = tpTrans->getSTransaction();
 
             ripple::Serializer s;

@@ -44,6 +44,8 @@ namespace ripple {
 #define SF_PRIVATE5 0x1000
 #define SF_PRIVATE6 0x2000
 
+#define SF_EMITTED 0x4000
+
 /** Routing table for objects identified by hash.
 
     This table keeps track of which hashes have been received by which peers.
@@ -110,6 +112,9 @@ private:
             Stopwatch::time_point const& now,
             std::chrono::seconds holdTime)
         {
+            if (flags_ & SF_EMITTED)
+                return false;
+
             if (relayed_ && *relayed_ + holdTime > now)
                 return false;
             relayed_.emplace(now);
