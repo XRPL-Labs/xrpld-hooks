@@ -122,6 +122,12 @@ public:
         return tx.isFieldPresent(sfEmitDetails);
     }
 
+    ApplyFlags const&
+    flags()
+    {
+        return flags_;
+    }
+
 private:
     TER
     failInvariantCheck(TER const result);

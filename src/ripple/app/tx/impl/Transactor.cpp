@@ -116,8 +116,15 @@ preflight1(PreflightContext const& ctx)
     // in their prevalidated form so this is safe
     if (ctx.rules.enabled(featureHooks) && hook::isEmittedTxn(ctx.tx))
     {
-        if (ctx.app.getHashRouter().getFlags(ctx.tx.getTransactionID()) & SF_EMITTED)
+        if ((ctx.app.getHashRouter().getFlags(ctx.tx.getTransactionID()) & SF_EMITTED) ||
+            (ctx.flags & tapPREFLIGHT_EMIT))
+        {
+            if (ctx.tx.getSeqProxy().isTicket() &&
+                ctx.tx.isFieldPresent(sfAccountTxnID))
+                return temINVALID;
+
             return tesSUCCESS;
+        }
         else
         {
             // If somehow we end up attempting to apply a transaction that wasn't placed via the emission directory
@@ -628,7 +635,15 @@ Transactor::checkSign(PreclaimContext const& ctx)
     // hook emitted transactions do not have signatures
     if (ctx.view.rules().enabled(featureHooks) &&
         hook::isEmittedTxn(ctx.tx))
-        return tesSUCCESS;
+    {
+
+        // ensure the txn was either emitted here or it's in preflight testing during emission
+        if ((ctx.app.getHashRouter().getFlags(ctx.tx.getTransactionID()) & SF_EMITTED) ||
+            (ctx.flags & tapPREFLIGHT_EMIT))
+            return tesSUCCESS;
+
+        return telNON_LOCAL_EMITTED_TXN;
+    }
 
     // If the pk is empty, then we must be multi-signing.
     if (ctx.tx.getSigningPubKey().empty())
@@ -1515,6 +1530,15 @@ Transactor::operator()()
     }
 #endif
 
+   
+    // Enforce an absolute bar to applying emitted transactions which are either
+    // explicitly in preflight test mode, or somehow managed to make their way
+    // here despite not being emitted here by a hook here. 
+    if ((ctx_.flags() & tapPREFLIGHT_EMIT) ||
+        (view().flags() & tapPREFLIGHT_EMIT) ||
+        (ctx_.isEmittedTxn() && 
+        !(ctx_.app.getHashRouter().getFlags(ctx_.tx.getTransactionID()) & SF_EMITTED)))
+        return {tecINTERNAL, false};
 
     auto result = ctx_.preclaimResult;
     
