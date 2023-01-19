@@ -14,7 +14,6 @@
 #include <ripple/protocol/digest.h>
 #include <wasmedge/wasmedge.h>
 #include <ripple/app/hook/Macro.h>
-#include <ripple/app/hook/Misc.h>
 #include <ripple/app/hook/Enum.h>
 
 namespace hook
