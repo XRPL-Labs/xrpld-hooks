@@ -240,7 +240,6 @@ namespace hook_api
     const uint8_t max_params = 16;
     const double fee_base_multiplier = 1.1f;
 
-
     // RH NOTE: Find descriptions of api functions in ./impl/applyHook.cpp and hookapi.h (include for hooks)
     static const std::set<std::string> import_whitelist
     {
