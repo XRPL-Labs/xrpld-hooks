@@ -12,7 +12,7 @@
 
 using GuardLog = std::optional<std::reference_wrapper<std::basic_ostream<char>>>;
 
-#define DEBUG_GUARD 1
+#define DEBUG_GUARD 0
 #define DEBUG_GUARD_VERBOSE 0
 #define DEBUG_GUARD_VERY_VERBOSE 0
 
@@ -158,7 +158,7 @@ struct WasmBlkInf
             WasmBlkInf* parent_,
             uint32_t start_byte_,
             bool is_root_ = false)
-        : 
+        :
             sanity_check(0x1234ABCDU),
             iteration_bound(iteration_bound_),
             instruction_count(instruction_count_),
@@ -184,7 +184,7 @@ struct WasmBlkInf
         delete blk;
     }
 
-    
+
     ~WasmBlkInf()
     {
         // only the root is responsible for freeing
@@ -198,24 +198,32 @@ struct WasmBlkInf
 #define PRINT_WCE(x)\
 {\
     if (DEBUG_GUARD)\
-        printf("%llx:: [%u]%.*swce=%ld | start=%x instcount=%u guard=%u, parent_guard=%d, multiplier=%g parentptr=%llx\n",\
-            &blk,\
-            x,\
-            level, "                                                                                  ",\
-            worst_case_execution,\
-            blk->start_byte,\
-            blk->instruction_count,\
-            blk->iteration_bound,\
-            (blk->parent != 0 ? blk->parent->iteration_bound : -1),\
-            multiplier, &(blk->parent));\
+         printf("%llx:: [%u]%.*swce=%ld | start=%x instcount=%u guard=%u, "\
+                 "parent_guard=%d, multiplier=%g parentptr=%llx\n",\
+             &blk,\
+             x,\
+             level, "                                                                                  ",\
+             worst_case_execution,\
+             blk->start_byte,\
+             blk->instruction_count,\
+             blk->iteration_bound,\
+             (blk->parent != 0 ? blk->parent->iteration_bound : -1),\
+             multiplier, &(blk->parent));\    
 }
-// compute worst case execution time    
+// compute worst case execution time
 inline
-uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
+uint64_t compute_wce (const WasmBlkInf* blk, int level, bool* recursion_limit_reached)
 {
+        if (level > 16)
+        {
+            *recursion_limit_reached = true;
+            return 0;
+        }
+
         if (blk->sanity_check != 0x1234ABCDU)
         {
             printf("!!! sanity check failed\n");
+            *recursion_limit_reached = true;
             return (uint64_t)-1;
         }
 
@@ -224,6 +232,7 @@ uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
         if (parent && parent->sanity_check != 0x1234ABCDU)
         {
             printf("!!! parent sanity check failed\n");
+            *recursion_limit_reached = true;
             return (uint64_t)-1;
         }
 
@@ -232,9 +241,9 @@ uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
 
         if (blk->children.size() > 0)
             for (auto const& child : blk->children)
-                worst_case_execution += compute_wce(child, level + 1);
+                worst_case_execution += compute_wce(child, level + 1, recursion_limit_reached);
 
-        if (parent == 0 || 
+        if (parent == 0 ||
             parent->iteration_bound == 0)  // this condtion should never occur [defensively programmed]
         {
             PRINT_WCE(1);
@@ -243,9 +252,9 @@ uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
 
         // if the block has a parent then the quotient of its guard and its parent's guard
         // gives us the loop iterations and thus the multiplier for the instruction count
-        multiplier = 
+        multiplier =
             ((double)(blk->iteration_bound)) /
-            ((double)(parent->iteration_bound)); 
+            ((double)(parent->iteration_bound));
 
         worst_case_execution *= multiplier;
         if (worst_case_execution < 1.0)
@@ -254,6 +263,7 @@ uint64_t compute_wce (WasmBlkInf const* blk, int level = 0)
         PRINT_WCE(3);
         return worst_case_execution;
     };
+
 
 // checks the WASM binary for the appropriate required _g guard calls and rejects it if they are not found
 // start_offset is where the codesection or expr under analysis begins and end_offset is where it ends
@@ -289,7 +299,7 @@ check_guard(
     //        WasmBlkInf* parent_, uint32_t start_byte_, bool is_root_ = false) : 
     std::unique_ptr<WasmBlkInf> root = std::make_unique<WasmBlkInf>(1, 0, (WasmBlkInf*)0, start_offset, true); 
      
-    WasmBlkInf* current = &(*root);
+    WasmBlkInf* current = &(*root);    
 
     if (DEBUG_GUARD)
         printf("\n\n\nstart of guard analysis for codesec %d\n", codesec);
@@ -356,7 +366,7 @@ check_guard(
                     GUARD_ERROR("Missing first i32.const after loop instruction");
                 ADVANCE(1);
                 SIGNED_LEB();          // this is the ID, we don't need it here
-                
+
                 // second i32
                 REQUIRE(1);
                 if (hook[i] != 0x41U)
@@ -379,7 +389,6 @@ check_guard(
 
                 if (guard_count++ > MAX_GUARD_CALLS)
                     GUARD_ERROR("Too many guard calls! Limit is 1024");
-                printf("guard_count: %d\n", guard_count);
             }
 
             current = current->add_child(iteration_bound, i);
@@ -409,7 +418,7 @@ check_guard(
             if (current->sanity_check != 0x1234ABCDU)
             {
                 GUARD_ERROR("Sanity check failed (bad pointer)");
-            }
+            }            
             continue;
         }
 
@@ -440,8 +449,8 @@ check_guard(
             LEB();
             continue;
         }
-       
-        if (instr == 0x0FU)     // return 
+
+        if (instr == 0x0FU)     // return
         {
             if (DEBUG_GUARD_VERBOSE)
                 printf("Guard checker - return instruction at %d [%x]\n", i, i);
@@ -468,7 +477,6 @@ check_guard(
             {
                 if (guard_count++ > MAX_GUARD_CALLS)
                     GUARD_ERROR("Too many guard calls! Limit is 1024");
-                printf("guard_count: %d\n", guard_count);
             }
 
             continue;
@@ -481,10 +489,10 @@ check_guard(
                 << "codesec: " << codesec << " hook byte offset: " << i << "\n";
             return {};
         }
-        
+
 
         // reference instructions
-        if (instr >= 0xD0U && instr <= 0xD2)   
+        if (instr >= 0xD0U && instr <= 0xD2)
         {
             if (DEBUG_GUARD_VERBOSE)
                 printf("Guard checker - reference instruction at %d [%x]\n", i, i);
@@ -503,7 +511,7 @@ check_guard(
                 REQUIRE(1);
                 LEB();
             }
-            
+
             continue;
         }
 
@@ -514,7 +522,7 @@ check_guard(
         {
             if (DEBUG_GUARD_VERBOSE)
                 printf("Guard checker - parametric instruction at %d [%x]\n", i, i);
-           
+
             if (instr == 0x1CU)     // select t*
             {
                 REQUIRE(1);
@@ -560,13 +568,13 @@ check_guard(
                 LEB();
                 continue;
             }
-            
+
             if (DEBUG_GUARD_VERBOSE)
                 printf("Guard checker - 0xFC instruction at %d [%x]\n", i, i);
 
             uint64_t fc_type = LEB();
             REQUIRE(1);
-            
+
             if (fc_type >= 12 && fc_type <= 17)     // table instructions
             {
                 LEB();
@@ -659,8 +667,8 @@ check_guard(
             REQUIRE(4);
             ADVANCE(4);
             continue;
-        } 
-        
+        }
+
         if (instr == 0x44U)     // f64.const
         {
             if (DEBUG_GUARD_VERBOSE)
@@ -669,15 +677,15 @@ check_guard(
             REQUIRE(8);
             ADVANCE(8);
             continue;
-        } 
+        }
 
         // even more numeric instructions
         if (instr >= 0x45U && instr <= 0xC4U)
         {
             if (DEBUG_GUARD_VERBOSE)
                 printf("Guard checker - numeric instruction at %d [%x]\n", i, i);
-            
-            // these have no arguments   
+
+            // these have no arguments
             continue;
         }
 
@@ -717,7 +725,7 @@ check_guard(
             }
             continue;
         }
-        
+
         // execution to here is an error, unknown instruction
         {
             char ihex[64];
@@ -727,8 +735,14 @@ check_guard(
         }
     }
 
-    uint64_t wce = compute_wce(&(*root));
-
+    bool recursion_limit_reached = false;
+    uint64_t wce = compute_wce(&(*root), 0, &recursion_limit_reached);
+    if (recursion_limit_reached)
+    {
+        GUARDLOG(hook::log::NESTING_LIMIT) << "GuardCheck "
+            << "Maximum allowable depth of blocks reached (16 levels). Flatten your loops and conditions!.\n";
+        return {};
+    }
 
     GUARDLOG(hook::log::INSTRUCTION_COUNT) << "GuardCheck "
         << "Total worse-case execution count: " << wce << "\n";
