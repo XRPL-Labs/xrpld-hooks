@@ -38,11 +38,39 @@ checkValidity(
     HashRouter& router,
     STTx const& tx,
     Rules const& rules,
-    Config const& config)
+    Config const& config,
+    ApplyFlags applyFlags)
 {
     auto const id = tx.getTransactionID();
     auto const flags = router.getFlags(id);
+
+    if (rules.enabled(featureHooks) && tx.isFieldPresent(sfEmitDetails))
+    {
+        // emitted transactions do not contain signatures
+        if (tx.isFieldPresent(sfSignature))
+            return {Validity::SigBad, "Emitted txn contains signature."};
+
+        // and they must be either emitted here on this node
+        // or in process of being preflighted during emission
+        if (applyFlags & tapPREFLIGHT_EMIT)
+        {
+            // pass, this is a txn being preflighted emit api
+        }
+        else if (flags & SF_EMITTED)
+        {
+            // pass, this txn came out of the emission directory
+        }
+        else
+            return {Validity::SigBad, "Emitted txn was not marked for preflight nor out of the emission directory"};
+            
+        std::string reason;
+        if (!passesLocalChecks(tx, reason))
+            return {Validity::SigGoodOnly, reason};
         
+        return {Validity::Valid, ""};
+    }
+
+
     if (flags & SF_SIGBAD)
         // Signature is known bad
         return {Validity::SigBad, "Transaction has bad signature."};
