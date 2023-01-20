@@ -767,7 +767,6 @@ std::pair<
 >>
 validateGuards(
     std::vector<uint8_t> const& hook,
-    bool strict,
     GuardLog guardLog,
     std::string guardLogAccStr)
 {
@@ -802,12 +801,13 @@ validateGuards(
     // this maps function ids to type ids, used for looking up the type of cbak and hook
     // as established inside the wasm binary.
     std::map<int, int> func_type_map;
-
+    std::map<int /* type idx */, std::map<int /* import index */, std::string /* api name */>> import_type_map;
 
     // now we check for guards... first check if _g is imported
     int guard_import_number = -1;
     int last_import_number = -1;
     int import_count = 0;
+    int last_section_type = 0;
     for (int i = 8, j = 0; i < hook.size();)
     {
 
@@ -824,6 +824,25 @@ validateGuards(
 
         // each web assembly section begins with a single byte section type followed by an leb128 length
         int section_type = hook[i++];
+
+        if (section_type == 0)
+        {
+            GUARDLOG(hook::log::CUSTOM_SECTION_DISALLOWED)
+                << "Malformed transaction. "
+                << "Hook contained a custom section, which is not allowed. Use cleaner.\n";
+            return {};
+        }
+
+        if (section_type <= last_section_type)
+        {
+            GUARDLOG(hook::log::SECTIONS_OUT_OF_SEQUENCE)
+                << "Malformed transcation. "
+                << "Hook contained wasm sections that were either repeated or were out of sequence.\n";
+            return {};
+        }
+
+
+
         int section_length = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
         //int section_start = i;
 
@@ -833,9 +852,9 @@ validateGuards(
 
         int next_section = i + section_length;
 
-        // we are interested in the import section... we need to know if _g is imported and which import# it is
         if (section_type == 2) // import section
         {
+            // we are interested in the import section... we need to know if _g is imported and which import# it is
             import_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
             if (import_count <= 0)
             {
@@ -888,22 +907,23 @@ validateGuards(
                 if (hook[i] > 0x00)
                 {
                     // not a function import
-                    // RH TODO check these other imports for weird stuff
-                    i++; CHECK_SHORT_HOOK();
-                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                    continue;
+                    GUARDLOG(hook::log::IMPORT_ILLEGAL)
+                        << "Malformed transaction. "
+                        << "Hook attempted to import an import type other than a function.\n";
+                    return {};
                 }
 
                 // execution to here means it's a function import
                 i++; CHECK_SHORT_HOOK();
-                /*int type_idx = */
-                parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                int type_idx = 
+                    parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
 
                 // RH TODO: validate that the parameters of the imported functions are correct
                 if (import_name == "_g")
                 {
                     guard_import_number = func_upto;
-                } else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
+                }
+                else if (hook_api::import_whitelist.find(import_name) == hook_api::import_whitelist.end())
                 {
                     GUARDLOG(hook::log::IMPORT_ILLEGAL)
                         << "Malformed transaction. "
@@ -911,6 +931,13 @@ validateGuards(
                         << "appear in the hook_api function set: `" << import_name << "`" << "\n";
                     return {};
                 }
+
+                // add to import map
+                if (import_type_map.find(type_idx) == import_type_map.end())
+                    import_type_map[type_idx] = {{ func_upto, std::move(import_name) }};
+                else
+                    import_type_map[type_idx].emplace(func_upto, std::move(import_name));
+
                 func_upto++;
             }
 
@@ -1050,13 +1077,6 @@ validateGuards(
     int64_t maxInstrCountHook = 0;
     int64_t maxInstrCountCbak = 0;
 
-/*    printf( "hook_func_idx: %d\ncbak_func_idx: %d\n"
-            "hook_type_idx: %d\ncbak_type_idx: %d\n",
-            *hook_func_idx,
-            *cbak_func_idx,
-            hook_type_idx, *cbak_type_idx);
-*/
-
     // second pass... where we check all the guard function calls follow the guard rules
     // minimal other validation in this pass because first pass caught most of it
     for (int i = 8; i < hook.size();)
@@ -1083,12 +1103,68 @@ validateGuards(
                 }
                 CHECK_SHORT_HOOK();
 
-                int param_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
-                if (j == hook_type_idx && param_count != 1)
+                // check the consistency of the type
+                std::optional<std::string> first_name;
+                std::optional<std::reference_wrapper<std::vector<uint8_t> const>> first_signature;
+                if (auto const& usage = import_type_map.find(j); usage != import_type_map.end())
                 {
-                    GUARDLOG(hook::log::PARAM_HOOK_CBAK)
+                    for (auto const& [import_idx, api_name] : usage->second)
+                    {
+                        auto const& api_signature =  
+                            hook_api::import_whitelist.find(api_name)->second;
+
+                        if (!first_signature)
+                        {
+                            first_name = api_name;
+                            first_signature = api_signature;
+                            continue;
+                        }
+
+                        if (api_signature != (*first_signature).get())
+                        {
+                            GUARDLOG(hook::log::FUNC_TYPE_INVALID)
+                                << "Function type is inconsitent across referenced apis. "
+                                << "This probably means one of your apis has the wrong signature. "
+                                << "(Either: " << *first_name << ", or: " << api_name << ".) "
+                                << "Codesec: " << section_type << " "
+                                << "Local: " << j << " "
+                                << "Offset: " << i << "\n";
+                            return {};
+                        }
+                    } 
+                }
+                else if (j == hook_type_idx)
+                {
+                    // pass
+                }
+                else
+                {
+                    // fail
+                    GUARDLOG(hook::log::FUNC_TYPE_INVALID)
+                        << "Invalid function type. Not used by any import or hook/cbak func. "
+                        << "Codesec: " << section_type << " "
+                        << "Local: " << j << " "
+                        << "Offset: " << i << "\n";
+                    return {};
+                }
+
+                int param_count = parseLeb128(hook, i, &i); CHECK_SHORT_HOOK();
+                if (j == hook_type_idx)
+                {
+                   if (param_count != 1)
+                    {
+                        GUARDLOG(hook::log::PARAM_HOOK_CBAK)
+                            << "Malformed transaction. "
+                            << "hook and cbak function definition must have exactly one parameter (uint32_t)." << "\n";
+                        return {};
+                    }
+                }
+                else
+                if (param_count != (*first_signature).get().size() - 1)
+                {
+                    GUARDLOG(hook::log::FUNC_TYPE_INVALID)
                         << "Malformed transaction. "
-                        << "hook and cbak function definition must have exactly one parameter (uint32_t)." << "\n";
+                        << "Hook API: " << *first_name << " has the wrong number of parameters.\n";
                     return {};
                 }
 
@@ -1116,11 +1192,22 @@ validateGuards(
                                j, *hook_func_idx, *cbak_func_idx, param_count, param_type);
 
                     // hook and cbak parameter check here
-                    if (j == hook_type_idx && param_type != 0x7FU /* i32 */)
+                    if (j == hook_type_idx)
                     {
-                        GUARDLOG(hook::log::PARAM_HOOK_CBAK)
+                       if (param_type != 0x7FU /* i32 */)
+                       {
+                            GUARDLOG(hook::log::PARAM_HOOK_CBAK)
+                                << "Malformed transaction. "
+                                << "hook and cbak function definition must have exactly one uint32_t parameter." << "\n";
+                            return {};
+                       }
+                    }
+                    else
+                    if ((*first_signature).get()[k + 1] != param_type)
+                    {
+                        GUARDLOG(hook::log::FUNC_PARAM_INVALID)
                             << "Malformed transaction. "
-                            << "hook and cbak function definition must have exactly one uint32_t parameter." << "\n";
+                            << "Hook API: " << *first_name << " definition parameters incorrect." << "\n";
                         return {};
                     }
                 }
@@ -1129,7 +1216,7 @@ validateGuards(
 
                 // RH TODO: enable this for production
                 // this needs a reliable hook cleaner otherwise it will catch most compilers out
-                if (strict && result_count != 1)
+                if (result_count != 1)
                 {
                     GUARDLOG(hook::log::FUNC_RETURN_COUNT)
                         << "Malformed transaction. "
@@ -1163,17 +1250,29 @@ validateGuards(
                                j, *hook_func_idx, *cbak_func_idx, result_count, result_type);
 
                     // hook and cbak return type check here
-                    if (j == hook_type_idx && (result_count != 1 || result_type != 0x7E /* i64 */))
+                    if (j == hook_type_idx)
                     {
-                        GUARDLOG(hook::log::RETURN_HOOK_CBAK)
+                        if (result_count != 1 || result_type != 0x7E /* i64 */)
+                        {
+                            GUARDLOG(hook::log::RETURN_HOOK_CBAK)
+                                << "Malformed transaction. "
+                                << (j == hook_type_idx ? "hook" : "cbak") << " j=" << j << " "
+                                << " function definition must have exactly one int64_t return type. "
+                                << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
+                                << "paramcount=" << param_count << "\n";
+                            return {};
+                        }
+                    }
+                    else
+                    if ((*first_signature).get()[0] != result_type)
+                    {
+                        GUARDLOG(hook::log::FUNC_RETURN_INVALID)
                             << "Malformed transaction. "
-                            << (j == hook_type_idx ? "hook" : "cbak") << " j=" << j << " "
-                            << " function definition must have exactly one int64_t return type. "
-                            << "resultcount=" << result_count << ", resulttype=" << result_type << ", "
-                            << "paramcount=" << param_count << "\n";
+                            << "Hook API: " << *first_name << " definition return type incorrect." << "\n";
                         return {};
                     }
                 }
+
             }
         }
         else

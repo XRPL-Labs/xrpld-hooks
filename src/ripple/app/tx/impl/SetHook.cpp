@@ -452,7 +452,6 @@ SetHook::validateHookSetEntry(SetHookCtx& ctx, STObject const& hookSetObj)
                 auto result =
                     validateGuards(
                         hook,   // wasm to verify
-                        true,   // strict (should have gone through hook cleaner!)
                         logger,
                         hsacc
                     );
