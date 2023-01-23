@@ -1547,6 +1547,7 @@ class LedgerRPC_test : public beast::unit_test::suite
                     BEAST_EXPECT(txj["retries_remaining"] == 10);
                     BEAST_EXPECT(txj.isMember(jss::tx));
                     auto const& tx = txj[jss::tx];
+                    std::cout << tx << "\n";
                     BEAST_EXPECT(tx[jss::Account] == alice.human());
                     BEAST_EXPECT(tx[jss::TransactionType] == jss::AccountSet);
                     return tx[jss::hash].asString();

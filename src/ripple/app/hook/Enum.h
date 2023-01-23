@@ -227,6 +227,7 @@ namespace hook_api
         INVALID_KEY = -41,              // user supplied key was not valid
         NOT_A_STRING = -42,             // nul terminator missing from a string argument
         MEM_OVERLAP  = -43,             // one or more specified buffers are the same memory
+        TOO_MANY_STATE_MODIFICATIONS = -44, // more than 5000 modified state entires in the combined hook chains
     };
 
     enum ExitType : uint8_t
@@ -237,6 +238,7 @@ namespace hook_api
         ACCEPT = 3,
     };
 
+    const uint16_t max_state_modifications = 5000;
     const uint8_t max_slots = 255;
     const uint8_t max_nonce = 255;
     const uint8_t max_emit = 255;

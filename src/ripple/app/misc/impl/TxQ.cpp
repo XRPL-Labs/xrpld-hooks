@@ -1519,8 +1519,6 @@ TxQ::accept(Application& app, OpenView& view)
 
                     auto s = std::make_shared<ripple::Serializer>();
                     efTx.add(*s);
-
-                    // RH TODO: should this txn be added in a different way to prevent any chance of failure
                     app.getHashRouter().setFlags(txID, SF_PRIVATE2);
                     app.getHashRouter().setFlags(txID, SF_EMITTED);
                     view.rawTxInsert(txID, std::move(s), nullptr);
